@@ -31,6 +31,7 @@ export const capabilitySchema = z.enum([
   "device.manage",
   "backup.manage",
   "export.manage",
+  "export.sensitive",
   "audit.read",
   "module.manage",
 ]);
@@ -54,6 +55,7 @@ export const roleCapabilities = {
     "device.manage",
     "backup.manage",
     "export.manage",
+    "export.sensitive",
     "audit.read",
     "module.manage",
   ],
@@ -411,6 +413,112 @@ export const projectionSnapshotInputSchema = z.object({
 });
 export type ProjectionSnapshotInput = z.infer<
   typeof projectionSnapshotInputSchema
+>;
+
+export const exportRedactionPolicySchema = z.enum([
+  "minimal",
+  "clinical",
+  "full",
+]);
+export type ExportRedactionPolicy = z.infer<typeof exportRedactionPolicySchema>;
+
+export const exportFormatSchema = z.enum(["pdf", "fhir"]);
+export type ExportFormat = z.infer<typeof exportFormatSchema>;
+
+export const patientExportInputSchema = z.object({
+  snapshotId: opaqueIdSchema,
+  format: exportFormatSchema,
+  redactionPolicy: exportRedactionPolicySchema,
+  exportReason: z.string().trim().min(3).max(500),
+});
+export type PatientExportInput = z.infer<typeof patientExportInputSchema>;
+
+export const exportFieldPolicySchema = z.object({
+  includeName: z.boolean(),
+  includeDateOfBirth: z.boolean(),
+  includeSex: z.boolean(),
+  includePhone: z.boolean(),
+  includeNationalId: z.boolean(),
+  includeMedicalHistory: z.boolean(),
+  includeEncounter: z.boolean(),
+});
+export type ExportFieldPolicy = z.infer<typeof exportFieldPolicySchema>;
+
+export const patientExportPayloadSchema = z.object({
+  schemaVersion: z.literal(1),
+  patientId: patientIdSchema,
+  identity: z.object({
+    patientId: patientIdSchema,
+    nameEn: z.string().optional(),
+    nameAr: z.string().optional(),
+    dob: z.string().trim().max(32).optional(),
+    sex: z.string().optional(),
+    phone: z.string().optional(),
+    nationalId: z.string().optional(),
+  }),
+  medicalHistory: z.array(z.record(z.string(), z.unknown())),
+  effectiveEncounter: effectiveEncounterSchema,
+  redactionPolicy: exportRedactionPolicySchema,
+  fieldPolicy: exportFieldPolicySchema,
+  snapshotId: opaqueIdSchema,
+  snapshotPayloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type PatientExportPayload = z.infer<typeof patientExportPayloadSchema>;
+
+export const signedExportManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  packageId: opaqueIdSchema,
+  snapshotId: opaqueIdSchema,
+  snapshotPayloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  signatureAlgorithm: z.literal("ed25519"),
+  publicKeyPem: z.string().min(64),
+  signatureBase64: z.string().min(16),
+  format: exportFormatSchema,
+  redactionPolicy: exportRedactionPolicySchema,
+  exportReason: z.string().trim().min(3).max(500),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+});
+export type SignedExportManifest = z.infer<typeof signedExportManifestSchema>;
+
+export const exportPackageSchema = z.object({
+  manifest: signedExportManifestSchema,
+  payloadBase64: z.string().min(1),
+  payloadFileName: z.string().regex(/^[a-zA-Z0-9._-]+$/),
+  manifestFileName: z.string().regex(/^[a-zA-Z0-9._-]+$/),
+  signatureFileName: z.string().regex(/^[a-zA-Z0-9._-]+$/),
+});
+export type ExportPackage = z.infer<typeof exportPackageSchema>;
+
+export const exportResultSchema = z.object({
+  package: exportPackageSchema,
+  savedFiles: z.object({
+    payloadPath: z.string().min(1),
+    manifestPath: z.string().min(1),
+    signaturePath: z.string().min(1),
+  }),
+});
+export type ExportResult = z.infer<typeof exportResultSchema>;
+
+export const exportVerificationInputSchema = z.object({
+  manifestJson: z.string().min(20),
+  payloadBase64: z.string().min(1),
+});
+export type ExportVerificationInput = z.infer<
+  typeof exportVerificationInputSchema
+>;
+
+export const exportVerificationResultSchema = z.object({
+  verified: z.boolean(),
+  signatureValid: z.boolean(),
+  payloadHashValid: z.boolean(),
+  snapshotHashPresent: z.boolean(),
+  reason: z.string(),
+  manifest: signedExportManifestSchema.optional(),
+});
+export type ExportVerificationResult = z.infer<
+  typeof exportVerificationResultSchema
 >;
 
 export const projectionSnapshotSchema = z.object({

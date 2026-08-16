@@ -3,13 +3,35 @@ import {
   ClinicalWorkflowService,
   EncounterService,
   MedicalHistoryService,
+  PatientExportService,
   PatientIdentityService,
+  exportSigningData,
+  hashExportPayload,
+  verifyExportPackage,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
-import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  session,
+} from "electron";
 import { dirname, join } from "node:path";
 import { ElectronSafeStorageKeyProvider } from "./key-provider.js";
 import { fileURLToPath } from "node:url";
+import { writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  exportPackageSchema,
+  patientExportInputSchema,
+  signedExportManifestSchema,
+  type ExportPackage,
+  type PatientExportInput,
+} from "@elite/contracts";
+import { ElectronExportSigner } from "./export-signer.js";
+import { renderPatientExportPdf } from "./export-pdf.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -20,6 +42,8 @@ let patientService: PatientIdentityService | undefined;
 let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
+let patientExportService: PatientExportService | undefined;
+let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
 
 function initializeServices(): void {
@@ -46,6 +70,11 @@ function initializeServices(): void {
     medicalHistoryService = new MedicalHistoryService(database);
     encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
+    patientExportService = new PatientExportService(database);
+    exportSigner = new ElectronExportSigner(
+      safeStorage,
+      join(app.getPath("userData"), "elite-export-signing-key.json"),
+    );
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -140,6 +169,24 @@ function requirePatientService(): PatientIdentityService {
     );
   }
   return patientService;
+}
+
+function requirePatientExportService(): PatientExportService {
+  if (!patientExportService) {
+    throw new Error(
+      "ELITE_EXPORT_STORAGE_UNAVAILABLE: secure export services are unavailable",
+    );
+  }
+  return patientExportService;
+}
+
+function requireExportSigner(): ElectronExportSigner {
+  if (!exportSigner) {
+    throw new Error(
+      "ELITE_EXPORT_SIGNING_UNAVAILABLE: export signing services are unavailable",
+    );
+  }
+  return exportSigner;
 }
 
 function registerIpc(): void {
@@ -570,6 +617,89 @@ function registerIpc(): void {
       ),
   );
   ipcMain.handle(
+    "export:create",
+    async (_event, token: string, input: unknown) => {
+      const parsed = patientExportInputSchema.parse(
+        input,
+      ) as PatientExportInput;
+      const service = requirePatientExportService();
+      const payload = service.buildPayload(serviceContext(token), parsed);
+      const payloadBuffer =
+        parsed.format === "fhir"
+          ? service.buildFhirBundle(serviceContext(token), parsed)
+          : await renderPatientExportPdf(payload);
+      const payloadHash = hashExportPayload(payloadBuffer);
+      const packageId = randomUUID();
+      const createdAt = new Date().toISOString();
+      const unsignedManifest = signedExportManifestSchema.parse({
+        schemaVersion: 1,
+        packageId,
+        snapshotId: parsed.snapshotId,
+        snapshotPayloadHash: payload.snapshotPayloadHash,
+        payloadHash,
+        signatureAlgorithm: "ed25519",
+        publicKeyPem: "placeholder-public-key-".padEnd(64, "-"),
+        signatureBase64: "placeholder-signature".padEnd(16, "-"),
+        format: parsed.format,
+        redactionPolicy: parsed.redactionPolicy,
+        exportReason: parsed.exportReason,
+        createdAt,
+        createdByUserId: serviceContext(token).userId,
+      });
+      const signature = requireExportSigner().sign(
+        exportSigningData(unsignedManifest),
+      );
+      const manifest = signedExportManifestSchema.parse({
+        ...unsignedManifest,
+        publicKeyPem: signature.publicKeyPem,
+        signatureBase64: signature.signature.toString("base64"),
+      });
+      const packageData = exportPackageSchema.parse({
+        manifest,
+        payloadBase64: payloadBuffer.toString("base64"),
+        payloadFileName:
+          parsed.format === "fhir"
+            ? `elite-patient-${payload.patientId}.fhir.json`
+            : `elite-patient-${payload.patientId}.pdf`,
+        manifestFileName: `elite-patient-${payload.patientId}.manifest.json`,
+        signatureFileName: `elite-patient-${payload.patientId}.sig`,
+      });
+      if (!mainWindow)
+        throw new Error(
+          "ELITE_EXPORT_WINDOW_UNAVAILABLE: export window is unavailable",
+        );
+      const selected = await dialog.showSaveDialog(mainWindow, {
+        title: "Save signed patient record export",
+        defaultPath: join(
+          app.getPath("documents"),
+          packageData.payloadFileName,
+        ),
+        buttonLabel: "Save export package",
+      });
+      if (selected.canceled || !selected.filePath) {
+        throw new Error("ELITE_EXPORT_CANCELLED: export save was cancelled");
+      }
+      const basePath = selected.filePath.replace(/\.(pdf|json)$/i, "");
+      const payloadPath = `${basePath}.${parsed.format === "fhir" ? "fhir.json" : "pdf"}`;
+      const manifestPath = `${basePath}.manifest.json`;
+      const signaturePath = `${basePath}.sig`;
+      writeFileSync(payloadPath, payloadBuffer, { mode: 0o600 });
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+        mode: 0o600,
+      });
+      writeFileSync(signaturePath, `${manifest.signatureBase64}\n`, {
+        mode: 0o600,
+      });
+      return {
+        package: packageData,
+        savedFiles: { payloadPath, manifestPath, signaturePath },
+      };
+    },
+  );
+  ipcMain.handle("export:verify", (_event, input: unknown) =>
+    verifyExportPackage(input as never),
+  );
+  ipcMain.handle(
     "clinical:amendments",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listAmendments(
@@ -817,4 +947,6 @@ app.on("before-quit", () => {
   medicalHistoryService = undefined;
   encounterService = undefined;
   clinicalService = undefined;
+  patientExportService = undefined;
+  exportSigner = undefined;
 });

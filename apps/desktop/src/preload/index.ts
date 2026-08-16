@@ -23,6 +23,10 @@ import type {
   EncounterAmendment,
   EncounterAmendmentInput,
   EffectiveEncounter,
+  ExportResult,
+  PatientExportInput,
+  ExportVerificationInput,
+  ExportVerificationResult,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -252,6 +256,17 @@ const eliteApi = {
         token,
         appointmentId,
       ) as Promise<Encounter | null>,
+    createExport: (token: string, input: PatientExportInput) =>
+      ipcRenderer.invoke(
+        "export:create",
+        token,
+        input,
+      ) as Promise<ExportResult>,
+    verifyExport: (input: ExportVerificationInput) =>
+      ipcRenderer.invoke(
+        "export:verify",
+        input,
+      ) as Promise<ExportVerificationResult>,
     getEffectiveEncounterForAppointment: (
       token: string,
       appointmentId: string,
@@ -510,6 +525,19 @@ const eliteApi = {
         id,
         input,
       ) as Promise<Appointment>,
+  },
+  export: {
+    createExport: (token: string, input: PatientExportInput) =>
+      ipcRenderer.invoke(
+        "export:create",
+        token,
+        input,
+      ) as Promise<ExportResult>,
+    verifyExport: (input: ExportVerificationInput) =>
+      ipcRenderer.invoke(
+        "export:verify",
+        input,
+      ) as Promise<ExportVerificationResult>,
   },
   relatedPersons: {
     create: (token: string, input: RelatedPersonInput) =>

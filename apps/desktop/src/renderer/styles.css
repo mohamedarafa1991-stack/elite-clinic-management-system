@@ -1091,3 +1091,23 @@ select {
     flex-direction: column;
   }
 }
+
+.signed-export-controls {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #93c5fd;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+.export-result {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #dbeafe;
+}
+.export-result small {
+  overflow-wrap: anywhere;
+  color: #1e3a8a;
+}

@@ -806,3 +806,11 @@ export { MedicalHistoryService } from "./medical-history-service.js";
 export type { MedicalHistoryServiceOptions } from "./medical-history-service.js";
 export { EncounterService } from "./encounter-service.js";
 export type { EncounterServiceOptions } from "./encounter-service.js";
+
+export {
+  PatientExportService,
+  exportSigningData,
+  hashExportPayload,
+  verifyExportPackage,
+  type ExportSignaturePort,
+} from "./patient-export-service.js";

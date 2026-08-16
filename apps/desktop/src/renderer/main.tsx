@@ -32,6 +32,8 @@ import type {
   EncounterAmendment,
   EncounterAmendmentInput,
   EffectiveEncounter,
+  ExportResult,
+  ExportVerificationResult,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -2010,6 +2012,8 @@ function ClinicalWorkflowWorkspace({
   canSignClinical,
   canApproveClinical,
   canRecordDiagnosis,
+  canExport,
+  canSensitiveExport,
 }: {
   token: string;
   canManage: boolean;
@@ -2017,6 +2021,8 @@ function ClinicalWorkflowWorkspace({
   canSignClinical: boolean;
   canApproveClinical: boolean;
   canRecordDiagnosis: boolean;
+  canExport: boolean;
+  canSensitiveExport: boolean;
 }): ReactElement {
   const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
@@ -2044,6 +2050,14 @@ function ClinicalWorkflowWorkspace({
     readonly ProjectionSnapshot[]
   >([]);
   const [snapshotExportReason, setSnapshotExportReason] = useState("");
+  const [exportFormat, setExportFormat] = useState<"pdf" | "fhir">("pdf");
+  const [exportRedactionPolicy, setExportRedactionPolicy] = useState<
+    "minimal" | "clinical" | "full"
+  >("clinical");
+  const [exportReason, setExportReason] = useState("");
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportVerification, setExportVerification] =
+    useState<ExportVerificationResult | null>(null);
   const [amendmentForm, setAmendmentForm] = useState<AmendmentFormState | null>(
     null,
   );
@@ -2310,6 +2324,53 @@ function ClinicalWorkflowWorkspace({
         reason instanceof Error
           ? reason.message
           : "Unable to create projection snapshot",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const exportPatientRecord = async (): Promise<void> => {
+    if (!canExport) {
+      setError("Your role is not authorized to export patient records");
+      return;
+    }
+    const latestSnapshot = projectionSnapshots[0];
+    if (!latestSnapshot) {
+      setError("Create an immutable projection snapshot before exporting");
+      return;
+    }
+    if (exportReason.trim().length < 3) {
+      setError("Enter an export reason before creating a signed export");
+      return;
+    }
+    if (exportRedactionPolicy === "full" && !canSensitiveExport) {
+      setError("Full export requires the sensitive-export permission");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    setExportVerification(null);
+    try {
+      const created = await window.elite.export.createExport(token, {
+        snapshotId: latestSnapshot.id,
+        format: exportFormat,
+        redactionPolicy: exportRedactionPolicy,
+        exportReason,
+      });
+      setExportResult(created);
+      setExportReason("");
+      setExportVerification(
+        await window.elite.export.verifyExport({
+          manifestJson: JSON.stringify(created.package.manifest),
+          payloadBase64: created.package.payloadBase64,
+        }),
+      );
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create signed export",
       );
     } finally {
       setIsBusy(false);
@@ -3655,6 +3716,88 @@ function ClinicalWorkflowWorkspace({
                   ))}
                 </div>
               ) : null}
+              {canExport && projectionSnapshots.length > 0 ? (
+                <div className="signed-export-controls">
+                  <div className="inline-fields">
+                    <label>
+                      Export format
+                      <select
+                        value={exportFormat}
+                        onChange={(event) =>
+                          setExportFormat(event.target.value as "pdf" | "fhir")
+                        }
+                      >
+                        <option value="pdf">Signed PDF</option>
+                        <option value="fhir">FHIR JSON Bundle</option>
+                      </select>
+                    </label>
+                    <label>
+                      Redaction policy
+                      <select
+                        value={exportRedactionPolicy}
+                        onChange={(event) =>
+                          setExportRedactionPolicy(
+                            event.target.value as
+                              "minimal" | "clinical" | "full",
+                          )
+                        }
+                      >
+                        <option value="minimal">
+                          Minimal — ID and clinical note
+                        </option>
+                        <option value="clinical">
+                          Clinical — no phone or national ID
+                        </option>
+                        <option value="full" disabled={!canSensitiveExport}>
+                          Full — sensitive identity fields
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Signed export reason
+                    <input
+                      value={exportReason}
+                      onChange={(event) => setExportReason(event.target.value)}
+                      placeholder="Required for the export audit trail"
+                    />
+                  </label>
+                  <button
+                    className="button primary"
+                    type="button"
+                    disabled={isBusy || exportReason.trim().length < 3}
+                    onClick={() => void exportPatientRecord()}
+                  >
+                    Create and save signed export
+                  </button>
+                  {exportResult ? (
+                    <div className="export-result">
+                      <small>
+                        Payload: {exportResult.savedFiles.payloadPath}
+                      </small>
+                      <small>
+                        Manifest: {exportResult.savedFiles.manifestPath}
+                      </small>
+                      <small>
+                        Signature: {exportResult.savedFiles.signaturePath}
+                      </small>
+                      {exportVerification ? (
+                        <strong
+                          className={
+                            exportVerification.verified
+                              ? "status ok"
+                              : "status error"
+                          }
+                        >
+                          {exportVerification.verified
+                            ? "Verified: payload hash, signature, and snapshot hash reference are valid."
+                            : exportVerification.reason}
+                        </strong>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {amendments.length === 0 ? (
                 <p className="muted">
                   No amendment requests for this signed note.
@@ -4523,6 +4666,8 @@ function AuthenticatedView({
             session.role === "doctor" &&
             session.capabilities.includes("clinical.write")
           }
+          canExport={session.capabilities.includes("export.manage")}
+          canSensitiveExport={session.capabilities.includes("export.sensitive")}
         />
       ) : null}
       {session.role === "admin" &&

@@ -16,7 +16,9 @@
     "@elite/auth": "workspace:*",
     "@elite/contracts": "workspace:*",
     "@elite/database": "workspace:*",
+    "@types/pdfkit": "^0.17.6",
     "electron": "^43.4.0",
+    "pdfkit": "^0.19.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
