@@ -23,6 +23,8 @@ import type {
   AppointmentCreateInput,
   Department,
   DoctorDirectoryEntry,
+  MedicalHistoryEntry,
+  MedicalHistoryInput,
   Service,
   Specialty,
   Schedule,
@@ -47,6 +49,17 @@ interface BootstrapFormState {
   backupDisplayName: string;
   hubDeviceName: string;
 }
+
+interface MedicalHistoryFormState extends MedicalHistoryInput {}
+
+const emptyMedicalHistoryForm: MedicalHistoryFormState = {
+  category: "condition",
+  title: "",
+  details: "",
+  onsetDate: "",
+  status: "active",
+  source: "clinician-recorded",
+};
 
 interface RelatedPersonFormState {
   displayNameEn: string;
@@ -590,6 +603,15 @@ function PatientWorkspace({
   const [relatedLinks, setRelatedLinks] = useState<
     readonly PatientRelatedPersonLinkSummary[]
   >([]);
+  const [medicalHistory, setMedicalHistory] = useState<
+    readonly MedicalHistoryEntry[]
+  >([]);
+  const [medicalHistoryForm, setMedicalHistoryForm] =
+    useState<MedicalHistoryFormState | null>(null);
+  const [editingMedicalHistory, setEditingMedicalHistory] =
+    useState<MedicalHistoryEntry | null>(null);
+  const [medicalHistoryArchiveReason, setMedicalHistoryArchiveReason] =
+    useState("");
   const [relatedPersonForm, setRelatedPersonForm] =
     useState<RelatedPersonFormState | null>(null);
   const [editingRelatedLink, setEditingRelatedLink] =
@@ -664,6 +686,10 @@ function PatientWorkspace({
       setNationalId("");
       setRegistrationMode("quick");
       setRelatedLinks([]);
+      setMedicalHistory([]);
+      setMedicalHistoryForm(null);
+      setEditingMedicalHistory(null);
+      setMedicalHistoryArchiveReason("");
       setRelatedPersonForm(null);
       setEditingRelatedLink(null);
       setDuplicates([]);
@@ -721,19 +747,127 @@ function PatientWorkspace({
     setError(null);
     setRelatedPersonForm(null);
     setEditingRelatedLink(null);
+    setMedicalHistoryForm(null);
+    setEditingMedicalHistory(null);
+    setMedicalHistoryArchiveReason("");
     try {
       setRelatedLinks(
         await window.elite.relatedPersons.listLinks(token, patient.patientId),
       );
+      setMedicalHistory(
+        session.capabilities.includes("clinical.read")
+          ? await window.elite.medicalHistory.list(token, patient.patientId)
+          : [],
+      );
     } catch (reason: unknown) {
       setRelatedLinks([]);
+      setMedicalHistory([]);
       setRelatedPersonForm(null);
       setEditingRelatedLink(null);
+      setMedicalHistoryForm(null);
+      setEditingMedicalHistory(null);
       setError(
         reason instanceof Error
           ? reason.message
-          : "Unable to load related persons",
+          : "Unable to load patient history",
       );
+    }
+  };
+
+  const openNewMedicalHistory = (): void => {
+    if (!selectedPatient) return;
+    setEditingMedicalHistory(null);
+    setMedicalHistoryForm({ ...emptyMedicalHistoryForm });
+    setError(null);
+  };
+
+  const openEditMedicalHistory = (entry: MedicalHistoryEntry): void => {
+    setEditingMedicalHistory(entry);
+    setMedicalHistoryForm({
+      category: entry.category,
+      title: entry.title,
+      ...(entry.details ? { details: entry.details } : { details: "" }),
+      ...(entry.onsetDate ? { onsetDate: entry.onsetDate } : { onsetDate: "" }),
+      status: entry.status,
+      source: entry.source,
+    });
+    setError(null);
+  };
+
+  const saveMedicalHistory = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedPatient || !medicalHistoryForm) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      if (editingMedicalHistory) {
+        await window.elite.medicalHistory.update(
+          token,
+          selectedPatient.patientId,
+          editingMedicalHistory.id,
+          medicalHistoryForm,
+          editingMedicalHistory.version,
+        );
+      } else {
+        await window.elite.medicalHistory.create(
+          token,
+          selectedPatient.patientId,
+          medicalHistoryForm,
+        );
+      }
+      setMedicalHistory(
+        await window.elite.medicalHistory.list(
+          token,
+          selectedPatient.patientId,
+        ),
+      );
+      setMedicalHistoryForm(null);
+      setEditingMedicalHistory(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save medical history",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const archiveMedicalHistory = async (
+    entry: MedicalHistoryEntry,
+  ): Promise<void> => {
+    if (!selectedPatient || medicalHistoryArchiveReason.trim().length < 3) {
+      setError("Enter an audit reason before inactivating history");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.medicalHistory.archive(
+        token,
+        selectedPatient.patientId,
+        entry.id,
+        entry.version,
+        medicalHistoryArchiveReason,
+      );
+      setMedicalHistory(
+        await window.elite.medicalHistory.list(
+          token,
+          selectedPatient.patientId,
+        ),
+      );
+      setMedicalHistoryArchiveReason("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to inactivate medical history",
+      );
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -1016,6 +1150,10 @@ function PatientWorkspace({
               onClick={() => {
                 setSelectedPatient(null);
                 setRelatedLinks([]);
+                setMedicalHistory([]);
+                setMedicalHistoryForm(null);
+                setEditingMedicalHistory(null);
+                setMedicalHistoryArchiveReason("");
                 setRelatedPersonForm(null);
                 setEditingRelatedLink(null);
                 setNameEn("");
@@ -1233,6 +1371,237 @@ function PatientWorkspace({
               </dd>
             </div>
           </dl>
+          {session.capabilities.includes("clinical.read") ? (
+            <section
+              className="medical-history-section"
+              aria-labelledby="medical-history-title"
+            >
+              <div className="related-person-heading">
+                <div>
+                  <h4 id="medical-history-title">Medical history</h4>
+                  <p className="form-help">
+                    Structured clinical history is versioned and never silently
+                    deleted.
+                  </p>
+                </div>
+                {session.capabilities.includes("clinical.write") ? (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={openNewMedicalHistory}
+                  >
+                    Add history entry
+                  </button>
+                ) : null}
+              </div>
+              {session.capabilities.includes("clinical.write") ? (
+                <label className="history-audit-reason">
+                  Reason for inactivation
+                  <input
+                    placeholder="Required when inactivating an entry"
+                    value={medicalHistoryArchiveReason}
+                    onChange={(event) =>
+                      setMedicalHistoryArchiveReason(event.target.value)
+                    }
+                  />
+                </label>
+              ) : null}
+              {medicalHistory.length === 0 ? (
+                <p className="muted">No medical-history entries recorded.</p>
+              ) : (
+                <div className="medical-history-list">
+                  {medicalHistory.map((entry) => (
+                    <article className="medical-history-row" key={entry.id}>
+                      <div>
+                        <strong>{entry.title}</strong>
+                        <span>
+                          {entry.category} · {entry.status} · {entry.source}
+                          {entry.onsetDate ? ` · onset ${entry.onsetDate}` : ""}
+                        </span>
+                        {entry.details ? <small>{entry.details}</small> : null}
+                      </div>
+                      {session.capabilities.includes("clinical.write") ? (
+                        <div className="button-row">
+                          <button
+                            className="button secondary"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => openEditMedicalHistory(entry)}
+                          >
+                            Edit
+                          </button>
+                          {entry.status !== "inactive" ? (
+                            <button
+                              className="button danger"
+                              type="button"
+                              disabled={
+                                isBusy ||
+                                medicalHistoryArchiveReason.trim().length < 3
+                              }
+                              onClick={() => void archiveMedicalHistory(entry)}
+                            >
+                              Inactivate
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+              {medicalHistoryForm ? (
+                <form
+                  className="medical-history-editor"
+                  onSubmit={(event) => void saveMedicalHistory(event)}
+                >
+                  <div className="form-heading-row">
+                    <h4>
+                      {editingMedicalHistory
+                        ? "Edit history entry"
+                        : "Add history entry"}
+                    </h4>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => {
+                        setMedicalHistoryForm(null);
+                        setEditingMedicalHistory(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="form-grid">
+                    <label>
+                      Category
+                      <select
+                        required
+                        value={medicalHistoryForm.category}
+                        onChange={(event) =>
+                          setMedicalHistoryForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  category: event.target
+                                    .value as MedicalHistoryInput["category"],
+                                }
+                              : current,
+                          )
+                        }
+                      >
+                        <option value="condition">Condition</option>
+                        <option value="allergy">Allergy</option>
+                        <option value="medication">Medication</option>
+                        <option value="surgery">Surgery</option>
+                        <option value="family-history">Family history</option>
+                        <option value="social-history">Social history</option>
+                        <option value="immunization">Immunization</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label>
+                      Title
+                      <input
+                        required
+                        value={medicalHistoryForm.title}
+                        onChange={(event) =>
+                          setMedicalHistoryForm((current) =>
+                            current
+                              ? { ...current, title: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Onset date
+                      <input
+                        type="date"
+                        value={medicalHistoryForm.onsetDate ?? ""}
+                        onChange={(event) =>
+                          setMedicalHistoryForm((current) =>
+                            current
+                              ? { ...current, onsetDate: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Status
+                      <select
+                        value={medicalHistoryForm.status}
+                        onChange={(event) =>
+                          setMedicalHistoryForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  status: event.target
+                                    .value as MedicalHistoryInput["status"],
+                                }
+                              : current,
+                          )
+                        }
+                      >
+                        <option value="active">Active</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </label>
+                    <label>
+                      Source
+                      <select
+                        value={medicalHistoryForm.source}
+                        onChange={(event) =>
+                          setMedicalHistoryForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  source: event.target
+                                    .value as MedicalHistoryInput["source"],
+                                }
+                              : current,
+                          )
+                        }
+                      >
+                        <option value="clinician-recorded">
+                          Clinician recorded
+                        </option>
+                        <option value="patient-reported">
+                          Patient reported
+                        </option>
+                        <option value="external-record">External record</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Details
+                    <textarea
+                      rows={4}
+                      value={medicalHistoryForm.details ?? ""}
+                      onChange={(event) =>
+                        setMedicalHistoryForm((current) =>
+                          current
+                            ? { ...current, details: event.target.value }
+                            : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <button
+                    className="button primary"
+                    type="submit"
+                    disabled={isBusy}
+                  >
+                    {editingMedicalHistory
+                      ? "Save history entry"
+                      : "Create history entry"}
+                  </button>
+                </form>
+              ) : null}
+            </section>
+          ) : null}
           <div className="related-person-heading">
             <h4>Related persons and guardians</h4>
             {session.capabilities.includes("patient.write") ? (

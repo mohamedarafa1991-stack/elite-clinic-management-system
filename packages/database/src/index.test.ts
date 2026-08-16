@@ -25,7 +25,7 @@ describe("Elite database foundation", () => {
         .all()
         .map((row) => (row as { name: string }).name);
 
-      expect(migrationVersions()).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(migrationVersions()).toEqual([1, 2, 3, 4, 5, 6, 7]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
       expect(tables).toContain("appointments");
@@ -41,6 +41,7 @@ describe("Elite database foundation", () => {
       expect(tables).toContain("doctor_schedules");
       expect(tables).toContain("schedule_exceptions");
       expect(tables).toContain("appointment_history");
+      expect(tables).toContain("patient_medical_history");
       const relatedPersonColumns = database.raw
         .prepare("PRAGMA table_info(related_persons)")
         .all() as Array<{ name: string }>;

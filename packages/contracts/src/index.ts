@@ -230,6 +230,55 @@ export const patientSchema = z.object({
 });
 export type Patient = z.infer<typeof patientSchema>;
 
+export const medicalHistoryCategorySchema = z.enum([
+  "condition",
+  "allergy",
+  "medication",
+  "surgery",
+  "family-history",
+  "social-history",
+  "immunization",
+  "other",
+]);
+export type MedicalHistoryCategory = z.infer<
+  typeof medicalHistoryCategorySchema
+>;
+
+export const medicalHistoryStatusSchema = z.enum([
+  "active",
+  "resolved",
+  "inactive",
+]);
+export type MedicalHistoryStatus = z.infer<typeof medicalHistoryStatusSchema>;
+
+export const medicalHistorySourceSchema = z.enum([
+  "patient-reported",
+  "clinician-recorded",
+  "external-record",
+]);
+export type MedicalHistorySource = z.infer<typeof medicalHistorySourceSchema>;
+
+export const medicalHistoryInputSchema = z.object({
+  category: medicalHistoryCategorySchema,
+  title: z.string().trim().min(1).max(160),
+  details: z.string().trim().max(4000).optional(),
+  onsetDate: z.string().date().optional(),
+  status: medicalHistoryStatusSchema.default("active"),
+  source: medicalHistorySourceSchema.default("clinician-recorded"),
+});
+export type MedicalHistoryInput = z.infer<typeof medicalHistoryInputSchema>;
+
+export const medicalHistorySchema = medicalHistoryInputSchema.extend({
+  id: opaqueIdSchema,
+  patientId: patientIdSchema,
+  recordedAt: isoDateTimeSchema,
+  recordedByUserId: opaqueIdSchema,
+  updatedAt: isoDateTimeSchema,
+  updatedByUserId: opaqueIdSchema,
+  version: z.number().int().positive(),
+});
+export type MedicalHistoryEntry = z.infer<typeof medicalHistorySchema>;
+
 export const patientRelationLinkInputSchema = z.object({
   relatedPersonId: opaqueIdSchema,
   relationshipRole: z.string().trim().min(1).max(80),

@@ -878,3 +878,56 @@ select {
     flex: 1;
   }
 }
+
+.medical-history-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #cbd5e1;
+}
+.medical-history-section .form-help {
+  margin: 4px 0 0;
+}
+.history-audit-reason {
+  max-width: 520px;
+}
+.medical-history-list {
+  display: grid;
+  gap: 8px;
+}
+.medical-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+.medical-history-row strong,
+.medical-history-row span,
+.medical-history-row small {
+  display: block;
+}
+.medical-history-row span,
+.medical-history-row small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+.medical-history-editor {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #93c5fd;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+@media (max-width: 720px) {
+  .medical-history-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

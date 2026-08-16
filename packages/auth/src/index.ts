@@ -802,3 +802,5 @@ export type {
 } from "./patient-service.js";
 
 export { ClinicalWorkflowService } from "./clinical-service.js";
+export { MedicalHistoryService } from "./medical-history-service.js";
+export type { MedicalHistoryServiceOptions } from "./medical-history-service.js";

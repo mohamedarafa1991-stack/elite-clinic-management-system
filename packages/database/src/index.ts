@@ -453,6 +453,29 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment ON appointment_history(appointment_id, occurred_at);
     `,
   },
+  {
+    version: 7,
+    name: "patient-medical-history",
+    sql: `
+      CREATE TABLE IF NOT EXISTS patient_medical_history (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        category TEXT NOT NULL CHECK (category IN ('condition', 'allergy', 'medication', 'surgery', 'family-history', 'social-history', 'immunization', 'other')),
+        title TEXT NOT NULL,
+        details TEXT,
+        onset_date TEXT,
+        status TEXT NOT NULL CHECK (status IN ('active', 'resolved', 'inactive')) DEFAULT 'active',
+        source TEXT NOT NULL CHECK (source IN ('patient-reported', 'clinician-recorded', 'external-record')) DEFAULT 'clinician-recorded',
+        recorded_at TEXT NOT NULL,
+        recorded_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_patient_medical_history_patient ON patient_medical_history(patient_id, status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_patient_medical_history_category ON patient_medical_history(patient_id, category, status);
+    `,
+  },
 ];
 
 function now(): string {

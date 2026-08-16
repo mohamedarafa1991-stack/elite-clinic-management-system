@@ -13,6 +13,8 @@ import type {
   Appointment,
   AppointmentCreateInput,
   DoctorDirectoryEntry,
+  MedicalHistoryEntry,
+  MedicalHistoryInput,
   AppointmentStatusUpdate,
   Schedule,
   ScheduleInput,
@@ -81,6 +83,49 @@ export interface EnrollmentRequestSummary {
 }
 
 const eliteApi = {
+  medicalHistory: {
+    list: (token: string, patientId: string) =>
+      ipcRenderer.invoke("medical-history:list", token, patientId) as Promise<
+        readonly MedicalHistoryEntry[]
+      >,
+    create: (token: string, patientId: string, input: MedicalHistoryInput) =>
+      ipcRenderer.invoke(
+        "medical-history:create",
+        token,
+        patientId,
+        input,
+      ) as Promise<MedicalHistoryEntry>,
+    update: (
+      token: string,
+      patientId: string,
+      entryId: string,
+      input: MedicalHistoryInput,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "medical-history:update",
+        token,
+        patientId,
+        entryId,
+        input,
+        expectedVersion,
+      ) as Promise<MedicalHistoryEntry>,
+    archive: (
+      token: string,
+      patientId: string,
+      entryId: string,
+      expectedVersion: number,
+      reason: string,
+    ) =>
+      ipcRenderer.invoke(
+        "medical-history:archive",
+        token,
+        patientId,
+        entryId,
+        expectedVersion,
+        reason,
+      ) as Promise<void>,
+  },
   app: {
     getSecurityStatus: (): Promise<EliteSecurityStatus> =>
       ipcRenderer.invoke("app:security-status") as Promise<EliteSecurityStatus>,

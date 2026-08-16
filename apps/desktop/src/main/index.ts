@@ -1,6 +1,7 @@
 import {
   AuthService,
   ClinicalWorkflowService,
+  MedicalHistoryService,
   PatientIdentityService,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
@@ -15,6 +16,7 @@ let mainWindow: BrowserWindow | undefined;
 let database: EliteDatabase | undefined;
 let authService: AuthService | undefined;
 let patientService: PatientIdentityService | undefined;
+let medicalHistoryService: MedicalHistoryService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let serviceError: string | undefined;
 
@@ -39,6 +41,7 @@ function initializeServices(): void {
     database = openDatabase(options);
     authService = new AuthService(database);
     patientService = new PatientIdentityService(database);
+    medicalHistoryService = new MedicalHistoryService(database);
     clinicalService = new ClinicalWorkflowService(database);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
@@ -234,6 +237,56 @@ function registerIpc(): void {
   ipcMain.handle("patient:get", (_event, token: string, patientId: string) => {
     return requirePatientService().getPatient(serviceContext(token), patientId);
   });
+  ipcMain.handle(
+    "medical-history:list",
+    (_event, token: string, patientId: string) =>
+      requireMedicalHistoryService().list(serviceContext(token), patientId),
+  );
+  ipcMain.handle(
+    "medical-history:create",
+    (_event, token: string, patientId: string, input: unknown) =>
+      requireMedicalHistoryService().create(
+        serviceContext(token),
+        patientId,
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "medical-history:update",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      entryId: string,
+      input: unknown,
+      expectedVersion: number,
+    ) =>
+      requireMedicalHistoryService().update(
+        serviceContext(token),
+        patientId,
+        entryId,
+        input as never,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
+    "medical-history:archive",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      entryId: string,
+      expectedVersion: number,
+      reason: string,
+    ) =>
+      requireMedicalHistoryService().archive(
+        serviceContext(token),
+        patientId,
+        entryId,
+        expectedVersion,
+        reason,
+      ),
+  );
   ipcMain.handle(
     "patient:duplicates",
     (_event, token: string, input: unknown, excludePatientId?: string) => {
@@ -531,6 +584,11 @@ function registerIpc(): void {
       ),
   );
 }
+function requireMedicalHistoryService(): MedicalHistoryService {
+  if (!medicalHistoryService)
+    throw new Error("Medical history service unavailable");
+  return medicalHistoryService;
+}
 function requireClinicalService(): ClinicalWorkflowService {
   if (!clinicalService)
     throw new Error("Clinical workflow service unavailable");
@@ -565,6 +623,7 @@ app.on("before-quit", () => {
   mainWindow = undefined;
   database?.close();
   database = undefined;
-  authService = undefined;
   patientService = undefined;
+  medicalHistoryService = undefined;
+  clinicalService = undefined;
 });
