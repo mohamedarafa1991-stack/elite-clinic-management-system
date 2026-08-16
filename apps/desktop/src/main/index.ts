@@ -1,4 +1,8 @@
-import { AuthService, PatientIdentityService } from "@elite/auth";
+import {
+  AuthService,
+  ClinicalWorkflowService,
+  PatientIdentityService,
+} from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
 import { dirname, join } from "node:path";
@@ -11,6 +15,7 @@ let mainWindow: BrowserWindow | undefined;
 let database: EliteDatabase | undefined;
 let authService: AuthService | undefined;
 let patientService: PatientIdentityService | undefined;
+let clinicalService: ClinicalWorkflowService | undefined;
 let serviceError: string | undefined;
 
 function initializeServices(): void {
@@ -34,6 +39,7 @@ function initializeServices(): void {
     database = openDatabase(options);
     authService = new AuthService(database);
     patientService = new PatientIdentityService(database);
+    clinicalService = new ClinicalWorkflowService(database);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -421,8 +427,87 @@ function registerIpc(): void {
       );
     },
   );
+  ipcMain.handle("clinical:specialties", (_event, token: string) =>
+    requireClinicalService().listSpecialties(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "clinical:specialty-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createSpecialty(serviceContext(token), input),
+  );
+  ipcMain.handle(
+    "clinical:specialty-archive",
+    (_event, token: string, id: string, reason: string) =>
+      requireClinicalService().archiveSpecialty(
+        serviceContext(token),
+        id,
+        reason,
+      ),
+  );
+  ipcMain.handle("clinical:departments", (_event, token: string) =>
+    requireClinicalService().listDepartments(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "clinical:department-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createDepartment(serviceContext(token), input),
+  );
+  ipcMain.handle("clinical:services", (_event, token: string) =>
+    requireClinicalService().listServices(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "clinical:service-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createService(serviceContext(token), input),
+  );
+  ipcMain.handle(
+    "clinical:schedule-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createSchedule(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:exception-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createScheduleException(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:appointments",
+    (_event, token: string, from?: string, to?: string) =>
+      requireClinicalService().listAppointments(
+        serviceContext(token),
+        from,
+        to,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:appointment-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createAppointment(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:appointment-status",
+    (_event, token: string, id: string, input: unknown) =>
+      requireClinicalService().updateAppointmentStatus(
+        serviceContext(token),
+        id,
+        input as never,
+      ),
+  );
 }
-
+function requireClinicalService(): ClinicalWorkflowService {
+  if (!clinicalService)
+    throw new Error("Clinical workflow service unavailable");
+  return clinicalService;
+}
 function serviceContext(token: string) {
   return requireAuthService().getSession(token);
 }

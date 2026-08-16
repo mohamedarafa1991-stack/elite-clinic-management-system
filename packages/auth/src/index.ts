@@ -800,3 +800,5 @@ export type {
   RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "./patient-service.js";
+
+export { ClinicalWorkflowService } from "./clinical-service.js";

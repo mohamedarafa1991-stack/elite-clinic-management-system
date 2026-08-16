@@ -7,6 +7,14 @@ import type {
   PatientMergeRequest,
   PatientRegistrationInput,
   PatientUpdateInput,
+  Specialty,
+  Department,
+  Service,
+  Appointment,
+  AppointmentCreateInput,
+  AppointmentStatusUpdate,
+  ScheduleInput,
+  ScheduleExceptionInput,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -166,6 +174,78 @@ const eliteApi = {
         token,
         caseId,
       ) as Promise<PatientMergeCase>,
+  },
+  clinical: {
+    listSpecialties: (token: string) =>
+      ipcRenderer.invoke("clinical:specialties", token) as Promise<
+        readonly Specialty[]
+      >,
+    createSpecialty: (token: string, input: unknown) =>
+      ipcRenderer.invoke(
+        "clinical:specialty-create",
+        token,
+        input,
+      ) as Promise<Specialty>,
+    archiveSpecialty: (token: string, id: string, reason: string) =>
+      ipcRenderer.invoke(
+        "clinical:specialty-archive",
+        token,
+        id,
+        reason,
+      ) as Promise<void>,
+    listDepartments: (token: string) =>
+      ipcRenderer.invoke("clinical:departments", token) as Promise<
+        readonly Department[]
+      >,
+    createDepartment: (token: string, input: unknown) =>
+      ipcRenderer.invoke(
+        "clinical:department-create",
+        token,
+        input,
+      ) as Promise<Department>,
+    listServices: (token: string) =>
+      ipcRenderer.invoke("clinical:services", token) as Promise<
+        readonly Service[]
+      >,
+    createService: (token: string, input: unknown) =>
+      ipcRenderer.invoke(
+        "clinical:service-create",
+        token,
+        input,
+      ) as Promise<Service>,
+    createSchedule: (token: string, input: ScheduleInput) =>
+      ipcRenderer.invoke(
+        "clinical:schedule-create",
+        token,
+        input,
+      ) as Promise<void>,
+    createException: (token: string, input: ScheduleExceptionInput) =>
+      ipcRenderer.invoke(
+        "clinical:exception-create",
+        token,
+        input,
+      ) as Promise<void>,
+    listAppointments: (token: string, from?: string, to?: string) =>
+      ipcRenderer.invoke("clinical:appointments", token, from, to) as Promise<
+        readonly Appointment[]
+      >,
+    createAppointment: (token: string, input: AppointmentCreateInput) =>
+      ipcRenderer.invoke(
+        "clinical:appointment-create",
+        token,
+        input,
+      ) as Promise<Appointment>,
+    updateAppointmentStatus: (
+      token: string,
+      id: string,
+      input: AppointmentStatusUpdate,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:appointment-status",
+        token,
+        id,
+        input,
+      ) as Promise<Appointment>,
   },
   relatedPersons: {
     create: (token: string, input: RelatedPersonInput) =>

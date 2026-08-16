@@ -332,6 +332,73 @@ export const patientArchiveInputSchema = z.object({
 });
 export type PatientArchiveInput = z.infer<typeof patientArchiveInputSchema>;
 
+export const clinicalLifecycleSchema = z.enum(["active", "archived"]);
+export type ClinicalLifecycle = z.infer<typeof clinicalLifecycleSchema>;
+
+export const specialtySchema = z.object({
+  id: opaqueIdSchema,
+  code: z.string().trim().min(1).max(40),
+  nameEn: z.string().trim().min(1).max(160),
+  nameAr: z.string().trim().max(160).optional(),
+  status: clinicalLifecycleSchema,
+  sortOrder: z.number().int(),
+  version: z.number().int().positive(),
+});
+export type Specialty = z.infer<typeof specialtySchema>;
+
+export const departmentSchema = z.object({
+  id: opaqueIdSchema,
+  specialtyId: opaqueIdSchema,
+  code: z.string().trim().min(1).max(40),
+  nameEn: z.string().trim().min(1).max(160),
+  nameAr: z.string().trim().max(160).optional(),
+  status: clinicalLifecycleSchema,
+  version: z.number().int().positive(),
+});
+export type Department = z.infer<typeof departmentSchema>;
+
+export const serviceSchema = z.object({
+  id: opaqueIdSchema,
+  departmentId: opaqueIdSchema,
+  code: z.string().trim().min(1).max(40),
+  nameEn: z.string().trim().min(1).max(160),
+  nameAr: z.string().trim().max(160).optional(),
+  durationMinutes: z.number().int().min(5).max(480),
+  priceEgp: z.number().int().nonnegative(),
+  status: clinicalLifecycleSchema,
+  version: z.number().int().positive(),
+});
+export type Service = z.infer<typeof serviceSchema>;
+
+export const scheduleInputSchema = z.object({
+  doctorId: opaqueIdSchema,
+  departmentId: opaqueIdSchema,
+  dayOfWeek: z.number().int().min(0).max(6),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  slotDurationMinutes: z.number().int().min(5).max(480).default(15),
+});
+export type ScheduleInput = z.infer<typeof scheduleInputSchema>;
+
+export const scheduleExceptionInputSchema = z.object({
+  doctorId: opaqueIdSchema.optional(),
+  departmentId: opaqueIdSchema.optional(),
+  exceptionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  kind: z.enum(["closed", "open"]),
+  startTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
+  endTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
+  reason: z.string().trim().min(3).max(500),
+});
+export type ScheduleExceptionInput = z.infer<
+  typeof scheduleExceptionInputSchema
+>;
+
 export const appointmentStatusSchema = z.enum([
   "scheduled",
   "arrived",
@@ -348,8 +415,10 @@ export const appointmentSchema = z.object({
   patientId: patientIdSchema,
   departmentId: opaqueIdSchema,
   doctorId: opaqueIdSchema.optional(),
+  serviceId: opaqueIdSchema.optional(),
   scheduledStart: isoDateTimeSchema,
   scheduledEnd: isoDateTimeSchema,
+  durationMinutes: z.number().int().min(5).max(480).default(15),
   status: appointmentStatusSchema,
   visitType: z.string().trim().min(1).max(80),
   isWalkIn: z.boolean(),
@@ -361,6 +430,30 @@ export const appointmentSchema = z.object({
   version: z.number().int().positive(),
 });
 export type Appointment = z.infer<typeof appointmentSchema>;
+
+export const appointmentCreateInputSchema = z.object({
+  patientId: patientIdSchema,
+  departmentId: opaqueIdSchema,
+  doctorId: opaqueIdSchema.optional(),
+  serviceId: opaqueIdSchema.optional(),
+  scheduledStart: isoDateTimeSchema,
+  scheduledEnd: isoDateTimeSchema.optional(),
+  durationMinutes: z.number().int().min(5).max(480).optional(),
+  visitType: z.string().trim().min(1).max(80),
+  isWalkIn: z.boolean().default(false),
+  notes: z.string().max(4000).optional(),
+});
+export type AppointmentCreateInput = z.infer<
+  typeof appointmentCreateInputSchema
+>;
+
+export const appointmentStatusUpdateSchema = z.object({
+  status: appointmentStatusSchema,
+  reason: z.string().trim().min(3).max(500).optional(),
+});
+export type AppointmentStatusUpdate = z.infer<
+  typeof appointmentStatusUpdateSchema
+>;
 
 export const syncOperationSchema = z.enum([
   "create",

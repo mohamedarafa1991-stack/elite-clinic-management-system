@@ -602,3 +602,59 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.clinical-workflow-card {
+  margin-top: 20px;
+}
+.appointment-form,
+.clinical-config-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.appointment-form h3,
+.clinical-config-form h3,
+.appointment-list h3 {
+  margin: 0;
+  color: #1e3a8a;
+}
+.clinical-config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.appointment-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.appointment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+.appointment-row strong,
+.appointment-row span,
+.appointment-row small {
+  display: block;
+}
+.appointment-row span,
+.appointment-row small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .clinical-config-grid {
+    grid-template-columns: 1fr;
+  }
+}

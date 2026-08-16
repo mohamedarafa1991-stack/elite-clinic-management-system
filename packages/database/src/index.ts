@@ -361,6 +361,98 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_related_persons_version ON related_persons(id, version);
     `,
   },
+  {
+    version: 6,
+    name: "clinical-workflow-foundation",
+    sql: `
+      CREATE TABLE IF NOT EXISTS specialties (
+        id TEXT PRIMARY KEY NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        name_en TEXT NOT NULL,
+        name_ar TEXT,
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived')) DEFAULT 'active',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS departments (
+        id TEXT PRIMARY KEY NOT NULL,
+        specialty_id TEXT NOT NULL REFERENCES specialties(id),
+        code TEXT NOT NULL UNIQUE,
+        name_en TEXT NOT NULL,
+        name_ar TEXT,
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived')) DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS services (
+        id TEXT PRIMARY KEY NOT NULL,
+        department_id TEXT NOT NULL REFERENCES departments(id),
+        code TEXT NOT NULL UNIQUE,
+        name_en TEXT NOT NULL,
+        name_ar TEXT,
+        duration_minutes INTEGER NOT NULL DEFAULT 15 CHECK (duration_minutes BETWEEN 5 AND 480),
+        price_egp INTEGER NOT NULL DEFAULT 0 CHECK (price_egp >= 0),
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived')) DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS doctor_schedules (
+        id TEXT PRIMARY KEY NOT NULL,
+        doctor_id TEXT NOT NULL REFERENCES users(id),
+        department_id TEXT NOT NULL REFERENCES departments(id),
+        day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        slot_duration_minutes INTEGER NOT NULL DEFAULT 15 CHECK (slot_duration_minutes BETWEEN 5 AND 480),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (doctor_id, department_id, day_of_week, start_time, end_time)
+      );
+      CREATE TABLE IF NOT EXISTS schedule_exceptions (
+        id TEXT PRIMARY KEY NOT NULL,
+        doctor_id TEXT REFERENCES users(id),
+        department_id TEXT REFERENCES departments(id),
+        exception_date TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('closed', 'open')),
+        start_time TEXT,
+        end_time TEXT,
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE TABLE IF NOT EXISTS appointment_history (
+        id TEXT PRIMARY KEY NOT NULL,
+        appointment_id TEXT NOT NULL REFERENCES appointments(id),
+        action TEXT NOT NULL,
+        previous_status TEXT,
+        new_status TEXT,
+        payload_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL REFERENCES users(id),
+        occurred_at TEXT NOT NULL
+      );
+      ALTER TABLE appointments ADD COLUMN service_id TEXT REFERENCES services(id);
+      ALTER TABLE appointments ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 15;
+      CREATE INDEX IF NOT EXISTS idx_departments_specialty ON departments(specialty_id, status);
+      CREATE INDEX IF NOT EXISTS idx_services_department ON services(department_id, status);
+      CREATE INDEX IF NOT EXISTS idx_schedules_doctor_day ON doctor_schedules(doctor_id, day_of_week);
+      CREATE INDEX IF NOT EXISTS idx_schedule_exceptions_date ON schedule_exceptions(exception_date);
+      CREATE INDEX IF NOT EXISTS idx_appointments_doctor_time ON appointments(doctor_id, scheduled_start, scheduled_end, status);
+      CREATE INDEX IF NOT EXISTS idx_appointment_history_appointment ON appointment_history(appointment_id, occurred_at);
+    `,
+  },
 ];
 
 function now(): string {

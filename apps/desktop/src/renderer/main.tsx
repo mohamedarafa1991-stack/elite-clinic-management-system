@@ -19,6 +19,11 @@ import type {
   PatientMergeFieldDecisions,
   PatientRegistrationInput,
   PatientUpdateInput,
+  Appointment,
+  AppointmentCreateInput,
+  Department,
+  Service,
+  Specialty,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -1496,6 +1501,400 @@ function PatientWorkspace({
   );
 }
 
+function ClinicalWorkflowWorkspace({
+  token,
+  canManage,
+}: {
+  token: string;
+  canManage: boolean;
+}): ReactElement {
+  const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
+  const [departments, setDepartments] = useState<readonly Department[]>([]);
+  const [services, setServices] = useState<readonly Service[]>([]);
+  const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [patientId, setPatientId] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [visitType, setVisitType] = useState("consultation");
+  const [scheduledStart, setScheduledStart] = useState("");
+  const [specialtyCode, setSpecialtyCode] = useState("");
+  const [specialtyName, setSpecialtyName] = useState("");
+  const [departmentCode, setDepartmentCode] = useState("");
+  const [departmentName, setDepartmentName] = useState("");
+  const [serviceCode, setServiceCode] = useState("");
+  const [serviceName, setServiceName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const refresh = async (): Promise<void> => {
+    try {
+      const [specialtyRows, departmentRows, serviceRows, appointmentRows] =
+        await Promise.all([
+          window.elite.clinical.listSpecialties(token),
+          window.elite.clinical.listDepartments(token),
+          window.elite.clinical.listServices(token),
+          window.elite.clinical.listAppointments(token),
+        ]);
+      setSpecialties(specialtyRows);
+      setDepartments(departmentRows);
+      setServices(serviceRows);
+      setAppointments(appointmentRows);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load clinical workflow data",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const createAppointment = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+    try {
+      const input: AppointmentCreateInput = {
+        patientId,
+        departmentId,
+        ...(serviceId ? { serviceId } : {}),
+        scheduledStart: new Date(scheduledStart).toISOString(),
+        visitType,
+        isWalkIn: false,
+      };
+      await window.elite.clinical.createAppointment(token, input);
+      setPatientId("");
+      setScheduledStart("");
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create appointment",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const updateStatus = async (
+    appointment: Appointment,
+    status: "arrived" | "in-consultation" | "completed" | "cancelled",
+  ): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.updateAppointmentStatus(
+        token,
+        appointment.id,
+        { status, reason: "Updated from clinical workflow workspace" },
+      );
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update appointment status",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const manage = async (action: () => Promise<unknown>): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await action();
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update clinical configuration",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section
+      className="card clinical-workflow-card"
+      aria-labelledby="clinical-workflow-title"
+    >
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Step 5</p>
+          <h2 id="clinical-workflow-title">Clinical workflow</h2>
+        </div>
+        <span className="status ok">Offline-ready</span>
+      </div>
+      <ErrorMessage message={error} />
+      <form
+        className="appointment-form"
+        onSubmit={(event) => void createAppointment(event)}
+      >
+        <h3>Reserve appointment</h3>
+        <div className="form-grid">
+          <label>
+            Patient ID
+            <input
+              required
+              placeholder="EL-00001"
+              value={patientId}
+              onChange={(event) => setPatientId(event.target.value)}
+            />
+          </label>
+          <label>
+            Department
+            <select
+              required
+              value={departmentId}
+              onChange={(event) => setDepartmentId(event.target.value)}
+            >
+              <option value="">Select department</option>
+              {departments
+                .filter((item) => item.status === "active")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nameEn}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Service
+            <select
+              value={serviceId}
+              onChange={(event) => setServiceId(event.target.value)}
+            >
+              <option value="">Default 15-minute slot</option>
+              {services
+                .filter((item) => item.status === "active")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nameEn} · {item.durationMinutes} min · EGP{" "}
+                    {item.priceEgp}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Visit type
+            <input
+              required
+              value={visitType}
+              onChange={(event) => setVisitType(event.target.value)}
+            />
+          </label>
+          <label>
+            Start time
+            <input
+              required
+              type="datetime-local"
+              value={scheduledStart}
+              onChange={(event) => setScheduledStart(event.target.value)}
+            />
+          </label>
+        </div>
+        <button className="button primary" type="submit" disabled={isBusy}>
+          Reserve appointment
+        </button>
+      </form>
+      {canManage ? (
+        <div className="clinical-config-grid">
+          <form
+            className="clinical-config-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void manage(() =>
+                window.elite.clinical.createSpecialty(token, {
+                  code: specialtyCode,
+                  nameEn: specialtyName,
+                }),
+              );
+            }}
+          >
+            <h3>Specialty</h3>
+            <input
+              required
+              placeholder="Code"
+              value={specialtyCode}
+              onChange={(event) => setSpecialtyCode(event.target.value)}
+            />
+            <input
+              required
+              placeholder="English name"
+              value={specialtyName}
+              onChange={(event) => setSpecialtyName(event.target.value)}
+            />
+            <button
+              className="button secondary"
+              type="submit"
+              disabled={isBusy}
+            >
+              Add specialty
+            </button>
+          </form>
+          <form
+            className="clinical-config-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void manage(() =>
+                window.elite.clinical.createDepartment(token, {
+                  specialtyId: specialties[0]?.id ?? "",
+                  code: departmentCode,
+                  nameEn: departmentName,
+                }),
+              );
+            }}
+          >
+            <h3>Department</h3>
+            <select
+              required
+              value={specialties[0]?.id ?? ""}
+              onChange={() => undefined}
+            >
+              {specialties
+                .filter((item) => item.status === "active")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nameEn}
+                  </option>
+                ))}
+            </select>
+            <input
+              required
+              placeholder="Code"
+              value={departmentCode}
+              onChange={(event) => setDepartmentCode(event.target.value)}
+            />
+            <input
+              required
+              placeholder="English name"
+              value={departmentName}
+              onChange={(event) => setDepartmentName(event.target.value)}
+            />
+            <button
+              className="button secondary"
+              type="submit"
+              disabled={isBusy}
+            >
+              Add department
+            </button>
+          </form>
+          <form
+            className="clinical-config-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void manage(() =>
+                window.elite.clinical.createService(token, {
+                  departmentId: departments[0]?.id ?? "",
+                  code: serviceCode,
+                  nameEn: serviceName,
+                  durationMinutes: 15,
+                  priceEgp: 0,
+                }),
+              );
+            }}
+          >
+            <h3>Service catalog</h3>
+            <select
+              required
+              value={departments[0]?.id ?? ""}
+              onChange={() => undefined}
+            >
+              {departments
+                .filter((item) => item.status === "active")
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nameEn}
+                  </option>
+                ))}
+            </select>
+            <input
+              required
+              placeholder="Code"
+              value={serviceCode}
+              onChange={(event) => setServiceCode(event.target.value)}
+            />
+            <input
+              required
+              placeholder="English name"
+              value={serviceName}
+              onChange={(event) => setServiceName(event.target.value)}
+            />
+            <button
+              className="button secondary"
+              type="submit"
+              disabled={isBusy}
+            >
+              Add service
+            </button>
+          </form>
+        </div>
+      ) : null}
+      <div className="appointment-list">
+        <h3>Appointments</h3>
+        {appointments.length === 0 ? (
+          <p className="muted">No appointments found.</p>
+        ) : (
+          appointments.map((appointment) => (
+            <article className="appointment-row" key={appointment.id}>
+              <div>
+                <strong>{appointment.patientId}</strong>
+                <span>
+                  {new Date(appointment.scheduledStart).toLocaleString()} ·{" "}
+                  {appointment.visitType}
+                </span>
+                <small>
+                  {appointment.status} · {appointment.durationMinutes} min
+                </small>
+              </div>
+              {appointment.status === "scheduled" ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void updateStatus(appointment, "arrived")}
+                >
+                  Check in
+                </button>
+              ) : appointment.status === "arrived" ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() =>
+                    void updateStatus(appointment, "in-consultation")
+                  }
+                >
+                  Start
+                </button>
+              ) : appointment.status === "in-consultation" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void updateStatus(appointment, "completed")}
+                >
+                  Complete
+                </button>
+              ) : null}
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 const MERGE_FIELDS: readonly PatientMergeField[] = [
   "nameEn",
   "nameAr",
@@ -1937,6 +2336,12 @@ function AuthenticatedView({
       ) : null}
       {session.capabilities.includes("patient.read") ? (
         <PatientWorkspace token={token} session={session} />
+      ) : null}
+      {session.capabilities.includes("appointment.read") ? (
+        <ClinicalWorkflowWorkspace
+          token={token}
+          canManage={session.capabilities.includes("module.manage")}
+        />
       ) : null}
       {session.role === "admin" &&
       session.capabilities.includes("patient.merge") ? (
