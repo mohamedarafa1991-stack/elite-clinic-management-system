@@ -537,6 +537,50 @@ function registerIpc(): void {
       ),
   );
   ipcMain.handle(
+    "clinical:amendments",
+    (_event, token: string, encounterId: string) =>
+      requireEncounterService().listAmendments(
+        serviceContext(token),
+        encounterId,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:amendment-create",
+    (_event, token: string, encounterId: string, input: unknown) =>
+      requireEncounterService().createAmendment(
+        serviceContext(token),
+        encounterId,
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:amendment-review",
+    (
+      _event,
+      token: string,
+      amendmentId: string,
+      decision: "approved" | "rejected",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      requireEncounterService().reviewAmendment(
+        serviceContext(token),
+        amendmentId,
+        decision,
+        reason,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:amendment-apply",
+    (_event, token: string, amendmentId: string, expectedVersion: number) =>
+      requireEncounterService().applyAmendment(
+        serviceContext(token),
+        amendmentId,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
     "clinical:diagnoses",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listDiagnoses(

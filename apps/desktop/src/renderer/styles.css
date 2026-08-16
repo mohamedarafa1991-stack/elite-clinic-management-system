@@ -1015,3 +1015,49 @@ select {
     flex-direction: column;
   }
 }
+
+.amendment-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #cbd5e1;
+}
+.amendment-list {
+  display: grid;
+  gap: 8px;
+}
+.amendment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff7ed;
+}
+.amendment-row strong,
+.amendment-row span,
+.amendment-row small {
+  display: block;
+}
+.amendment-row span,
+.amendment-row small {
+  margin-top: 3px;
+  color: #7c2d12;
+  font-size: 12px;
+}
+.amendment-editor {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #fdba74;
+  border-radius: 12px;
+  background: #fff7ed;
+}
+@media (max-width: 720px) {
+  .amendment-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

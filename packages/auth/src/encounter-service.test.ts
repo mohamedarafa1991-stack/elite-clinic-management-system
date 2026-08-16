@@ -195,6 +195,48 @@ describe("EncounterService", () => {
           signed.version,
         ),
       ).toThrow("ELITE_ENCOUNTER_SIGNED_IMMUTABLE");
+
+      const amendment = encounters.createAmendment(author, signed.id, {
+        subjective: "Corrected synthetic cough history.",
+        objective: "Corrected synthetic examination.",
+        assessment: "Corrected synthetic assessment.",
+        plan: "Corrected synthetic plan.",
+        correctionReason: "Corrected an omission in the signed clinical note",
+      });
+      expect(amendment.status).toBe("pending");
+      expect(amendment.baseEncounterVersion).toBe(signed.version);
+      expect(() =>
+        encounters.reviewAmendment(
+          author,
+          amendment.id,
+          "approved",
+          "Self review is not permitted",
+          amendment.version,
+        ),
+      ).toThrow("ELITE_AMENDMENT_SEPARATION_REQUIRED");
+      const approvedAmendment = encounters.reviewAmendment(
+        approver,
+        amendment.id,
+        "approved",
+        "Synthetic independent Doctor review",
+        amendment.version,
+      );
+      expect(approvedAmendment.status).toBe("approved");
+      const appliedAmendment = encounters.applyAmendment(
+        approver,
+        amendment.id,
+        approvedAmendment.version,
+      );
+      expect(appliedAmendment.status).toBe("applied");
+      expect(encounters.listAmendments(author, signed.id)[0]?.status).toBe(
+        "applied",
+      );
+      const original = encounters.getEncounterForAppointment(
+        author,
+        appointment.id,
+      );
+      expect(original?.status).toBe("signed");
+      expect(original?.version).toBe(signed.version);
     } finally {
       database.close();
     }

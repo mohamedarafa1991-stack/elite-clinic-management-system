@@ -328,6 +328,40 @@ export const encounterSchema = encounterInputSchema.extend({
 });
 export type Encounter = z.infer<typeof encounterSchema>;
 
+export const encounterAmendmentStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "applied",
+]);
+export type EncounterAmendmentStatus = z.infer<
+  typeof encounterAmendmentStatusSchema
+>;
+
+export const encounterAmendmentInputSchema = encounterInputSchema.extend({
+  correctionReason: z.string().trim().min(3).max(1000),
+});
+export type EncounterAmendmentInput = z.infer<
+  typeof encounterAmendmentInputSchema
+>;
+
+export const encounterAmendmentSchema = encounterAmendmentInputSchema.extend({
+  id: opaqueIdSchema,
+  encounterId: opaqueIdSchema,
+  patientId: patientIdSchema,
+  baseEncounterVersion: z.number().int().positive(),
+  status: encounterAmendmentStatusSchema,
+  requestedByUserId: opaqueIdSchema,
+  requestedAt: isoDateTimeSchema,
+  reviewedByUserId: opaqueIdSchema.optional(),
+  reviewedAt: isoDateTimeSchema.optional(),
+  reviewReason: z.string().max(1000).optional(),
+  appliedByUserId: opaqueIdSchema.optional(),
+  appliedAt: isoDateTimeSchema.optional(),
+  version: z.number().int().positive(),
+});
+export type EncounterAmendment = z.infer<typeof encounterAmendmentSchema>;
+
 export const diagnosisInputSchema = z.object({
   icd10CodeId: opaqueIdSchema,
   diagnosisTextEn: z.string().trim().min(1).max(240),

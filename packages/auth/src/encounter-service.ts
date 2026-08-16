@@ -3,6 +3,8 @@ import { z } from "zod";
 import {
   diagnosisApprovalStatusSchema,
   diagnosisInputSchema,
+  encounterAmendmentInputSchema,
+  encounterAmendmentSchema,
   diagnosisSchema,
   encounterInputSchema,
   encounterSchema,
@@ -11,6 +13,8 @@ import {
   patientIdSchema,
   type Diagnosis,
   type DiagnosisInput,
+  type EncounterAmendment,
+  type EncounterAmendmentInput,
   type Encounter,
   type EncounterInput,
   type Icd10Code,
@@ -246,6 +250,181 @@ export class EncounterService {
     return this.getEncounter(context, parsedEncounterId);
   }
 
+  public listAmendments(
+    context: SessionContext,
+    encounterId: string,
+  ): readonly EncounterAmendment[] {
+    requireCapability(context, "clinical.read");
+    const parsedEncounterId = entityIdSchema.parse(encounterId);
+    const rows = this.database.raw
+      .prepare(
+        `SELECT a.*, p.patient_id AS patient_display_id
+         FROM encounter_amendments a
+         JOIN patients p ON p.id = a.patient_id
+         WHERE a.encounter_id = ?
+         ORDER BY a.requested_at DESC`,
+      )
+      .all(parsedEncounterId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapAmendment(row));
+  }
+
+  public createAmendment(
+    context: SessionContext,
+    encounterId: string,
+    input: EncounterAmendmentInput,
+  ): EncounterAmendment {
+    requireCapability(context, "clinical.write");
+    if (context.role !== "doctor")
+      throw new Error(
+        "ELITE_CLINICAL_DOCTOR_REQUIRED: only a Doctor can request an encounter amendment",
+      );
+    const parsedEncounterId = entityIdSchema.parse(encounterId);
+    const parsed = encounterAmendmentInputSchema.parse(input);
+    const encounter = this.getEncounterRow(parsedEncounterId);
+    if (encounter.status !== "signed")
+      throw new Error(
+        "ELITE_ENCOUNTER_AMENDMENT_SIGNED_REQUIRED: amendments apply only to signed encounters",
+      );
+    const timestamp = this.now();
+    const id = nanoid(18);
+    this.database.raw
+      .prepare(
+        `INSERT INTO encounter_amendments
+          (id, encounter_id, patient_id, base_encounter_version, subjective, objective, assessment, plan, follow_up, correction_reason, status, requested_by_user_id, requested_at, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 1)`,
+      )
+      .run(
+        id,
+        parsedEncounterId,
+        encounter.patient_id,
+        encounter.version,
+        parsed.subjective ?? null,
+        parsed.objective ?? null,
+        parsed.assessment ?? null,
+        parsed.plan ?? null,
+        parsed.followUp ?? null,
+        parsed.correctionReason,
+        context.userId,
+        timestamp,
+      );
+    this.writeAudit(
+      context,
+      "encounter-amendment.create",
+      id,
+      encounter.patient_display_id,
+      { baseEncounterVersion: encounter.version, status: "pending" },
+    );
+    return this.getAmendment(context, id);
+  }
+
+  public reviewAmendment(
+    context: SessionContext,
+    amendmentId: string,
+    decision: "approved" | "rejected",
+    reason: string,
+    expectedVersion: number,
+  ): EncounterAmendment {
+    requireCapability(context, "clinical.approve");
+    if (context.role !== "doctor")
+      throw new Error(
+        "ELITE_CLINICAL_DOCTOR_REQUIRED: only a Doctor can review an encounter amendment",
+      );
+    const parsedAmendmentId = entityIdSchema.parse(amendmentId);
+    const parsedDecision = z.enum(["approved", "rejected"]).parse(decision);
+    const parsedReason = z.string().trim().min(3).max(1000).parse(reason);
+    const current = this.getAmendmentRow(parsedAmendmentId);
+    if (current.requested_by_user_id === context.userId)
+      throw new Error(
+        "ELITE_AMENDMENT_SEPARATION_REQUIRED: a different Doctor must review the amendment",
+      );
+    if (current.status !== "pending")
+      throw new Error(
+        "ELITE_AMENDMENT_ALREADY_REVIEWED: amendment is already reviewed",
+      );
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        `UPDATE encounter_amendments
+         SET status = ?, reviewed_by_user_id = ?, reviewed_at = ?, review_reason = ?, version = version + 1
+         WHERE id = ? AND version = ? AND status = 'pending'`,
+      )
+      .run(
+        parsedDecision,
+        context.userId,
+        timestamp,
+        parsedReason,
+        parsedAmendmentId,
+        expectedVersion,
+      );
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_AMENDMENT_VERSION_CONFLICT: amendment was changed by another device",
+      );
+    this.writeAudit(
+      context,
+      `encounter-amendment.${parsedDecision}`,
+      parsedAmendmentId,
+      current.patient_display_id,
+      { reason: parsedReason },
+    );
+    return this.getAmendment(context, parsedAmendmentId);
+  }
+
+  public applyAmendment(
+    context: SessionContext,
+    amendmentId: string,
+    expectedVersion: number,
+  ): EncounterAmendment {
+    requireCapability(context, "clinical.approve");
+    if (context.role !== "doctor")
+      throw new Error(
+        "ELITE_CLINICAL_DOCTOR_REQUIRED: only a Doctor can apply an encounter amendment",
+      );
+    const parsedAmendmentId = entityIdSchema.parse(amendmentId);
+    const current = this.getAmendmentRow(parsedAmendmentId);
+    if (current.status !== "approved")
+      throw new Error(
+        "ELITE_AMENDMENT_APPROVAL_REQUIRED: only approved amendments can be applied",
+      );
+    const applied = this.database.raw
+      .prepare(
+        "SELECT id FROM encounter_amendments WHERE encounter_id = ? AND status = 'applied' LIMIT 1",
+      )
+      .get(current.encounter_id);
+    if (applied)
+      throw new Error(
+        "ELITE_ENCOUNTER_AMENDMENT_ALREADY_APPLIED: an applied amendment already exists for this encounter",
+      );
+    const encounter = this.getEncounterRow(current.encounter_id);
+    if (
+      encounter.status !== "signed" ||
+      encounter.version !== current.base_encounter_version
+    )
+      throw new Error(
+        "ELITE_AMENDMENT_BASE_VERSION_CONFLICT: the signed encounter base no longer matches",
+      );
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        `UPDATE encounter_amendments
+         SET status = 'applied', applied_by_user_id = ?, applied_at = ?, version = version + 1
+         WHERE id = ? AND version = ? AND status = 'approved'`,
+      )
+      .run(context.userId, timestamp, parsedAmendmentId, expectedVersion);
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_AMENDMENT_VERSION_CONFLICT: amendment was changed by another device",
+      );
+    this.writeAudit(
+      context,
+      "encounter-amendment.apply",
+      parsedAmendmentId,
+      current.patient_display_id,
+      { baseEncounterVersion: current.base_encounter_version },
+    );
+    return this.getAmendment(context, parsedAmendmentId);
+  }
+
   public listDiagnoses(
     context: SessionContext,
     encounterId: string,
@@ -452,6 +631,55 @@ export class EncounterService {
     return this.mapEncounter(row);
   }
 
+  private getAmendmentRow(id: string): {
+    id: string;
+    encounter_id: string;
+    patient_id: string;
+    patient_display_id: string;
+    base_encounter_version: number;
+    requested_by_user_id: string;
+    status: string;
+    version: number;
+  } {
+    const row = this.database.raw
+      .prepare(
+        `SELECT a.id, a.encounter_id, a.patient_id, a.base_encounter_version, a.requested_by_user_id, a.status, a.version,
+                p.patient_id AS patient_display_id
+         FROM encounter_amendments a JOIN patients p ON p.id = a.patient_id WHERE a.id = ?`,
+      )
+      .get(id) as
+      | {
+          id: string;
+          encounter_id: string;
+          patient_id: string;
+          patient_display_id: string;
+          base_encounter_version: number;
+          requested_by_user_id: string;
+          status: string;
+          version: number;
+        }
+      | undefined;
+    if (!row)
+      throw new Error("ELITE_AMENDMENT_NOT_FOUND: amendment does not exist");
+    return row;
+  }
+
+  private getAmendment(
+    context: SessionContext,
+    id: string,
+  ): EncounterAmendment {
+    requireCapability(context, "clinical.read");
+    const row = this.database.raw
+      .prepare(
+        `SELECT a.*, p.patient_id AS patient_display_id
+         FROM encounter_amendments a JOIN patients p ON p.id = a.patient_id WHERE a.id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row)
+      throw new Error("ELITE_AMENDMENT_NOT_FOUND: amendment does not exist");
+    return this.mapAmendment(row);
+  }
+
   private getDiagnosisRow(id: string): {
     patient_display_id: string;
     recorded_by_user_id: string;
@@ -536,6 +764,36 @@ export class EncounterService {
     });
   }
 
+  private mapAmendment(row: Record<string, unknown>): EncounterAmendment {
+    return encounterAmendmentSchema.parse({
+      id: String(row["id"]),
+      encounterId: String(row["encounter_id"]),
+      patientId: String(row["patient_display_id"]),
+      baseEncounterVersion: Number(row["base_encounter_version"]),
+      ...(row["subjective"] ? { subjective: String(row["subjective"]) } : {}),
+      ...(row["objective"] ? { objective: String(row["objective"]) } : {}),
+      ...(row["assessment"] ? { assessment: String(row["assessment"]) } : {}),
+      ...(row["plan"] ? { plan: String(row["plan"]) } : {}),
+      ...(row["follow_up"] ? { followUp: String(row["follow_up"]) } : {}),
+      correctionReason: String(row["correction_reason"]),
+      status: row["status"],
+      requestedByUserId: String(row["requested_by_user_id"]),
+      requestedAt: String(row["requested_at"]),
+      ...(row["reviewed_by_user_id"]
+        ? { reviewedByUserId: String(row["reviewed_by_user_id"]) }
+        : {}),
+      ...(row["reviewed_at"] ? { reviewedAt: String(row["reviewed_at"]) } : {}),
+      ...(row["review_reason"]
+        ? { reviewReason: String(row["review_reason"]) }
+        : {}),
+      ...(row["applied_by_user_id"]
+        ? { appliedByUserId: String(row["applied_by_user_id"]) }
+        : {}),
+      ...(row["applied_at"] ? { appliedAt: String(row["applied_at"]) } : {}),
+      version: Number(row["version"]),
+    });
+  }
+
   private mapDiagnosis(row: Record<string, unknown>): Diagnosis {
     return diagnosisSchema.parse({
       id: String(row["id"]),
@@ -585,9 +843,11 @@ export class EncounterService {
         action,
         action.startsWith("icd10")
           ? "icd10-code"
-          : action.startsWith("encounter")
-            ? "encounter"
-            : "diagnosis",
+          : action.startsWith("encounter-amendment")
+            ? "encounter-amendment"
+            : action.startsWith("encounter")
+              ? "encounter"
+              : "diagnosis",
         entityId,
         patient?.id ?? null,
         JSON.stringify(metadata),

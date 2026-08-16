@@ -27,6 +27,8 @@ import type {
   MedicalHistoryInput,
   Diagnosis,
   DiagnosisInput,
+  EncounterAmendment,
+  EncounterAmendmentInput,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -59,6 +61,7 @@ interface BootstrapFormState {
 interface MedicalHistoryFormState extends MedicalHistoryInput {}
 interface EncounterFormState extends EncounterInput {}
 interface DiagnosisFormState extends DiagnosisInput {}
+interface AmendmentFormState extends EncounterAmendmentInput {}
 
 const emptyEncounterForm: EncounterFormState = {
   subjective: "",
@@ -72,6 +75,15 @@ const emptyDiagnosisForm: DiagnosisFormState = {
   icd10CodeId: "",
   diagnosisTextEn: "",
   isPrimary: false,
+};
+
+const emptyAmendmentForm: AmendmentFormState = {
+  subjective: "",
+  objective: "",
+  assessment: "",
+  plan: "",
+  followUp: "",
+  correctionReason: "",
 };
 
 const emptyMedicalHistoryForm: MedicalHistoryFormState = {
@@ -2017,6 +2029,13 @@ function ClinicalWorkflowWorkspace({
   const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(
     null,
   );
+  const [amendments, setAmendments] = useState<readonly EncounterAmendment[]>(
+    [],
+  );
+  const [amendmentForm, setAmendmentForm] = useState<AmendmentFormState | null>(
+    null,
+  );
+  const [amendmentReviewReason, setAmendmentReviewReason] = useState("");
   const [diagnoses, setDiagnoses] = useState<readonly Diagnosis[]>([]);
   const [encounterForm, setEncounterForm] = useState<EncounterFormState | null>(
     null,
@@ -2175,6 +2194,13 @@ function ClinicalWorkflowWorkspace({
         appointment.id,
       );
       setSelectedEncounter(encounter);
+      setAmendments(
+        encounter
+          ? await window.elite.clinical.listAmendments(token, encounter.id)
+          : [],
+      );
+      setAmendmentForm(null);
+      setAmendmentReviewReason("");
       setEncounterForm(
         canWriteClinical
           ? encounter
@@ -2196,11 +2222,119 @@ function ClinicalWorkflowWorkspace({
       );
     } catch (reason: unknown) {
       setSelectedEncounter(null);
+      setAmendments([]);
+      setAmendmentForm(null);
+      setAmendmentReviewReason("");
       setEncounterForm(null);
       setDiagnoses([]);
       setError(
         reason instanceof Error ? reason.message : "Unable to load encounter",
       );
+    }
+  };
+
+  const openAmendmentForm = (): void => {
+    if (!selectedEncounter || selectedEncounter.status !== "signed") return;
+    setAmendmentForm({
+      subjective: selectedEncounter.subjective ?? "",
+      objective: selectedEncounter.objective ?? "",
+      assessment: selectedEncounter.assessment ?? "",
+      plan: selectedEncounter.plan ?? "",
+      followUp: selectedEncounter.followUp ?? "",
+      correctionReason: "",
+    });
+    setError(null);
+  };
+
+  const saveAmendment = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedEncounter || !amendmentForm) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.createAmendment(
+        token,
+        selectedEncounter.id,
+        amendmentForm,
+      );
+      setAmendments(
+        await window.elite.clinical.listAmendments(token, selectedEncounter.id),
+      );
+      setAmendmentForm(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to request amendment",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const reviewAmendment = async (
+    amendment: EncounterAmendment,
+    decision: "approved" | "rejected",
+  ): Promise<void> => {
+    if (amendmentReviewReason.trim().length < 3) {
+      setError("Enter a reason before reviewing the amendment");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.reviewAmendment(
+        token,
+        amendment.id,
+        decision,
+        amendmentReviewReason,
+        amendment.version,
+      );
+      setAmendmentReviewReason("");
+      if (selectedEncounter) {
+        setAmendments(
+          await window.elite.clinical.listAmendments(
+            token,
+            selectedEncounter.id,
+          ),
+        );
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to review amendment",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const applyAmendment = async (
+    amendment: EncounterAmendment,
+  ): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.applyAmendment(
+        token,
+        amendment.id,
+        amendment.version,
+      );
+      if (selectedEncounter) {
+        setAmendments(
+          await window.elite.clinical.listAmendments(
+            token,
+            selectedEncounter.id,
+          ),
+        );
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to apply amendment",
+      );
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -3319,6 +3453,217 @@ function ClinicalWorkflowWorkspace({
                   Signed encounters are immutable; corrections require an
                   amendment workflow.
                 </p>
+              ) : null}
+            </div>
+          ) : null}
+          {selectedEncounter?.status === "signed" ? (
+            <div className="amendment-section">
+              <div className="related-person-heading">
+                <div>
+                  <h4>Encounter amendments</h4>
+                  <p className="form-help">
+                    Corrections preserve the signed original and require a
+                    separate Doctor review.
+                  </p>
+                </div>
+                {canRecordDiagnosis ? (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={openAmendmentForm}
+                  >
+                    Request amendment
+                  </button>
+                ) : null}
+              </div>
+              {amendments.length === 0 ? (
+                <p className="muted">
+                  No amendment requests for this signed note.
+                </p>
+              ) : (
+                <div className="amendment-list">
+                  {amendments.map((amendment) => (
+                    <article className="amendment-row" key={amendment.id}>
+                      <div>
+                        <strong>{amendment.status} amendment</strong>
+                        <span>{amendment.correctionReason}</span>
+                        <small>
+                          Requested by {amendment.requestedByUserId} · base
+                          version {amendment.baseEncounterVersion}
+                        </small>
+                        {amendment.reviewReason ? (
+                          <small>Review: {amendment.reviewReason}</small>
+                        ) : null}
+                      </div>
+                      {canApproveClinical && amendment.status === "pending" ? (
+                        <div className="button-row">
+                          <button
+                            className="button primary"
+                            type="button"
+                            disabled={
+                              isBusy || amendmentReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void reviewAmendment(amendment, "approved")
+                            }
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="button danger"
+                            type="button"
+                            disabled={
+                              isBusy || amendmentReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void reviewAmendment(amendment, "rejected")
+                            }
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : amendment.status === "approved" &&
+                        canApproveClinical ? (
+                        <button
+                          className="button primary"
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void applyAmendment(amendment)}
+                        >
+                          Apply amendment
+                        </button>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+              {canApproveClinical &&
+              amendments.some((amendment) => amendment.status === "pending") ? (
+                <label className="history-audit-reason">
+                  Amendment review reason
+                  <input
+                    value={amendmentReviewReason}
+                    onChange={(event) =>
+                      setAmendmentReviewReason(event.target.value)
+                    }
+                    placeholder="Required for approval or rejection"
+                  />
+                </label>
+              ) : null}
+              {amendmentForm ? (
+                <form
+                  className="amendment-editor"
+                  onSubmit={(event) => void saveAmendment(event)}
+                >
+                  <h4>Proposed correction</h4>
+                  <div className="form-grid">
+                    <label>
+                      Subjective
+                      <textarea
+                        rows={5}
+                        value={amendmentForm.subjective ?? ""}
+                        onChange={(event) =>
+                          setAmendmentForm((current) =>
+                            current
+                              ? { ...current, subjective: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Objective
+                      <textarea
+                        rows={5}
+                        value={amendmentForm.objective ?? ""}
+                        onChange={(event) =>
+                          setAmendmentForm((current) =>
+                            current
+                              ? { ...current, objective: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Assessment
+                      <textarea
+                        rows={5}
+                        value={amendmentForm.assessment ?? ""}
+                        onChange={(event) =>
+                          setAmendmentForm((current) =>
+                            current
+                              ? { ...current, assessment: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Plan
+                      <textarea
+                        rows={5}
+                        value={amendmentForm.plan ?? ""}
+                        onChange={(event) =>
+                          setAmendmentForm((current) =>
+                            current
+                              ? { ...current, plan: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Follow-up
+                    <textarea
+                      rows={3}
+                      value={amendmentForm.followUp ?? ""}
+                      onChange={(event) =>
+                        setAmendmentForm((current) =>
+                          current
+                            ? { ...current, followUp: event.target.value }
+                            : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    Correction reason
+                    <textarea
+                      required
+                      rows={3}
+                      value={amendmentForm.correctionReason}
+                      onChange={(event) =>
+                        setAmendmentForm((current) =>
+                          current
+                            ? {
+                                ...current,
+                                correctionReason: event.target.value,
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <div className="button-row">
+                    <button
+                      className="button primary"
+                      type="submit"
+                      disabled={isBusy}
+                    >
+                      Submit amendment request
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => setAmendmentForm(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               ) : null}
             </div>
           ) : null}

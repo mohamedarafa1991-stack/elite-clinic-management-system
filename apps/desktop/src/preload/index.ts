@@ -17,6 +17,8 @@ import type {
   MedicalHistoryInput,
   Diagnosis,
   DiagnosisInput,
+  EncounterAmendment,
+  EncounterAmendmentInput,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -281,6 +283,47 @@ const eliteApi = {
         encounterId,
         expectedVersion,
       ) as Promise<Encounter>,
+    listAmendments: (token: string, encounterId: string) =>
+      ipcRenderer.invoke("clinical:amendments", token, encounterId) as Promise<
+        readonly EncounterAmendment[]
+      >,
+    createAmendment: (
+      token: string,
+      encounterId: string,
+      input: EncounterAmendmentInput,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:amendment-create",
+        token,
+        encounterId,
+        input,
+      ) as Promise<EncounterAmendment>,
+    reviewAmendment: (
+      token: string,
+      amendmentId: string,
+      decision: "approved" | "rejected",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:amendment-review",
+        token,
+        amendmentId,
+        decision,
+        reason,
+        expectedVersion,
+      ) as Promise<EncounterAmendment>,
+    applyAmendment: (
+      token: string,
+      amendmentId: string,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:amendment-apply",
+        token,
+        amendmentId,
+        expectedVersion,
+      ) as Promise<EncounterAmendment>,
     listDiagnoses: (token: string, encounterId: string) =>
       ipcRenderer.invoke("clinical:diagnoses", token, encounterId) as Promise<
         readonly Diagnosis[]

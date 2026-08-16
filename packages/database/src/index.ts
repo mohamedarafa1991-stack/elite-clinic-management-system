@@ -531,6 +531,36 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_diagnoses_patient ON diagnoses(patient_id, recorded_at);
     `,
   },
+  {
+    version: 9,
+    name: "encounter-amendments",
+    sql: `
+      CREATE TABLE IF NOT EXISTS encounter_amendments (
+        id TEXT PRIMARY KEY NOT NULL,
+        encounter_id TEXT NOT NULL REFERENCES encounters(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        base_encounter_version INTEGER NOT NULL CHECK (base_encounter_version >= 1),
+        subjective TEXT,
+        objective TEXT,
+        assessment TEXT,
+        plan TEXT,
+        follow_up TEXT,
+        correction_reason TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'applied')) DEFAULT 'pending',
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        review_reason TEXT,
+        applied_by_user_id TEXT REFERENCES users(id),
+        applied_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_encounter_amendments_encounter ON encounter_amendments(encounter_id, requested_at);
+      CREATE INDEX IF NOT EXISTS idx_encounter_amendments_status ON encounter_amendments(status, requested_at);
+      CREATE INDEX IF NOT EXISTS idx_encounter_amendments_patient ON encounter_amendments(patient_id, requested_at);
+    `,
+  },
 ];
 
 function now(): string {
