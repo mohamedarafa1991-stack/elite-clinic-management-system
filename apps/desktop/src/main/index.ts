@@ -145,6 +145,51 @@ function registerIpc(): void {
   ipcMain.handle("auth:logout", (_event, token: string) => {
     requireAuthService().logout(token);
   });
+
+  ipcMain.handle("auth:devices", (_event, token: string) => {
+    const service = requireAuthService();
+    return service.listDevices(service.getSession(token));
+  });
+
+  ipcMain.handle("auth:enrollment-requests", (_event, token: string) => {
+    const service = requireAuthService();
+    return service.listEnrollmentRequests(service.getSession(token));
+  });
+
+  ipcMain.handle(
+    "auth:device-request",
+    (_event, token: string, input: unknown) => {
+      const service = requireAuthService();
+      return service.requestDeviceEnrollment(
+        service.getSession(token),
+        input as never,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "auth:device-approve",
+    (_event, token: string, requestId: string) => {
+      const service = requireAuthService();
+      service.approveDevice(service.getSession(token), requestId);
+    },
+  );
+
+  ipcMain.handle(
+    "auth:device-reject",
+    (_event, token: string, requestId: string, reason: string) => {
+      const service = requireAuthService();
+      service.rejectDevice(service.getSession(token), requestId, reason);
+    },
+  );
+
+  ipcMain.handle(
+    "auth:device-revoke",
+    (_event, token: string, deviceId: string, reason: string) => {
+      const service = requireAuthService();
+      service.revokeDevice(service.getSession(token), deviceId, reason);
+    },
+  );
 }
 
 app.whenReady().then(async () => {

@@ -289,6 +289,230 @@ function LoginForm({
   );
 }
 
+function DevicePanel({ token }: { token: string }): ReactElement {
+  const [devices, setDevices] = useState<
+    readonly import("../preload/index.js").DeviceSummary[]
+  >([]);
+  const [requests, setRequests] = useState<
+    readonly import("../preload/index.js").EnrollmentRequestSummary[]
+  >([]);
+  const [friendlyName, setFriendlyName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refresh = async (): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [nextDevices, nextRequests] = await Promise.all([
+        window.elite.auth.listDevices(token),
+        window.elite.auth.listEnrollmentRequests(token),
+      ]);
+      setDevices(nextDevices);
+      setRequests(nextRequests);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load device security data",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const requestDevice = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    try {
+      const request = await window.elite.auth.requestDevice(token, {
+        friendlyName,
+        platform: "android",
+        appVersion: "0.1.0-dev",
+        apiLevel: 29,
+      });
+      setFriendlyName("");
+      setNotice(
+        `Enrollment request ${request.requestId} created for ${request.deviceId}.`,
+      );
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create enrollment request",
+      );
+    }
+  };
+
+  const approve = async (requestId: string): Promise<void> => {
+    setError(null);
+    try {
+      await window.elite.auth.approveDevice(token, requestId);
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to approve device",
+      );
+    }
+  };
+
+  const reject = async (requestId: string): Promise<void> => {
+    const reason = window.prompt("Reason for rejecting this device:");
+    if (!reason) return;
+    setError(null);
+    try {
+      await window.elite.auth.rejectDevice(token, requestId, reason);
+      await refresh();
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error ? caught.message : "Unable to reject device",
+      );
+    }
+  };
+
+  const revoke = async (deviceId: string): Promise<void> => {
+    const reason = window.prompt("Reason for revoking this device:");
+    if (!reason) return;
+    setError(null);
+    try {
+      await window.elite.auth.revokeDevice(token, deviceId, reason);
+      await refresh();
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error ? caught.message : "Unable to revoke device",
+      );
+    }
+  };
+
+  return (
+    <section className="card auth-card" aria-labelledby="devices-title">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Admin control</p>
+          <h2 id="devices-title">Devices and enrollment</h2>
+        </div>
+        <span className="status warn">Patient data access</span>
+      </div>
+      <p className="form-help">
+        New Android devices remain pending until an Admin approves them.
+        Revocation invalidates sessions and schedules a best-effort wipe when
+        the device reconnects.
+      </p>
+      <ErrorMessage message={error} />
+      {notice ? (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+      <form
+        className="inline-form"
+        onSubmit={(event) => void requestDevice(event)}
+      >
+        <label className="inline-label">
+          New Android device name
+          <input
+            required
+            value={friendlyName}
+            onChange={(event) => setFriendlyName(event.target.value)}
+            placeholder="e.g. Dr Ahmed Phone"
+          />
+        </label>
+        <button className="button primary" type="submit">
+          Create pending device
+        </button>
+      </form>
+      <div className="device-section">
+        <h3>Pending enrollment requests</h3>
+        {isLoading ? (
+          <p className="muted">Loading device records…</p>
+        ) : requests.filter((request) => request.status === "pending")
+            .length === 0 ? (
+          <p className="muted">No pending requests.</p>
+        ) : (
+          <div className="device-list">
+            {requests
+              .filter((request) => request.status === "pending")
+              .map((request) => (
+                <div className="device-row" key={request.requestId}>
+                  <div>
+                    <strong>{request.device.friendlyName}</strong>
+                    <span>
+                      {request.device.platform} · API{" "}
+                      {request.device.apiLevel ?? "unknown"} · requested{" "}
+                      {new Date(request.requestedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="row-actions">
+                    <button
+                      className="button small primary"
+                      type="button"
+                      onClick={() => void approve(request.requestId)}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="button small secondary"
+                      type="button"
+                      onClick={() => void reject(request.requestId)}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+      <div className="device-section">
+        <h3>Registered devices</h3>
+        {devices.length === 0 ? (
+          <p className="muted">No registered devices.</p>
+        ) : (
+          <div className="device-list">
+            {devices.map((device) => (
+              <div className="device-row" key={device.id}>
+                <div>
+                  <strong>{device.friendlyName}</strong>
+                  <span>
+                    {device.platform} · {device.status} · {device.appVersion}
+                    {device.securityPatchLevel
+                      ? ` · patch ${device.securityPatchLevel}`
+                      : ""}
+                  </span>
+                </div>
+                {device.status === "active" ? (
+                  <button
+                    className="button small danger"
+                    type="button"
+                    onClick={() => void revoke(device.id)}
+                  >
+                    Revoke
+                  </button>
+                ) : (
+                  <span
+                    className={`status ${device.status === "wipe-pending" ? "warn" : "ok"}`}
+                  >
+                    {device.status}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -344,6 +568,10 @@ function AuthenticatedView({
         <strong>Active capabilities</strong>
         <span>{session.capabilities.join(" · ")}</span>
       </div>
+      {session.role === "admin" &&
+      session.capabilities.includes("device.manage") ? (
+        <DevicePanel token={token} />
+      ) : null}
       <button
         className="button secondary"
         type="button"

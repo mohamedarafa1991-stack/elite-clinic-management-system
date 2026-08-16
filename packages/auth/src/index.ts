@@ -79,6 +79,31 @@ export interface DeviceEnrollment {
   status: "pending" | "approved" | "rejected" | "cancelled";
 }
 
+export interface DeviceSummary {
+  id: string;
+  friendlyName: string;
+  platform: "windows" | "android";
+  appVersion: string;
+  apiLevel?: number;
+  securityPatchLevel?: string;
+  ownerUserId: string;
+  status: "pending" | "active" | "revoked" | "wipe-pending";
+  lastSeenAt?: string;
+  lastSyncAt?: string;
+  createdAt: string;
+}
+
+export interface EnrollmentRequestSummary {
+  requestId: string;
+  device: DeviceSummary;
+  requestedByUserId: string;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  reviewedByUserId?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+}
+
 export interface BootstrapStatus {
   configured: boolean;
   bootstrapRequired: boolean;
@@ -529,6 +554,114 @@ export class AuthService {
     });
     transaction();
     return { requestId, deviceId, status: "pending" };
+  }
+
+  public listDevices(context: SessionContext): readonly DeviceSummary[] {
+    requireAdminContext(context);
+    requireCapability(context, "device.manage");
+    const rows = this.database.raw
+      .prepare(
+        `SELECT id, friendly_name, platform, app_version, api_level, security_patch_level,
+                owner_user_id, status, last_seen_at, last_sync_at, created_at
+         FROM devices ORDER BY created_at DESC`,
+      )
+      .all() as Array<{
+      id: string;
+      friendly_name: string;
+      platform: "windows" | "android";
+      app_version: string;
+      api_level: number | null;
+      security_patch_level: string | null;
+      owner_user_id: string;
+      status: DeviceSummary["status"];
+      last_seen_at: string | null;
+      last_sync_at: string | null;
+      created_at: string;
+    }>;
+    return rows.map((row) => {
+      const summary: DeviceSummary = {
+        id: row.id,
+        friendlyName: row.friendly_name,
+        platform: row.platform,
+        appVersion: row.app_version,
+        ownerUserId: row.owner_user_id,
+        status: row.status,
+        createdAt: row.created_at,
+      };
+      if (row.api_level !== null) summary.apiLevel = row.api_level;
+      if (row.security_patch_level !== null)
+        summary.securityPatchLevel = row.security_patch_level;
+      if (row.last_seen_at !== null) summary.lastSeenAt = row.last_seen_at;
+      if (row.last_sync_at !== null) summary.lastSyncAt = row.last_sync_at;
+      return summary;
+    });
+  }
+
+  public listEnrollmentRequests(
+    context: SessionContext,
+  ): readonly EnrollmentRequestSummary[] {
+    requireAdminContext(context);
+    requireCapability(context, "device.manage");
+    const rows = this.database.raw
+      .prepare(
+        `SELECT r.id AS request_id, r.requested_by_user_id, r.requested_at, r.status,
+                r.reviewed_by_user_id, r.reviewed_at, r.rejection_reason,
+                d.id, d.friendly_name, d.platform, d.app_version, d.api_level,
+                d.security_patch_level, d.owner_user_id, d.status AS device_status,
+                d.last_seen_at, d.last_sync_at, d.created_at
+         FROM device_enrollment_requests r
+         JOIN devices d ON d.id = r.device_id
+         ORDER BY r.requested_at DESC`,
+      )
+      .all() as Array<{
+      request_id: string;
+      requested_by_user_id: string;
+      requested_at: string;
+      status: EnrollmentRequestSummary["status"];
+      reviewed_by_user_id: string | null;
+      reviewed_at: string | null;
+      rejection_reason: string | null;
+      id: string;
+      friendly_name: string;
+      platform: "windows" | "android";
+      app_version: string;
+      api_level: number | null;
+      security_patch_level: string | null;
+      owner_user_id: string;
+      device_status: DeviceSummary["status"];
+      last_seen_at: string | null;
+      last_sync_at: string | null;
+      created_at: string;
+    }>;
+    return rows.map((row) => {
+      const device: DeviceSummary = {
+        id: row.id,
+        friendlyName: row.friendly_name,
+        platform: row.platform,
+        appVersion: row.app_version,
+        ownerUserId: row.owner_user_id,
+        status: row.device_status,
+        createdAt: row.created_at,
+      };
+      if (row.api_level !== null) device.apiLevel = row.api_level;
+      if (row.security_patch_level !== null)
+        device.securityPatchLevel = row.security_patch_level;
+      if (row.last_seen_at !== null) device.lastSeenAt = row.last_seen_at;
+      if (row.last_sync_at !== null) device.lastSyncAt = row.last_sync_at;
+      const summary: EnrollmentRequestSummary = {
+        requestId: row.request_id,
+        device,
+        requestedByUserId: row.requested_by_user_id,
+        requestedAt: row.requested_at,
+        status: row.status,
+      };
+      if (row.reviewed_by_user_id !== null)
+        summary.reviewedByUserId = row.reviewed_by_user_id;
+      if (row.reviewed_at !== null) summary.reviewedAt = row.reviewed_at;
+      if (row.rejection_reason !== null)
+        summary.rejectionReason = row.rejection_reason;
+      return summary;
+    });
   }
 
   public approveDevice(context: SessionContext, requestId: string): void {
