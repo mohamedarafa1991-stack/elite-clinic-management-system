@@ -1,0 +1,40 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1f2937;
+  background: #f7f8fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 1024px; min-height: 100vh; background: #f7f8fa; }
+button, input, select, textarea { font: inherit; }
+
+.shell { width: min(1180px, calc(100% - 64px)); margin: 0 auto; padding: 56px 0 80px; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; margin-bottom: 36px; }
+.eyebrow { margin: 0 0 12px; color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+h1, h2, p { margin-top: 0; }
+h1 { max-width: 760px; margin-bottom: 12px; color: #111827; font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -.04em; }
+h2 { margin-bottom: 12px; color: #111827; font-size: 20px; }
+.subtitle { max-width: 720px; margin-bottom: 0; color: #667085; font-size: 17px; line-height: 1.6; }
+.badge { padding: 8px 12px; border: 1px solid #bfdbfe; border-radius: 999px; color: #1d4ed8; background: #eff6ff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.card { padding: 24px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; box-shadow: 0 8px 30px rgba(15, 23, 42, .04); }
+.card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.card-heading h2 { margin-bottom: 0; }
+.status { padding: 7px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.status.ok { color: #166534; background: #dcfce7; }
+.status.warn { color: #92400e; background: #fef3c7; }
+.status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.status-grid div { padding: 14px; border-radius: 12px; background: #f8fafc; }
+dt { margin-bottom: 6px; color: #64748b; font-size: 12px; font-weight: 600; }
+dd { margin: 0; color: #0f172a; font-size: 15px; font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.compact p { margin-bottom: 0; color: #667085; line-height: 1.6; }
+.muted { margin-bottom: 0; color: #667085; }
+.error { padding: 12px 14px; border-radius: 10px; color: #991b1b; background: #fee2e2; }
+
+@media (max-width: 900px) {
+  .shell { width: min(100% - 32px, 720px); padding-top: 32px; }
+  .header { flex-direction: column; }
+  .status-grid, .grid { grid-template-columns: 1fr 1fr; }
+}
