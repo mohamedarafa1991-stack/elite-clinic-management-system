@@ -40,6 +40,20 @@ async function createFixture() {
   };
 }
 
+function insertSyntheticDoctor(
+  database: ReturnType<typeof openDatabase>,
+  id: string,
+  username: string,
+  displayNameEn: string,
+): void {
+  const timestamp = "2030-01-01T00:00:00.000Z";
+  database.raw
+    .prepare(
+      `INSERT INTO users (id, username, display_name_en, display_name_ar, role, capabilities_json, is_clinical_approver, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 'doctor', ?, 1, 1, ?, ?)`,
+    )
+    .run(id, username, displayNameEn, null, "[]", timestamp, timestamp);
+}
+
 describe("Step 5 clinical workflow service", () => {
   it("configures a specialty, department, service, and books with service duration", async () => {
     const fixture = await createFixture();
@@ -97,7 +111,13 @@ describe("Step 5 clinical workflow service", () => {
         code: "DERM-OPD",
         nameEn: "Dermatology",
       });
-      const doctorId = fixture.context.userId;
+      const doctorId = "synthetic-doctor-appointment";
+      insertSyntheticDoctor(
+        fixture.database,
+        doctorId,
+        "synthetic.doctor.appointment",
+        "Synthetic Appointment Doctor",
+      );
       const patientOne = fixture.patients.registerPatient(fixture.context, {
         registrationMode: "full",
         nameEn: "Synthetic Appointment One",
@@ -170,8 +190,16 @@ it("manages recurring schedules and scoped exceptions with overlap guards", asyn
       code: "ENT-OPD",
       nameEn: "ENT outpatient",
     });
+    const doctorId = "synthetic-doctor-schedule";
+    insertSyntheticDoctor(
+      fixture.database,
+      doctorId,
+      "synthetic.doctor.schedule",
+      "Synthetic Schedule Doctor",
+    );
     const schedule = {
-      doctorId: fixture.context.userId,
+      doctorId,
+
       departmentId: department.id,
       dayOfWeek: 6,
       startTime: "09:00",
@@ -221,6 +249,101 @@ it("manages recurring schedules and scoped exceptions with overlap guards", asyn
     expect(fixture.clinical.listSchedules(fixture.context)).toHaveLength(0);
     expect(
       fixture.clinical.listScheduleExceptions(fixture.context),
+    ).toHaveLength(0);
+  } finally {
+    fixture.database.close();
+  }
+});
+
+it("lists active doctors and filters calendar appointments by doctor and range", async () => {
+  const fixture = await createFixture();
+  try {
+    const timestamp = "2030-01-01T00:00:00.000Z";
+    fixture.database.raw
+      .prepare(
+        `INSERT INTO users (id, username, display_name_en, display_name_ar, role, capabilities_json, is_clinical_approver, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 'doctor', ?, 1, 1, ?, ?)`,
+      )
+      .run(
+        "synthetic-doctor-001",
+        "synthetic.doctor.one",
+        "Synthetic Doctor One",
+        null,
+        "[]",
+        timestamp,
+        timestamp,
+      );
+    fixture.database.raw
+      .prepare(
+        `INSERT INTO users (id, username, display_name_en, display_name_ar, role, capabilities_json, is_clinical_approver, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 'doctor', ?, 0, 0, ?, ?)`,
+      )
+      .run(
+        "synthetic-doctor-002",
+        "synthetic.doctor.two",
+        "Synthetic Inactive Doctor",
+        null,
+        "[]",
+        timestamp,
+        timestamp,
+      );
+
+    const doctors = fixture.clinical.listDoctors(fixture.context);
+    expect(doctors).toEqual([
+      expect.objectContaining({
+        id: "synthetic-doctor-001",
+        displayNameEn: "Synthetic Doctor One",
+        role: "doctor",
+        isClinicalApprover: true,
+        isActive: true,
+      }),
+    ]);
+
+    const specialty = fixture.clinical.createSpecialty(fixture.context, {
+      code: "CAL",
+      nameEn: "Calendar Specialty",
+    });
+    const department = fixture.clinical.createDepartment(fixture.context, {
+      specialtyId: specialty.id,
+      code: "CAL-OPD",
+      nameEn: "Calendar Outpatient",
+    });
+    const patient = fixture.patients.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Calendar Patient",
+      phone: "+201000000099",
+    });
+    fixture.clinical.createAppointment(fixture.context, {
+      patientId: patient.patient.patientId,
+      departmentId: department.id,
+      doctorId: "synthetic-doctor-001",
+      scheduledStart: "2030-01-05T10:00:00.000Z",
+      durationMinutes: 30,
+      visitType: "calendar consultation",
+      isWalkIn: false,
+    });
+    fixture.clinical.createAppointment(fixture.context, {
+      patientId: patient.patient.patientId,
+      departmentId: department.id,
+      scheduledStart: "2030-01-06T10:00:00.000Z",
+      durationMinutes: 15,
+      visitType: "unassigned consultation",
+      isWalkIn: false,
+    });
+
+    const filtered = fixture.clinical.listAppointments(
+      fixture.context,
+      "2030-01-05T00:00:00.000Z",
+      "2030-01-06T00:00:00.000Z",
+      "synthetic-doctor-001",
+    );
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.doctorId).toBe("synthetic-doctor-001");
+    expect(
+      fixture.clinical.listAppointments(
+        fixture.context,
+        "2030-01-06T00:00:00.000Z",
+        "2030-01-07T00:00:00.000Z",
+        "synthetic-doctor-001",
+      ),
     ).toHaveLength(0);
   } finally {
     fixture.database.close();

@@ -455,6 +455,9 @@ function registerIpc(): void {
   ipcMain.handle("clinical:services", (_event, token: string) =>
     requireClinicalService().listServices(serviceContext(token)),
   );
+  ipcMain.handle("clinical:doctors", (_event, token: string) =>
+    requireClinicalService().listDoctors(serviceContext(token)),
+  );
   ipcMain.handle(
     "clinical:service-create",
     (_event, token: string, input: unknown) =>
@@ -502,11 +505,12 @@ function registerIpc(): void {
   );
   ipcMain.handle(
     "clinical:appointments",
-    (_event, token: string, from?: string, to?: string) =>
+    (_event, token: string, from?: string, to?: string, doctorId?: string) =>
       requireClinicalService().listAppointments(
         serviceContext(token),
         from,
         to,
+        doctorId,
       ),
   );
   ipcMain.handle(

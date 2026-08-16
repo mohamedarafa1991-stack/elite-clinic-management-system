@@ -103,6 +103,16 @@ export const userSchema = z.object({
 });
 export type User = z.infer<typeof userSchema>;
 
+export const doctorDirectoryEntrySchema = z.object({
+  id: opaqueIdSchema,
+  displayNameEn: z.string().trim().min(1).max(160),
+  displayNameAr: z.string().trim().max(160).optional(),
+  role: z.literal("doctor"),
+  isClinicalApprover: z.boolean(),
+  isActive: z.literal(true),
+});
+export type DoctorDirectoryEntry = z.infer<typeof doctorDirectoryEntrySchema>;
+
 export const deviceStatusSchema = z.enum([
   "pending",
   "active",
@@ -410,6 +420,21 @@ export const scheduleExceptionSchema = scheduleExceptionInputSchema.extend({
   createdAt: isoDateTimeSchema,
 });
 export type ScheduleException = z.infer<typeof scheduleExceptionSchema>;
+
+export const appointmentCalendarQuerySchema = z
+  .object({
+    from: isoDateTimeSchema.optional(),
+    to: isoDateTimeSchema.optional(),
+    doctorId: opaqueIdSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      !value.from || !value.to || new Date(value.from) < new Date(value.to),
+    { message: "from must be before to" },
+  );
+export type AppointmentCalendarQuery = z.infer<
+  typeof appointmentCalendarQuerySchema
+>;
 
 export const appointmentStatusSchema = z.enum([
   "scheduled",

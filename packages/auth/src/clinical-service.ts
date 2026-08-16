@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import {
+  appointmentCalendarQuerySchema,
   appointmentCreateInputSchema,
   appointmentSchema,
   appointmentStatusUpdateSchema,
@@ -8,6 +9,7 @@ import {
   type AppointmentCreateInput,
   type AppointmentStatusUpdate,
   departmentSchema,
+  doctorDirectoryEntrySchema,
   scheduleExceptionInputSchema,
   scheduleExceptionSchema,
   scheduleInputSchema,
@@ -15,6 +17,7 @@ import {
   serviceSchema,
   specialtySchema,
   type Department,
+  type DoctorDirectoryEntry,
   type Schedule,
   type ScheduleException,
   type ScheduleExceptionInput,
@@ -256,6 +259,28 @@ export class ClinicalWorkflowService {
     ).map(mapService);
   }
 
+  public listDoctors(context: SessionContext): readonly DoctorDirectoryEntry[] {
+    requireCapability(context, "appointment.read");
+    return (
+      this.database.raw
+        .prepare(
+          "SELECT id, display_name_en, display_name_ar, role, is_clinical_approver, is_active FROM users WHERE role = 'doctor' AND is_active = 1 ORDER BY display_name_en, id",
+        )
+        .all() as Array<Record<string, any>>
+    ).map((row) =>
+      doctorDirectoryEntrySchema.parse({
+        id: String(row["id"]),
+        displayNameEn: String(row["display_name_en"]),
+        ...(row["display_name_ar"]
+          ? { displayNameAr: String(row["display_name_ar"]) }
+          : {}),
+        role: "doctor",
+        isClinicalApprover: Number(row["is_clinical_approver"]) === 1,
+        isActive: Number(row["is_active"]) === 1,
+      }),
+    );
+  }
+
   public listSchedules(context: SessionContext): readonly Schedule[] {
     requireCapability(context, "clinical.read");
     return (
@@ -348,10 +373,14 @@ export class ClinicalWorkflowService {
       throw new Error("ELITE_SCHEDULE_INVALID_RANGE: start must be before end");
     if (
       !this.database.raw
-        .prepare("SELECT id FROM users WHERE id = ?")
+        .prepare(
+          "SELECT id FROM users WHERE id = ? AND role = 'doctor' AND is_active = 1",
+        )
         .get(parsed.doctorId)
     )
-      throw new Error("ELITE_DOCTOR_NOT_FOUND: doctor does not exist");
+      throw new Error(
+        "ELITE_DOCTOR_NOT_ACTIVE: doctor is missing, inactive, or not a doctor",
+      );
     if (
       !this.database.raw
         .prepare(
@@ -400,6 +429,28 @@ export class ClinicalWorkflowService {
     if (!parsed.doctorId && !parsed.departmentId)
       throw new Error(
         "ELITE_SCHEDULE_EXCEPTION_SCOPE_REQUIRED: doctor or department is required",
+      );
+    if (
+      parsed.doctorId &&
+      !this.database.raw
+        .prepare(
+          "SELECT id FROM users WHERE id = ? AND role = 'doctor' AND is_active = 1",
+        )
+        .get(parsed.doctorId)
+    )
+      throw new Error(
+        "ELITE_DOCTOR_NOT_ACTIVE: doctor is missing, inactive, or not a doctor",
+      );
+    if (
+      parsed.departmentId &&
+      !this.database.raw
+        .prepare(
+          "SELECT id FROM departments WHERE id = ? AND status = 'active'",
+        )
+        .get(parsed.departmentId)
+    )
+      throw new Error(
+        "ELITE_DEPARTMENT_NOT_ACTIVE: department is missing or archived",
       );
     if (parsed.kind === "open" && (!parsed.startTime || !parsed.endTime))
       throw new Error(
@@ -472,6 +523,15 @@ export class ClinicalWorkflowService {
         "ELITE_APPOINTMENT_INVALID_RANGE: end must be after start",
       );
     if (parsed.doctorId) {
+      const doctor = this.database.raw
+        .prepare(
+          "SELECT id FROM users WHERE id = ? AND role = 'doctor' AND is_active = 1",
+        )
+        .get(parsed.doctorId);
+      if (!doctor)
+        throw new Error(
+          "ELITE_DOCTOR_NOT_ACTIVE: doctor is missing, inactive, or not a doctor",
+        );
       const conflict = this.database.raw
         .prepare(
           "SELECT id FROM appointments WHERE doctor_id = ? AND status NOT IN ('cancelled', 'no-show') AND scheduled_start < ? AND scheduled_end > ? LIMIT 1",
@@ -515,15 +575,26 @@ export class ClinicalWorkflowService {
     context: SessionContext,
     from?: string,
     to?: string,
+    doctorId?: string,
   ): readonly Appointment[] {
     requireCapability(context, "appointment.read");
+    const query = appointmentCalendarQuerySchema.parse({
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+      ...(doctorId ? { doctorId } : {}),
+    });
     const rows = this.database.raw
       .prepare(
-        "SELECT a.*, p.patient_id AS patient_display_id FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE (? IS NULL OR a.scheduled_start >= ?) AND (? IS NULL OR a.scheduled_start < ?) ORDER BY a.scheduled_start",
+        "SELECT a.*, p.patient_id AS patient_display_id FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE (? IS NULL OR a.scheduled_start >= ?) AND (? IS NULL OR a.scheduled_start < ?) AND (? IS NULL OR a.doctor_id = ?) ORDER BY a.scheduled_start",
       )
-      .all(from ?? null, from ?? null, to ?? null, to ?? null) as Array<
-      Record<string, any>
-    >;
+      .all(
+        query.from ?? null,
+        query.from ?? null,
+        query.to ?? null,
+        query.to ?? null,
+        query.doctorId ?? null,
+        query.doctorId ?? null,
+      ) as Array<Record<string, any>>;
     return rows.map(mapAppointment);
   }
 

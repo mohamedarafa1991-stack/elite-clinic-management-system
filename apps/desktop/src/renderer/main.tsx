@@ -22,6 +22,7 @@ import type {
   Appointment,
   AppointmentCreateInput,
   Department,
+  DoctorDirectoryEntry,
   Service,
   Specialty,
   Schedule,
@@ -1505,6 +1506,97 @@ function PatientWorkspace({
   );
 }
 
+type CalendarView = "month" | "week" | "day";
+
+const CALENDAR_DAY_NAMES = [
+  "Saturday",
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+] as const;
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+}
+
+function addCalendarDays(date: Date, amount: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + amount);
+  return result;
+}
+
+function startOfClinicWeek(date: Date): Date {
+  const daysSinceSaturday = (date.getDay() + 1) % 7;
+  return addCalendarDays(date, -daysSinceSaturday);
+}
+
+function getCalendarRange(
+  view: CalendarView,
+  selectedDate: string,
+): { from: string; to: string } {
+  const date = parseLocalDate(selectedDate);
+  let fromDate: Date;
+  let toDate: Date;
+  if (view === "month") {
+    fromDate = new Date(date.getFullYear(), date.getMonth(), 1);
+    toDate = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  } else if (view === "week") {
+    fromDate = startOfClinicWeek(date);
+    toDate = addCalendarDays(fromDate, 7);
+  } else {
+    fromDate = date;
+    toDate = addCalendarDays(date, 1);
+  }
+  return {
+    from: new Date(fromDate).toISOString(),
+    to: new Date(toDate).toISOString(),
+  };
+}
+
+function getMonthGridDays(selectedDate: string): readonly Date[] {
+  const date = parseLocalDate(selectedDate);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  const gridStart = startOfClinicWeek(first);
+  return Array.from({ length: 42 }, (_, index) =>
+    addCalendarDays(gridStart, index),
+  );
+}
+
+function formatCalendarHeading(
+  view: CalendarView,
+  selectedDate: string,
+): string {
+  const date = parseLocalDate(selectedDate);
+  if (view === "day") {
+    return date.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+  if (view === "week") {
+    const start = startOfClinicWeek(date);
+    const end = addCalendarDays(start, 6);
+    return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+  return date.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function ClinicalWorkflowWorkspace({
   token,
   canManage,
@@ -1520,6 +1612,13 @@ function ClinicalWorkflowWorkspace({
     [],
   );
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [doctors, setDoctors] = useState<readonly DoctorDirectoryEntry[]>([]);
+  const [appointmentDoctorId, setAppointmentDoctorId] = useState("");
+  const [calendarDoctorId, setCalendarDoctorId] = useState("");
+  const [calendarView, setCalendarView] = useState<CalendarView>("month");
+  const [selectedDate, setSelectedDate] = useState(() =>
+    formatLocalDate(new Date()),
+  );
   const [doctorId, setDoctorId] = useState("");
   const [scheduleDepartmentId, setScheduleDepartmentId] = useState("");
   const [scheduleDay, setScheduleDay] = useState("6");
@@ -1557,6 +1656,7 @@ function ClinicalWorkflowWorkspace({
         serviceRows,
         scheduleRows,
         exceptionRows,
+        doctorRows,
         appointmentRows,
       ] = await Promise.all([
         window.elite.clinical.listSpecialties(token),
@@ -1564,13 +1664,20 @@ function ClinicalWorkflowWorkspace({
         window.elite.clinical.listServices(token),
         window.elite.clinical.listSchedules(token),
         window.elite.clinical.listExceptions(token),
-        window.elite.clinical.listAppointments(token),
+        window.elite.clinical.listDoctors(token),
+        window.elite.clinical.listAppointments(
+          token,
+          getCalendarRange(calendarView, selectedDate).from,
+          getCalendarRange(calendarView, selectedDate).to,
+          calendarDoctorId || undefined,
+        ),
       ]);
       setSpecialties(specialtyRows);
       setDepartments(departmentRows);
       setServices(serviceRows);
       setSchedules(scheduleRows);
       setExceptions(exceptionRows);
+      setDoctors(doctorRows);
       setAppointments(appointmentRows);
     } catch (reason: unknown) {
       setError(
@@ -1583,7 +1690,7 @@ function ClinicalWorkflowWorkspace({
 
   useEffect(() => {
     void refresh();
-  }, [token]);
+  }, [token, calendarView, selectedDate, calendarDoctorId]);
 
   const createAppointment = async (
     event: FormEvent<HTMLFormElement>,
@@ -1595,6 +1702,7 @@ function ClinicalWorkflowWorkspace({
       const input: AppointmentCreateInput = {
         patientId,
         departmentId,
+        ...(appointmentDoctorId ? { doctorId: appointmentDoctorId } : {}),
         ...(serviceId ? { serviceId } : {}),
         scheduledStart: new Date(scheduledStart).toISOString(),
         visitType,
@@ -1638,6 +1746,17 @@ function ClinicalWorkflowWorkspace({
       setIsBusy(false);
     }
   };
+
+  const navigateCalendar = (direction: -1 | 1): void => {
+    const date = parseLocalDate(selectedDate);
+    const amount = calendarView === "month" ? 1 : 7;
+    setSelectedDate(formatLocalDate(addCalendarDays(date, direction * amount)));
+  };
+
+  const goToToday = (): void => setSelectedDate(formatLocalDate(new Date()));
+
+  const doctorLabel = (id: string): string =>
+    doctors.find((doctor) => doctor.id === id)?.displayNameEn ?? id;
 
   const createSchedule = async (
     event: FormEvent<HTMLFormElement>,
@@ -1713,6 +1832,17 @@ function ClinicalWorkflowWorkspace({
     }
   };
 
+  const appointmentsForDate = (dateKey: string): readonly Appointment[] =>
+    appointments.filter(
+      (appointment) =>
+        formatLocalDate(new Date(appointment.scheduledStart)) === dateKey,
+    );
+  const monthGridDays = getMonthGridDays(selectedDate);
+  const weekDays = Array.from({ length: 7 }, (_, index) =>
+    addCalendarDays(startOfClinicWeek(parseLocalDate(selectedDate)), index),
+  );
+  const selectedMonth = parseLocalDate(selectedDate).getMonth();
+
   return (
     <section
       className="card clinical-workflow-card"
@@ -1756,6 +1886,21 @@ function ClinicalWorkflowWorkspace({
                     {item.nameEn}
                   </option>
                 ))}
+            </select>
+          </label>
+          <label>
+            Doctor
+            <select
+              value={appointmentDoctorId}
+              onChange={(event) => setAppointmentDoctorId(event.target.value)}
+            >
+              <option value="">Any available doctor</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.displayNameEn}
+                  {doctor.isClinicalApprover ? " · Approver" : ""}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -1934,12 +2079,18 @@ function ClinicalWorkflowWorkspace({
               onSubmit={(event) => void createSchedule(event)}
             >
               <h3>Doctor recurring schedule</h3>
-              <input
+              <select
                 required
-                placeholder="Doctor user ID"
                 value={doctorId}
                 onChange={(event) => setDoctorId(event.target.value)}
-              />
+              >
+                <option value="">Select doctor</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.displayNameEn}
+                  </option>
+                ))}
+              </select>
               <select
                 required
                 value={scheduleDepartmentId}
@@ -2009,11 +2160,17 @@ function ClinicalWorkflowWorkspace({
                 value={exceptionDate}
                 onChange={(event) => setExceptionDate(event.target.value)}
               />
-              <input
-                placeholder="Doctor ID (optional)"
+              <select
                 value={exceptionDoctorId}
                 onChange={(event) => setExceptionDoctorId(event.target.value)}
-              />
+              >
+                <option value="">Doctor scope (optional)</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.displayNameEn}
+                  </option>
+                ))}
+              </select>
               <select
                 value={exceptionDepartmentId}
                 onChange={(event) =>
@@ -2124,8 +2281,208 @@ function ClinicalWorkflowWorkspace({
           </div>
         </>
       ) : null}
+      <section className="calendar-panel" aria-labelledby="calendar-title">
+        <div className="calendar-toolbar">
+          <div>
+            <p className="eyebrow">Schedule calendar</p>
+            <h3 id="calendar-title">
+              {formatCalendarHeading(calendarView, selectedDate)}
+            </h3>
+          </div>
+          <div className="calendar-actions">
+            <button
+              className="button secondary"
+              type="button"
+              disabled={isBusy}
+              onClick={() => navigateCalendar(-1)}
+            >
+              Previous
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={isBusy}
+              onClick={goToToday}
+            >
+              Today
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={isBusy}
+              onClick={() => navigateCalendar(1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+        <div className="calendar-filters">
+          <label>
+            View
+            <select
+              value={calendarView}
+              onChange={(event) =>
+                setCalendarView(event.target.value as CalendarView)
+              }
+            >
+              <option value="month">Month</option>
+              <option value="week">Week</option>
+              <option value="day">Day</option>
+            </select>
+          </label>
+          <label>
+            Focus date
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+            />
+          </label>
+          <label>
+            Doctor
+            <select
+              value={calendarDoctorId}
+              onChange={(event) => setCalendarDoctorId(event.target.value)}
+            >
+              <option value="">All doctors</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.displayNameEn}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {calendarView === "month" ? (
+          <div className="calendar-month-grid">
+            {CALENDAR_DAY_NAMES.map((dayName) => (
+              <div className="calendar-weekday" key={dayName}>
+                {dayName.slice(0, 3)}
+              </div>
+            ))}
+            {monthGridDays.map((day) => {
+              const dayKey = formatLocalDate(day);
+              const dayAppointments = appointmentsForDate(dayKey);
+              return (
+                <button
+                  className={`calendar-day${day.getMonth() !== selectedMonth ? " outside-month" : ""}${dayKey === selectedDate ? " selected-day" : ""}`}
+                  key={dayKey}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(dayKey);
+                    setCalendarView("day");
+                  }}
+                >
+                  <strong>{day.getDate()}</strong>
+                  <span className="calendar-day-count">
+                    {dayAppointments.length} appointment
+                    {dayAppointments.length === 1 ? "" : "s"}
+                  </span>
+                  {dayAppointments.slice(0, 3).map((appointment) => (
+                    <span
+                      className="calendar-appointment-chip"
+                      key={appointment.id}
+                    >
+                      {new Date(appointment.scheduledStart).toLocaleTimeString(
+                        undefined,
+                        { hour: "2-digit", minute: "2-digit" },
+                      )}{" "}
+                      · {appointment.patientId}
+                    </span>
+                  ))}
+                </button>
+              );
+            })}
+          </div>
+        ) : calendarView === "week" ? (
+          <div className="calendar-week-grid">
+            {weekDays.map((day) => {
+              const dayKey = formatLocalDate(day);
+              return (
+                <div className="calendar-week-column" key={dayKey}>
+                  <button
+                    className={`calendar-column-heading${dayKey === selectedDate ? " selected-day" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDate(dayKey);
+                      setCalendarView("day");
+                    }}
+                  >
+                    <strong>
+                      {day.toLocaleDateString(undefined, { weekday: "short" })}
+                    </strong>
+                    <span>
+                      {day.toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </button>
+                  <div className="calendar-column-appointments">
+                    {appointmentsForDate(dayKey).length === 0 ? (
+                      <span className="muted">No visits</span>
+                    ) : (
+                      appointmentsForDate(dayKey).map((appointment) => (
+                        <article
+                          className="calendar-appointment-card"
+                          key={appointment.id}
+                        >
+                          <strong>
+                            {new Date(
+                              appointment.scheduledStart,
+                            ).toLocaleTimeString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </strong>
+                          <span>{appointment.patientId}</span>
+                          <small>
+                            {appointment.status} · {appointment.durationMinutes}{" "}
+                            min
+                          </small>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="calendar-day-view">
+            {appointmentsForDate(selectedDate).length === 0 ? (
+              <p className="muted">No appointments for this day.</p>
+            ) : (
+              appointmentsForDate(selectedDate).map((appointment) => (
+                <article
+                  className="calendar-day-appointment"
+                  key={appointment.id}
+                >
+                  <div>
+                    <strong>
+                      {new Date(appointment.scheduledStart).toLocaleTimeString(
+                        undefined,
+                        { hour: "2-digit", minute: "2-digit" },
+                      )}
+                    </strong>
+                    <span>
+                      {appointment.patientId} · {appointment.visitType}
+                    </span>
+                    <small>
+                      {appointment.status} · {appointment.durationMinutes} min ·{" "}
+                      {appointment.doctorId
+                        ? doctorLabel(appointment.doctorId)
+                        : "Unassigned"}
+                    </small>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        )}
+      </section>
       <div className="appointment-list">
-        <h3>Appointments</h3>
+        <h3>Appointments in selected calendar range</h3>
         {appointments.length === 0 ? (
           <p className="muted">No appointments found.</p>
         ) : (

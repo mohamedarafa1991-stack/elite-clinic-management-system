@@ -12,6 +12,7 @@ import type {
   Service,
   Appointment,
   AppointmentCreateInput,
+  DoctorDirectoryEntry,
   AppointmentStatusUpdate,
   Schedule,
   ScheduleInput,
@@ -209,6 +210,10 @@ const eliteApi = {
       ipcRenderer.invoke("clinical:services", token) as Promise<
         readonly Service[]
       >,
+    listDoctors: (token: string) =>
+      ipcRenderer.invoke("clinical:doctors", token) as Promise<
+        readonly DoctorDirectoryEntry[]
+      >,
     createService: (token: string, input: unknown) =>
       ipcRenderer.invoke(
         "clinical:service-create",
@@ -249,10 +254,19 @@ const eliteApi = {
         id,
         reason,
       ) as Promise<void>,
-    listAppointments: (token: string, from?: string, to?: string) =>
-      ipcRenderer.invoke("clinical:appointments", token, from, to) as Promise<
-        readonly Appointment[]
-      >,
+    listAppointments: (
+      token: string,
+      from?: string,
+      to?: string,
+      doctorId?: string,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:appointments",
+        token,
+        from,
+        to,
+        doctorId,
+      ) as Promise<readonly Appointment[]>,
     createAppointment: (token: string, input: AppointmentCreateInput) =>
       ipcRenderer.invoke(
         "clinical:appointment-create",
