@@ -1,8 +1,10 @@
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import {
+  amendmentConflictResolutionSchema,
   diagnosisApprovalStatusSchema,
   diagnosisInputSchema,
+  effectiveEncounterSchema,
   encounterAmendmentInputSchema,
   encounterAmendmentSchema,
   diagnosisSchema,
@@ -13,6 +15,8 @@ import {
   patientIdSchema,
   type Diagnosis,
   type DiagnosisInput,
+  type AmendmentConflictResolution,
+  type EffectiveEncounter,
   type EncounterAmendment,
   type EncounterAmendmentInput,
   type Encounter,
@@ -99,6 +103,42 @@ export class EncounterService {
       )
       .get(parsedAppointmentId) as Record<string, unknown> | undefined;
     return row ? this.mapEncounter(row) : null;
+  }
+
+  public getEffectiveEncounterForAppointment(
+    context: SessionContext,
+    appointmentId: string,
+  ): EffectiveEncounter | null {
+    requireCapability(context, "clinical.read");
+    const base = this.getEncounterForAppointment(context, appointmentId);
+    if (!base) return null;
+    const rows = this.database.raw
+      .prepare(
+        `SELECT subjective, objective, assessment, plan, follow_up, id, applied_at
+         FROM encounter_amendments
+         WHERE encounter_id = ? AND status = 'applied'
+         ORDER BY applied_sequence ASC, applied_at ASC`,
+      )
+      .all(base.id) as Array<Record<string, unknown>>;
+    const effective: Record<string, unknown> = {
+      ...base,
+      effectiveVersion: base.version + rows.length,
+      appliedAmendmentCount: rows.length,
+    };
+    for (const row of rows) {
+      if (row["subjective"] !== null)
+        effective["subjective"] = String(row["subjective"]);
+      if (row["objective"] !== null)
+        effective["objective"] = String(row["objective"]);
+      if (row["assessment"] !== null)
+        effective["assessment"] = String(row["assessment"]);
+      if (row["plan"] !== null) effective["plan"] = String(row["plan"]);
+      if (row["follow_up"] !== null)
+        effective["followUp"] = String(row["follow_up"]);
+      effective["lastAppliedAmendmentId"] = String(row["id"]);
+      effective["lastAmendedAt"] = String(row["applied_at"]);
+    }
+    return effectiveEncounterSchema.parse(effective);
   }
 
   public createEncounter(
@@ -287,17 +327,19 @@ export class EncounterService {
       );
     const timestamp = this.now();
     const id = nanoid(18);
+    const latestApplied = this.getLatestAppliedAmendment(parsedEncounterId);
     this.database.raw
       .prepare(
         `INSERT INTO encounter_amendments
-          (id, encounter_id, patient_id, base_encounter_version, subjective, objective, assessment, plan, follow_up, correction_reason, status, requested_by_user_id, requested_at, version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 1)`,
+          (id, encounter_id, patient_id, base_encounter_version, base_amendment_id, subjective, objective, assessment, plan, follow_up, correction_reason, status, requested_by_user_id, requested_at, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 1)`,
       )
       .run(
         id,
         parsedEncounterId,
         encounter.patient_id,
         encounter.version,
+        latestApplied?.id ?? null,
         parsed.subjective ?? null,
         parsed.objective ?? null,
         parsed.assessment ?? null,
@@ -312,7 +354,11 @@ export class EncounterService {
       "encounter-amendment.create",
       id,
       encounter.patient_display_id,
-      { baseEncounterVersion: encounter.version, status: "pending" },
+      {
+        baseEncounterVersion: encounter.version,
+        baseAmendmentId: latestApplied?.id ?? null,
+        status: "pending",
+      },
     );
     return this.getAmendment(context, id);
   }
@@ -386,31 +432,54 @@ export class EncounterService {
       throw new Error(
         "ELITE_AMENDMENT_APPROVAL_REQUIRED: only approved amendments can be applied",
       );
-    const applied = this.database.raw
-      .prepare(
-        "SELECT id FROM encounter_amendments WHERE encounter_id = ? AND status = 'applied' LIMIT 1",
-      )
-      .get(current.encounter_id);
-    if (applied)
-      throw new Error(
-        "ELITE_ENCOUNTER_AMENDMENT_ALREADY_APPLIED: an applied amendment already exists for this encounter",
-      );
     const encounter = this.getEncounterRow(current.encounter_id);
+    const latestApplied = this.getLatestAppliedAmendment(current.encounter_id);
+    const lineageMatches =
+      (current.base_amendment_id ?? null) === (latestApplied?.id ?? null);
     if (
       encounter.status !== "signed" ||
-      encounter.version !== current.base_encounter_version
-    )
-      throw new Error(
-        "ELITE_AMENDMENT_BASE_VERSION_CONFLICT: the signed encounter base no longer matches",
+      encounter.version !== current.base_encounter_version ||
+      !lineageMatches
+    ) {
+      const conflictReason = !lineageMatches
+        ? "A newer applied amendment changed the effective record lineage."
+        : "The signed encounter base version no longer matches the amendment.";
+      const timestamp = this.now();
+      const result = this.database.raw
+        .prepare(
+          `UPDATE encounter_amendments
+           SET status = 'conflict', conflict_reason = ?, version = version + 1
+           WHERE id = ? AND version = ? AND status = 'approved'`,
+        )
+        .run(conflictReason, parsedAmendmentId, expectedVersion);
+      if (result.changes !== 1)
+        throw new Error(
+          "ELITE_AMENDMENT_VERSION_CONFLICT: amendment was changed by another device",
+        );
+      this.writeAudit(
+        context,
+        "encounter-amendment.conflict",
+        parsedAmendmentId,
+        current.patient_display_id,
+        { conflictReason, latestAppliedAmendmentId: latestApplied?.id ?? null },
       );
+      return this.getAmendment(context, parsedAmendmentId);
+    }
+    const appliedSequence = (latestApplied?.applied_sequence ?? 0) + 1;
     const timestamp = this.now();
     const result = this.database.raw
       .prepare(
         `UPDATE encounter_amendments
-         SET status = 'applied', applied_by_user_id = ?, applied_at = ?, version = version + 1
+         SET status = 'applied', applied_sequence = ?, applied_by_user_id = ?, applied_at = ?, version = version + 1
          WHERE id = ? AND version = ? AND status = 'approved'`,
       )
-      .run(context.userId, timestamp, parsedAmendmentId, expectedVersion);
+      .run(
+        appliedSequence,
+        context.userId,
+        timestamp,
+        parsedAmendmentId,
+        expectedVersion,
+      );
     if (result.changes !== 1)
       throw new Error(
         "ELITE_AMENDMENT_VERSION_CONFLICT: amendment was changed by another device",
@@ -420,7 +489,75 @@ export class EncounterService {
       "encounter-amendment.apply",
       parsedAmendmentId,
       current.patient_display_id,
-      { baseEncounterVersion: current.base_encounter_version },
+      {
+        baseEncounterVersion: current.base_encounter_version,
+        baseAmendmentId: current.base_amendment_id ?? null,
+        appliedSequence,
+      },
+    );
+    return this.getAmendment(context, parsedAmendmentId);
+  }
+
+  public resolveAmendmentConflict(
+    context: SessionContext,
+    amendmentId: string,
+    resolution: AmendmentConflictResolution,
+    reason: string,
+    expectedVersion: number,
+  ): EncounterAmendment {
+    requireCapability(context, "clinical.approve");
+    if (context.role !== "doctor")
+      throw new Error(
+        "ELITE_CLINICAL_DOCTOR_REQUIRED: only a Doctor can resolve an amendment conflict",
+      );
+    const parsedAmendmentId = entityIdSchema.parse(amendmentId);
+    const parsedResolution =
+      amendmentConflictResolutionSchema.parse(resolution);
+    const parsedReason = z.string().trim().min(3).max(1000).parse(reason);
+    const current = this.getAmendmentRow(parsedAmendmentId);
+    if (current.requested_by_user_id === context.userId)
+      throw new Error(
+        "ELITE_AMENDMENT_SEPARATION_REQUIRED: a different Doctor must resolve the amendment conflict",
+      );
+    if (current.status !== "conflict")
+      throw new Error(
+        "ELITE_AMENDMENT_CONFLICT_REQUIRED: only conflicted amendments can be resolved",
+      );
+    const encounter = this.getEncounterRow(current.encounter_id);
+    const latestApplied = this.getLatestAppliedAmendment(current.encounter_id);
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        `UPDATE encounter_amendments
+         SET status = ?, base_encounter_version = ?, base_amendment_id = ?,
+             conflict_resolved_at = ?, conflict_resolved_by_user_id = ?, conflict_resolution_reason = ?,
+             review_reason = ?, version = version + 1
+         WHERE id = ? AND version = ? AND status = 'conflict'`,
+      )
+      .run(
+        parsedResolution === "rebase" ? "approved" : "rejected",
+        encounter.version,
+        latestApplied?.id ?? null,
+        timestamp,
+        context.userId,
+        parsedReason,
+        parsedReason,
+        parsedAmendmentId,
+        expectedVersion,
+      );
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_AMENDMENT_VERSION_CONFLICT: amendment was changed by another device",
+      );
+    this.writeAudit(
+      context,
+      `encounter-amendment.conflict-${parsedResolution}`,
+      parsedAmendmentId,
+      current.patient_display_id,
+      {
+        reason: parsedReason,
+        baseAmendmentId: latestApplied?.id ?? null,
+      },
     );
     return this.getAmendment(context, parsedAmendmentId);
   }
@@ -631,19 +768,38 @@ export class EncounterService {
     return this.mapEncounter(row);
   }
 
+  private getLatestAppliedAmendment(encounterId: string): {
+    id: string;
+    applied_sequence: number;
+  } | null {
+    const row = this.database.raw
+      .prepare(
+        `SELECT id, applied_sequence
+         FROM encounter_amendments
+         WHERE encounter_id = ? AND status = 'applied'
+         ORDER BY applied_sequence DESC
+         LIMIT 1`,
+      )
+      .get(encounterId) as { id: string; applied_sequence: number } | undefined;
+    return row ?? null;
+  }
+
   private getAmendmentRow(id: string): {
     id: string;
     encounter_id: string;
     patient_id: string;
     patient_display_id: string;
     base_encounter_version: number;
+    base_amendment_id: string | null;
     requested_by_user_id: string;
     status: string;
+    applied_sequence: number | null;
     version: number;
   } {
     const row = this.database.raw
       .prepare(
-        `SELECT a.id, a.encounter_id, a.patient_id, a.base_encounter_version, a.requested_by_user_id, a.status, a.version,
+        `SELECT a.id, a.encounter_id, a.patient_id, a.base_encounter_version, a.base_amendment_id,
+                a.requested_by_user_id, a.status, a.applied_sequence, a.version,
                 p.patient_id AS patient_display_id
          FROM encounter_amendments a JOIN patients p ON p.id = a.patient_id WHERE a.id = ?`,
       )
@@ -654,8 +810,10 @@ export class EncounterService {
           patient_id: string;
           patient_display_id: string;
           base_encounter_version: number;
+          base_amendment_id: string | null;
           requested_by_user_id: string;
           status: string;
+          applied_sequence: number | null;
           version: number;
         }
       | undefined;
@@ -770,13 +928,49 @@ export class EncounterService {
       encounterId: String(row["encounter_id"]),
       patientId: String(row["patient_display_id"]),
       baseEncounterVersion: Number(row["base_encounter_version"]),
-      ...(row["subjective"] ? { subjective: String(row["subjective"]) } : {}),
-      ...(row["objective"] ? { objective: String(row["objective"]) } : {}),
-      ...(row["assessment"] ? { assessment: String(row["assessment"]) } : {}),
-      ...(row["plan"] ? { plan: String(row["plan"]) } : {}),
-      ...(row["follow_up"] ? { followUp: String(row["follow_up"]) } : {}),
+      ...(row["base_amendment_id"] !== null &&
+      row["base_amendment_id"] !== undefined
+        ? { baseAmendmentId: String(row["base_amendment_id"]) }
+        : {}),
+      ...(row["subjective"] !== null && row["subjective"] !== undefined
+        ? { subjective: String(row["subjective"]) }
+        : {}),
+      ...(row["objective"] !== null && row["objective"] !== undefined
+        ? { objective: String(row["objective"]) }
+        : {}),
+      ...(row["assessment"] !== null && row["assessment"] !== undefined
+        ? { assessment: String(row["assessment"]) }
+        : {}),
+      ...(row["plan"] !== null && row["plan"] !== undefined
+        ? { plan: String(row["plan"]) }
+        : {}),
+      ...(row["follow_up"] !== null && row["follow_up"] !== undefined
+        ? { followUp: String(row["follow_up"]) }
+        : {}),
       correctionReason: String(row["correction_reason"]),
       status: row["status"],
+      ...(row["conflict_reason"]
+        ? { conflictReason: String(row["conflict_reason"]) }
+        : {}),
+      ...(row["conflict_resolved_at"]
+        ? { conflictResolvedAt: String(row["conflict_resolved_at"]) }
+        : {}),
+      ...(row["conflict_resolved_by_user_id"]
+        ? {
+            conflictResolvedByUserId: String(
+              row["conflict_resolved_by_user_id"],
+            ),
+          }
+        : {}),
+      ...(row["conflict_resolution_reason"]
+        ? {
+            conflictResolutionReason: String(row["conflict_resolution_reason"]),
+          }
+        : {}),
+      ...(row["applied_sequence"] !== null &&
+      row["applied_sequence"] !== undefined
+        ? { appliedSequence: Number(row["applied_sequence"]) }
+        : {}),
       requestedByUserId: String(row["requested_by_user_id"]),
       requestedAt: String(row["requested_at"]),
       ...(row["reviewed_by_user_id"]

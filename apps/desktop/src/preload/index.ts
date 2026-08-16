@@ -19,6 +19,7 @@ import type {
   DiagnosisInput,
   EncounterAmendment,
   EncounterAmendmentInput,
+  EffectiveEncounter,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -248,6 +249,15 @@ const eliteApi = {
         token,
         appointmentId,
       ) as Promise<Encounter | null>,
+    getEffectiveEncounterForAppointment: (
+      token: string,
+      appointmentId: string,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:encounter-effective-by-appointment",
+        token,
+        appointmentId,
+      ) as Promise<EffectiveEncounter | null>,
     createEncounter: (
       token: string,
       appointmentId: string,
@@ -310,6 +320,21 @@ const eliteApi = {
         token,
         amendmentId,
         decision,
+        reason,
+        expectedVersion,
+      ) as Promise<EncounterAmendment>,
+    resolveAmendmentConflict: (
+      token: string,
+      amendmentId: string,
+      resolution: "rebase" | "reject",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:amendment-resolve",
+        token,
+        amendmentId,
+        resolution,
         reason,
         expectedVersion,
       ) as Promise<EncounterAmendment>,

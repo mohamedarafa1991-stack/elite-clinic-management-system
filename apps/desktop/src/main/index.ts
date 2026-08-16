@@ -503,6 +503,14 @@ function registerIpc(): void {
       ),
   );
   ipcMain.handle(
+    "clinical:encounter-effective-by-appointment",
+    (_event, token: string, appointmentId: string) =>
+      requireEncounterService().getEffectiveEncounterForAppointment(
+        serviceContext(token),
+        appointmentId,
+      ),
+  );
+  ipcMain.handle(
     "clinical:encounter-create",
     (_event, token: string, appointmentId: string, input: unknown) =>
       requireEncounterService().createEncounter(
@@ -567,6 +575,24 @@ function registerIpc(): void {
         serviceContext(token),
         amendmentId,
         decision,
+        reason,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:amendment-resolve",
+    (
+      _event,
+      token: string,
+      amendmentId: string,
+      resolution: "rebase" | "reject",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      requireEncounterService().resolveAmendmentConflict(
+        serviceContext(token),
+        amendmentId,
+        resolution,
         reason,
         expectedVersion,
       ),

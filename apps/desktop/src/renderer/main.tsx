@@ -29,6 +29,7 @@ import type {
   DiagnosisInput,
   EncounterAmendment,
   EncounterAmendmentInput,
+  EffectiveEncounter,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -2029,6 +2030,8 @@ function ClinicalWorkflowWorkspace({
   const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(
     null,
   );
+  const [selectedEffectiveEncounter, setSelectedEffectiveEncounter] =
+    useState<EffectiveEncounter | null>(null);
   const [amendments, setAmendments] = useState<readonly EncounterAmendment[]>(
     [],
   );
@@ -2193,12 +2196,18 @@ function ClinicalWorkflowWorkspace({
         token,
         appointment.id,
       );
+      const [effectiveEncounter, amendmentRows] = encounter
+        ? await Promise.all([
+            window.elite.clinical.getEffectiveEncounterForAppointment(
+              token,
+              appointment.id,
+            ),
+            window.elite.clinical.listAmendments(token, encounter.id),
+          ])
+        : [null, [] as readonly EncounterAmendment[]];
       setSelectedEncounter(encounter);
-      setAmendments(
-        encounter
-          ? await window.elite.clinical.listAmendments(token, encounter.id)
-          : [],
-      );
+      setSelectedEffectiveEncounter(effectiveEncounter);
+      setAmendments(amendmentRows);
       setAmendmentForm(null);
       setAmendmentReviewReason("");
       setEncounterForm(
@@ -2222,6 +2231,7 @@ function ClinicalWorkflowWorkspace({
       );
     } catch (reason: unknown) {
       setSelectedEncounter(null);
+      setSelectedEffectiveEncounter(null);
       setAmendments([]);
       setAmendmentForm(null);
       setAmendmentReviewReason("");
@@ -2310,6 +2320,44 @@ function ClinicalWorkflowWorkspace({
     }
   };
 
+  const resolveAmendmentConflict = async (
+    amendment: EncounterAmendment,
+    resolution: "rebase" | "reject",
+  ): Promise<void> => {
+    if (amendmentReviewReason.trim().length < 3) {
+      setError("Enter a reason before resolving the amendment conflict");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.resolveAmendmentConflict(
+        token,
+        amendment.id,
+        resolution,
+        amendmentReviewReason,
+        amendment.version,
+      );
+      setAmendmentReviewReason("");
+      if (selectedEncounter) {
+        setAmendments(
+          await window.elite.clinical.listAmendments(
+            token,
+            selectedEncounter.id,
+          ),
+        );
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to resolve amendment conflict",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const applyAmendment = async (
     amendment: EncounterAmendment,
   ): Promise<void> => {
@@ -2326,6 +2374,12 @@ function ClinicalWorkflowWorkspace({
           await window.elite.clinical.listAmendments(
             token,
             selectedEncounter.id,
+          ),
+        );
+        setSelectedEffectiveEncounter(
+          await window.elite.clinical.getEffectiveEncounterForAppointment(
+            token,
+            selectedAppointment?.id ?? "",
           ),
         );
       }
@@ -2359,6 +2413,12 @@ function ClinicalWorkflowWorkspace({
             encounterForm,
           );
       setSelectedEncounter(saved);
+      setSelectedEffectiveEncounter(
+        await window.elite.clinical.getEffectiveEncounterForAppointment(
+          token,
+          selectedAppointment.id,
+        ),
+      );
       setEncounterForm({
         subjective: saved.subjective ?? "",
         objective: saved.objective ?? "",
@@ -2387,6 +2447,12 @@ function ClinicalWorkflowWorkspace({
         selectedEncounter.version,
       );
       setSelectedEncounter(signed);
+      setSelectedEffectiveEncounter(
+        await window.elite.clinical.getEffectiveEncounterForAppointment(
+          token,
+          selectedAppointment?.id ?? "",
+        ),
+      );
       setEncounterForm(null);
     } catch (reason: unknown) {
       setError(
@@ -2571,6 +2637,7 @@ function ClinicalWorkflowWorkspace({
     addCalendarDays(startOfClinicWeek(parseLocalDate(selectedDate)), index),
   );
   const selectedMonth = parseLocalDate(selectedDate).getMonth();
+  const displayedEncounter = selectedEffectiveEncounter ?? selectedEncounter;
 
   return (
     <section
@@ -3429,29 +3496,30 @@ function ClinicalWorkflowWorkspace({
               <dl className="encounter-note-grid">
                 <div>
                   <dt>Subjective</dt>
-                  <dd>{selectedEncounter.subjective ?? "Not recorded"}</dd>
+                  <dd>{displayedEncounter?.subjective ?? "Not recorded"}</dd>
                 </div>
                 <div>
                   <dt>Objective</dt>
-                  <dd>{selectedEncounter.objective ?? "Not recorded"}</dd>
+                  <dd>{displayedEncounter?.objective ?? "Not recorded"}</dd>
                 </div>
                 <div>
                   <dt>Assessment</dt>
-                  <dd>{selectedEncounter.assessment ?? "Not recorded"}</dd>
+                  <dd>{displayedEncounter?.assessment ?? "Not recorded"}</dd>
                 </div>
                 <div>
                   <dt>Plan</dt>
-                  <dd>{selectedEncounter.plan ?? "Not recorded"}</dd>
+                  <dd>{displayedEncounter?.plan ?? "Not recorded"}</dd>
                 </div>
                 <div>
                   <dt>Follow-up</dt>
-                  <dd>{selectedEncounter.followUp ?? "Not recorded"}</dd>
+                  <dd>{displayedEncounter?.followUp ?? "Not recorded"}</dd>
                 </div>
               </dl>
               {selectedEncounter.status === "signed" ? (
                 <p className="status ok">
-                  Signed encounters are immutable; corrections require an
-                  amendment workflow.
+                  Signed original is immutable. Effective projection includes{" "}
+                  {selectedEffectiveEncounter?.appliedAmendmentCount ?? 0}{" "}
+                  applied amendment(s).
                 </p>
               ) : null}
             </div>
@@ -3491,9 +3559,18 @@ function ClinicalWorkflowWorkspace({
                         <small>
                           Requested by {amendment.requestedByUserId} · base
                           version {amendment.baseEncounterVersion}
+                          {amendment.baseAmendmentId
+                            ? ` · after ${amendment.baseAmendmentId}`
+                            : " · original signed record"}
+                          {amendment.appliedSequence
+                            ? ` · sequence ${amendment.appliedSequence}`
+                            : ""}
                         </small>
                         {amendment.reviewReason ? (
                           <small>Review: {amendment.reviewReason}</small>
+                        ) : null}
+                        {amendment.conflictReason ? (
+                          <small>Conflict: {amendment.conflictReason}</small>
                         ) : null}
                       </div>
                       {canApproveClinical && amendment.status === "pending" ? (
@@ -3533,21 +3610,53 @@ function ClinicalWorkflowWorkspace({
                         >
                           Apply amendment
                         </button>
+                      ) : amendment.status === "conflict" &&
+                        canApproveClinical ? (
+                        <div className="button-row">
+                          <button
+                            className="button primary"
+                            type="button"
+                            disabled={
+                              isBusy || amendmentReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void resolveAmendmentConflict(amendment, "rebase")
+                            }
+                          >
+                            Rebase and approve
+                          </button>
+                          <button
+                            className="button danger"
+                            type="button"
+                            disabled={
+                              isBusy || amendmentReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void resolveAmendmentConflict(amendment, "reject")
+                            }
+                          >
+                            Reject conflict
+                          </button>
+                        </div>
                       ) : null}
                     </article>
                   ))}
                 </div>
               )}
               {canApproveClinical &&
-              amendments.some((amendment) => amendment.status === "pending") ? (
+              amendments.some(
+                (amendment) =>
+                  amendment.status === "pending" ||
+                  amendment.status === "conflict",
+              ) ? (
                 <label className="history-audit-reason">
-                  Amendment review reason
+                  Amendment review or conflict-resolution reason
                   <input
                     value={amendmentReviewReason}
                     onChange={(event) =>
                       setAmendmentReviewReason(event.target.value)
                     }
-                    placeholder="Required for approval or rejection"
+                    placeholder="Required for review, rebase, or rejection"
                   />
                 </label>
               ) : null}

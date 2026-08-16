@@ -561,6 +561,56 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_encounter_amendments_patient ON encounter_amendments(patient_id, requested_at);
     `,
   },
+  {
+    version: 10,
+    name: "encounter-amendment-projection-conflicts",
+    sql: `
+      DROP INDEX IF EXISTS idx_encounter_amendments_encounter;
+      DROP INDEX IF EXISTS idx_encounter_amendments_status;
+      DROP INDEX IF EXISTS idx_encounter_amendments_patient;
+      ALTER TABLE encounter_amendments RENAME TO encounter_amendments_v9;
+      CREATE TABLE encounter_amendments (
+        id TEXT PRIMARY KEY NOT NULL,
+        encounter_id TEXT NOT NULL REFERENCES encounters(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        base_encounter_version INTEGER NOT NULL CHECK (base_encounter_version >= 1),
+        base_amendment_id TEXT REFERENCES encounter_amendments(id),
+        subjective TEXT,
+        objective TEXT,
+        assessment TEXT,
+        plan TEXT,
+        follow_up TEXT,
+        correction_reason TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'applied', 'conflict')) DEFAULT 'pending',
+        conflict_reason TEXT,
+        conflict_resolved_at TEXT,
+        conflict_resolved_by_user_id TEXT REFERENCES users(id),
+        conflict_resolution_reason TEXT,
+        applied_sequence INTEGER CHECK (applied_sequence IS NULL OR applied_sequence >= 1),
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        review_reason TEXT,
+        applied_by_user_id TEXT REFERENCES users(id),
+        applied_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      INSERT INTO encounter_amendments
+        (id, encounter_id, patient_id, base_encounter_version, subjective, objective, assessment, plan, follow_up,
+         correction_reason, status, requested_by_user_id, requested_at, reviewed_by_user_id, reviewed_at, review_reason,
+         applied_by_user_id, applied_at, version)
+      SELECT id, encounter_id, patient_id, base_encounter_version, subjective, objective, assessment, plan, follow_up,
+             correction_reason, status, requested_by_user_id, requested_at, reviewed_by_user_id, reviewed_at, review_reason,
+             applied_by_user_id, applied_at, version
+      FROM encounter_amendments_v9;
+      DROP TABLE encounter_amendments_v9;
+      CREATE INDEX idx_encounter_amendments_encounter ON encounter_amendments(encounter_id, requested_at);
+      CREATE INDEX idx_encounter_amendments_status ON encounter_amendments(status, requested_at);
+      CREATE INDEX idx_encounter_amendments_patient ON encounter_amendments(patient_id, requested_at);
+      CREATE INDEX idx_encounter_amendments_base ON encounter_amendments(encounter_id, base_encounter_version, status);
+    `,
+  },
 ];
 
 function now(): string {

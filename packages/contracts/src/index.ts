@@ -333,6 +333,7 @@ export const encounterAmendmentStatusSchema = z.enum([
   "approved",
   "rejected",
   "applied",
+  "conflict",
 ]);
 export type EncounterAmendmentStatus = z.infer<
   typeof encounterAmendmentStatusSchema
@@ -350,7 +351,13 @@ export const encounterAmendmentSchema = encounterAmendmentInputSchema.extend({
   encounterId: opaqueIdSchema,
   patientId: patientIdSchema,
   baseEncounterVersion: z.number().int().positive(),
+  baseAmendmentId: opaqueIdSchema.optional(),
   status: encounterAmendmentStatusSchema,
+  conflictReason: z.string().max(1000).optional(),
+  conflictResolvedAt: isoDateTimeSchema.optional(),
+  conflictResolvedByUserId: opaqueIdSchema.optional(),
+  conflictResolutionReason: z.string().max(1000).optional(),
+  appliedSequence: z.number().int().positive().optional(),
   requestedByUserId: opaqueIdSchema,
   requestedAt: isoDateTimeSchema,
   reviewedByUserId: opaqueIdSchema.optional(),
@@ -361,6 +368,19 @@ export const encounterAmendmentSchema = encounterAmendmentInputSchema.extend({
   version: z.number().int().positive(),
 });
 export type EncounterAmendment = z.infer<typeof encounterAmendmentSchema>;
+
+export const effectiveEncounterSchema = encounterSchema.extend({
+  effectiveVersion: z.number().int().positive(),
+  appliedAmendmentCount: z.number().int().nonnegative(),
+  lastAppliedAmendmentId: opaqueIdSchema.optional(),
+  lastAmendedAt: isoDateTimeSchema.optional(),
+});
+export type EffectiveEncounter = z.infer<typeof effectiveEncounterSchema>;
+
+export const amendmentConflictResolutionSchema = z.enum(["rebase", "reject"]);
+export type AmendmentConflictResolution = z.infer<
+  typeof amendmentConflictResolutionSchema
+>;
 
 export const diagnosisInputSchema = z.object({
   icd10CodeId: opaqueIdSchema,

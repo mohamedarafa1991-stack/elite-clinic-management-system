@@ -237,6 +237,102 @@ describe("EncounterService", () => {
       );
       expect(original?.status).toBe("signed");
       expect(original?.version).toBe(signed.version);
+
+      const secondAmendment = encounters.createAmendment(author, signed.id, {
+        subjective: "Second corrected synthetic history.",
+        objective: "Second corrected synthetic examination.",
+        assessment: "Second corrected synthetic assessment.",
+        plan: "Second corrected synthetic plan.",
+        correctionReason:
+          "Added a second approved correction after the first amendment",
+      });
+      expect(secondAmendment.baseAmendmentId).toBe(appliedAmendment.id);
+      const secondApproved = encounters.reviewAmendment(
+        approver,
+        secondAmendment.id,
+        "approved",
+        "Synthetic second independent review",
+        secondAmendment.version,
+      );
+      const secondApplied = encounters.applyAmendment(
+        approver,
+        secondAmendment.id,
+        secondApproved.version,
+      );
+      expect(secondApplied.appliedSequence).toBe(2);
+      const projectedAfterTwo = encounters.getEffectiveEncounterForAppointment(
+        author,
+        appointment.id,
+      );
+      expect(projectedAfterTwo?.appliedAmendmentCount).toBe(2);
+      expect(projectedAfterTwo?.assessment).toBe(
+        "Second corrected synthetic assessment.",
+      );
+      expect(projectedAfterTwo?.lastAppliedAmendmentId).toBe(
+        secondAmendment.id,
+      );
+
+      const branchA = encounters.createAmendment(author, signed.id, {
+        assessment: "Branch A assessment.",
+        correctionReason: "Synthetic branch A correction",
+      });
+      const branchB = encounters.createAmendment(author, signed.id, {
+        assessment: "Branch B assessment.",
+        correctionReason: "Synthetic branch B correction",
+      });
+      const branchAApproved = encounters.reviewAmendment(
+        approver,
+        branchA.id,
+        "approved",
+        "Synthetic branch A review",
+        branchA.version,
+      );
+      const branchBApproved = encounters.reviewAmendment(
+        approver,
+        branchB.id,
+        "approved",
+        "Synthetic branch B review",
+        branchB.version,
+      );
+      const branchAApplied = encounters.applyAmendment(
+        approver,
+        branchA.id,
+        branchAApproved.version,
+      );
+      expect(branchAApplied.appliedSequence).toBe(3);
+      const branchConflict = encounters.applyAmendment(
+        approver,
+        branchB.id,
+        branchBApproved.version,
+      );
+      expect(branchConflict.status).toBe("conflict");
+      expect(() =>
+        encounters.resolveAmendmentConflict(
+          author,
+          branchB.id,
+          "rebase",
+          "Self conflict resolution is not permitted",
+          branchConflict.version,
+        ),
+      ).toThrow("ELITE_AMENDMENT_SEPARATION_REQUIRED");
+      const rebased = encounters.resolveAmendmentConflict(
+        approver,
+        branchB.id,
+        "rebase",
+        "Synthetic Doctor resolved branch against the latest projection",
+        branchConflict.version,
+      );
+      expect(rebased.status).toBe("approved");
+      const branchBApplied = encounters.applyAmendment(
+        approver,
+        branchB.id,
+        rebased.version,
+      );
+      expect(branchBApplied.appliedSequence).toBe(4);
+      const projectedAfterRebase =
+        encounters.getEffectiveEncounterForAppointment(author, appointment.id);
+      expect(projectedAfterRebase?.appliedAmendmentCount).toBe(4);
+      expect(projectedAfterRebase?.assessment).toBe("Branch B assessment.");
     } finally {
       database.close();
     }
