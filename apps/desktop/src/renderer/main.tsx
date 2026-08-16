@@ -24,6 +24,10 @@ import type {
   Department,
   Service,
   Specialty,
+  Schedule,
+  ScheduleException,
+  ScheduleInput,
+  ScheduleExceptionInput,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -1511,7 +1515,26 @@ function ClinicalWorkflowWorkspace({
   const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
   const [services, setServices] = useState<readonly Service[]>([]);
+  const [schedules, setSchedules] = useState<readonly Schedule[]>([]);
+  const [exceptions, setExceptions] = useState<readonly ScheduleException[]>(
+    [],
+  );
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [doctorId, setDoctorId] = useState("");
+  const [scheduleDepartmentId, setScheduleDepartmentId] = useState("");
+  const [scheduleDay, setScheduleDay] = useState("6");
+  const [scheduleStart, setScheduleStart] = useState("09:00");
+  const [scheduleEnd, setScheduleEnd] = useState("17:00");
+  const [slotDuration, setSlotDuration] = useState("15");
+  const [exceptionDoctorId, setExceptionDoctorId] = useState("");
+  const [exceptionDepartmentId, setExceptionDepartmentId] = useState("");
+  const [exceptionDate, setExceptionDate] = useState("");
+  const [exceptionKind, setExceptionKind] = useState<"closed" | "open">(
+    "closed",
+  );
+  const [exceptionStart, setExceptionStart] = useState("");
+  const [exceptionEnd, setExceptionEnd] = useState("");
+  const [exceptionReason, setExceptionReason] = useState("");
   const [patientId, setPatientId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [serviceId, setServiceId] = useState("");
@@ -1528,16 +1551,26 @@ function ClinicalWorkflowWorkspace({
 
   const refresh = async (): Promise<void> => {
     try {
-      const [specialtyRows, departmentRows, serviceRows, appointmentRows] =
-        await Promise.all([
-          window.elite.clinical.listSpecialties(token),
-          window.elite.clinical.listDepartments(token),
-          window.elite.clinical.listServices(token),
-          window.elite.clinical.listAppointments(token),
-        ]);
+      const [
+        specialtyRows,
+        departmentRows,
+        serviceRows,
+        scheduleRows,
+        exceptionRows,
+        appointmentRows,
+      ] = await Promise.all([
+        window.elite.clinical.listSpecialties(token),
+        window.elite.clinical.listDepartments(token),
+        window.elite.clinical.listServices(token),
+        window.elite.clinical.listSchedules(token),
+        window.elite.clinical.listExceptions(token),
+        window.elite.clinical.listAppointments(token),
+      ]);
       setSpecialties(specialtyRows);
       setDepartments(departmentRows);
       setServices(serviceRows);
+      setSchedules(scheduleRows);
+      setExceptions(exceptionRows);
       setAppointments(appointmentRows);
     } catch (reason: unknown) {
       setError(
@@ -1604,6 +1637,63 @@ function ClinicalWorkflowWorkspace({
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const createSchedule = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    const input: ScheduleInput = {
+      doctorId,
+      departmentId: scheduleDepartmentId,
+      dayOfWeek: Number(scheduleDay),
+      startTime: scheduleStart,
+      endTime: scheduleEnd,
+      slotDurationMinutes: Number(slotDuration),
+    };
+    await manage(() => window.elite.clinical.createSchedule(token, input));
+  };
+
+  const createException = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    const input: ScheduleExceptionInput = {
+      ...(exceptionDoctorId.trim()
+        ? { doctorId: exceptionDoctorId.trim() }
+        : {}),
+      ...(exceptionDepartmentId ? { departmentId: exceptionDepartmentId } : {}),
+      exceptionDate,
+      kind: exceptionKind,
+      ...(exceptionKind === "open" && exceptionStart
+        ? { startTime: exceptionStart }
+        : {}),
+      ...(exceptionKind === "open" && exceptionEnd
+        ? { endTime: exceptionEnd }
+        : {}),
+      reason: exceptionReason,
+    };
+    await manage(() => window.elite.clinical.createException(token, input));
+  };
+
+  const deleteSchedule = async (id: string): Promise<void> => {
+    await manage(() =>
+      window.elite.clinical.deleteSchedule(
+        token,
+        id,
+        "Removed from Admin schedule controls",
+      ),
+    );
+  };
+
+  const deleteException = async (id: string): Promise<void> => {
+    await manage(() =>
+      window.elite.clinical.deleteException(
+        token,
+        id,
+        "Removed from Admin exception controls",
+      ),
+    );
   };
 
   const manage = async (action: () => Promise<unknown>): Promise<void> => {
@@ -1708,137 +1798,331 @@ function ClinicalWorkflowWorkspace({
         </button>
       </form>
       {canManage ? (
-        <div className="clinical-config-grid">
-          <form
-            className="clinical-config-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void manage(() =>
-                window.elite.clinical.createSpecialty(token, {
-                  code: specialtyCode,
-                  nameEn: specialtyName,
-                }),
-              );
-            }}
-          >
-            <h3>Specialty</h3>
-            <input
-              required
-              placeholder="Code"
-              value={specialtyCode}
-              onChange={(event) => setSpecialtyCode(event.target.value)}
-            />
-            <input
-              required
-              placeholder="English name"
-              value={specialtyName}
-              onChange={(event) => setSpecialtyName(event.target.value)}
-            />
-            <button
-              className="button secondary"
-              type="submit"
-              disabled={isBusy}
+        <>
+          <div className="clinical-config-grid">
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void manage(() =>
+                  window.elite.clinical.createSpecialty(token, {
+                    code: specialtyCode,
+                    nameEn: specialtyName,
+                  }),
+                );
+              }}
             >
-              Add specialty
-            </button>
-          </form>
-          <form
-            className="clinical-config-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void manage(() =>
-                window.elite.clinical.createDepartment(token, {
-                  specialtyId: specialties[0]?.id ?? "",
-                  code: departmentCode,
-                  nameEn: departmentName,
-                }),
-              );
-            }}
-          >
-            <h3>Department</h3>
-            <select
-              required
-              value={specialties[0]?.id ?? ""}
-              onChange={() => undefined}
+              <h3>Specialty</h3>
+              <input
+                required
+                placeholder="Code"
+                value={specialtyCode}
+                onChange={(event) => setSpecialtyCode(event.target.value)}
+              />
+              <input
+                required
+                placeholder="English name"
+                value={specialtyName}
+                onChange={(event) => setSpecialtyName(event.target.value)}
+              />
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add specialty
+              </button>
+            </form>
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void manage(() =>
+                  window.elite.clinical.createDepartment(token, {
+                    specialtyId: specialties[0]?.id ?? "",
+                    code: departmentCode,
+                    nameEn: departmentName,
+                  }),
+                );
+              }}
             >
-              {specialties
-                .filter((item) => item.status === "active")
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nameEn}
-                  </option>
-                ))}
-            </select>
-            <input
-              required
-              placeholder="Code"
-              value={departmentCode}
-              onChange={(event) => setDepartmentCode(event.target.value)}
-            />
-            <input
-              required
-              placeholder="English name"
-              value={departmentName}
-              onChange={(event) => setDepartmentName(event.target.value)}
-            />
-            <button
-              className="button secondary"
-              type="submit"
-              disabled={isBusy}
+              <h3>Department</h3>
+              <select
+                required
+                value={specialties[0]?.id ?? ""}
+                onChange={() => undefined}
+              >
+                {specialties
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn}
+                    </option>
+                  ))}
+              </select>
+              <input
+                required
+                placeholder="Code"
+                value={departmentCode}
+                onChange={(event) => setDepartmentCode(event.target.value)}
+              />
+              <input
+                required
+                placeholder="English name"
+                value={departmentName}
+                onChange={(event) => setDepartmentName(event.target.value)}
+              />
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add department
+              </button>
+            </form>
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void manage(() =>
+                  window.elite.clinical.createService(token, {
+                    departmentId: departments[0]?.id ?? "",
+                    code: serviceCode,
+                    nameEn: serviceName,
+                    durationMinutes: 15,
+                    priceEgp: 0,
+                  }),
+                );
+              }}
             >
-              Add department
-            </button>
-          </form>
-          <form
-            className="clinical-config-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void manage(() =>
-                window.elite.clinical.createService(token, {
-                  departmentId: departments[0]?.id ?? "",
-                  code: serviceCode,
-                  nameEn: serviceName,
-                  durationMinutes: 15,
-                  priceEgp: 0,
-                }),
-              );
-            }}
-          >
-            <h3>Service catalog</h3>
-            <select
-              required
-              value={departments[0]?.id ?? ""}
-              onChange={() => undefined}
+              <h3>Service catalog</h3>
+              <select
+                required
+                value={departments[0]?.id ?? ""}
+                onChange={() => undefined}
+              >
+                {departments
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn}
+                    </option>
+                  ))}
+              </select>
+              <input
+                required
+                placeholder="Code"
+                value={serviceCode}
+                onChange={(event) => setServiceCode(event.target.value)}
+              />
+              <input
+                required
+                placeholder="English name"
+                value={serviceName}
+                onChange={(event) => setServiceName(event.target.value)}
+              />
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add service
+              </button>
+            </form>
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => void createSchedule(event)}
             >
-              {departments
-                .filter((item) => item.status === "active")
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nameEn}
-                  </option>
-                ))}
-            </select>
-            <input
-              required
-              placeholder="Code"
-              value={serviceCode}
-              onChange={(event) => setServiceCode(event.target.value)}
-            />
-            <input
-              required
-              placeholder="English name"
-              value={serviceName}
-              onChange={(event) => setServiceName(event.target.value)}
-            />
-            <button
-              className="button secondary"
-              type="submit"
-              disabled={isBusy}
+              <h3>Doctor recurring schedule</h3>
+              <input
+                required
+                placeholder="Doctor user ID"
+                value={doctorId}
+                onChange={(event) => setDoctorId(event.target.value)}
+              />
+              <select
+                required
+                value={scheduleDepartmentId}
+                onChange={(event) =>
+                  setScheduleDepartmentId(event.target.value)
+                }
+              >
+                <option value="">Department</option>
+                {departments
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={scheduleDay}
+                onChange={(event) => setScheduleDay(event.target.value)}
+              >
+                <option value="6">Saturday</option>
+                <option value="0">Sunday</option>
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+              </select>
+              <div className="inline-fields">
+                <input
+                  required
+                  type="time"
+                  value={scheduleStart}
+                  onChange={(event) => setScheduleStart(event.target.value)}
+                />
+                <input
+                  required
+                  type="time"
+                  value={scheduleEnd}
+                  onChange={(event) => setScheduleEnd(event.target.value)}
+                />
+                <input
+                  required
+                  type="number"
+                  min="5"
+                  max="480"
+                  value={slotDuration}
+                  onChange={(event) => setSlotDuration(event.target.value)}
+                />
+              </div>
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add recurring schedule
+              </button>
+            </form>
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => void createException(event)}
             >
-              Add service
-            </button>
-          </form>
-        </div>
+              <h3>Holiday / leave / closure exception</h3>
+              <input
+                type="date"
+                required
+                value={exceptionDate}
+                onChange={(event) => setExceptionDate(event.target.value)}
+              />
+              <input
+                placeholder="Doctor ID (optional)"
+                value={exceptionDoctorId}
+                onChange={(event) => setExceptionDoctorId(event.target.value)}
+              />
+              <select
+                value={exceptionDepartmentId}
+                onChange={(event) =>
+                  setExceptionDepartmentId(event.target.value)
+                }
+              >
+                <option value="">Department scope (optional)</option>
+                {departments
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={exceptionKind}
+                onChange={(event) =>
+                  setExceptionKind(event.target.value as "closed" | "open")
+                }
+              >
+                <option value="closed">Closed</option>
+                <option value="open">Open override</option>
+              </select>
+              {exceptionKind === "open" ? (
+                <div className="inline-fields">
+                  <input
+                    required
+                    type="time"
+                    value={exceptionStart}
+                    onChange={(event) => setExceptionStart(event.target.value)}
+                  />
+                  <input
+                    required
+                    type="time"
+                    value={exceptionEnd}
+                    onChange={(event) => setExceptionEnd(event.target.value)}
+                  />
+                </div>
+              ) : null}
+              <input
+                required
+                placeholder="Reason"
+                value={exceptionReason}
+                onChange={(event) => setExceptionReason(event.target.value)}
+              />
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add exception
+              </button>
+            </form>
+          </div>
+          <div className="schedule-management-list">
+            <h3>Configured recurring schedules</h3>
+            {schedules.length === 0 ? (
+              <p className="muted">No recurring schedules configured.</p>
+            ) : (
+              schedules.map((schedule) => (
+                <article className="schedule-row" key={schedule.id}>
+                  <div>
+                    <strong>{schedule.doctorId}</strong>
+                    <span>
+                      {schedule.startTime}–{schedule.endTime} · day{" "}
+                      {schedule.dayOfWeek} · {schedule.slotDurationMinutes} min
+                    </span>
+                    <small>{schedule.departmentId}</small>
+                  </div>
+                  <button
+                    className="button danger"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void deleteSchedule(schedule.id)}
+                  >
+                    Remove
+                  </button>
+                </article>
+              ))
+            )}
+            <h3>Configured exceptions</h3>
+            {exceptions.length === 0 ? (
+              <p className="muted">No schedule exceptions configured.</p>
+            ) : (
+              exceptions.map((exception) => (
+                <article className="schedule-row" key={exception.id}>
+                  <div>
+                    <strong>
+                      {exception.exceptionDate} · {exception.kind}
+                    </strong>
+                    <span>
+                      {exception.doctorId ?? "Department scope"} ·{" "}
+                      {exception.reason}
+                    </span>
+                  </div>
+                  <button
+                    className="button danger"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void deleteException(exception.id)}
+                  >
+                    Remove
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
+        </>
       ) : null}
       <div className="appointment-list">
         <h3>Appointments</h3>

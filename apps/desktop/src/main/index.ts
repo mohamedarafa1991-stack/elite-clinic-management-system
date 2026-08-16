@@ -460,6 +460,12 @@ function registerIpc(): void {
     (_event, token: string, input: unknown) =>
       requireClinicalService().createService(serviceContext(token), input),
   );
+  ipcMain.handle("clinical:schedules", (_event, token: string) =>
+    requireClinicalService().listSchedules(serviceContext(token)),
+  );
+  ipcMain.handle("clinical:exceptions", (_event, token: string) =>
+    requireClinicalService().listScheduleExceptions(serviceContext(token)),
+  );
   ipcMain.handle(
     "clinical:schedule-create",
     (_event, token: string, input: unknown) =>
@@ -469,11 +475,29 @@ function registerIpc(): void {
       ),
   );
   ipcMain.handle(
+    "clinical:schedule-delete",
+    (_event, token: string, id: string, reason: string) =>
+      requireClinicalService().deleteSchedule(
+        serviceContext(token),
+        id,
+        reason,
+      ),
+  );
+  ipcMain.handle(
     "clinical:exception-create",
     (_event, token: string, input: unknown) =>
       requireClinicalService().createScheduleException(
         serviceContext(token),
         input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:exception-delete",
+    (_event, token: string, id: string, reason: string) =>
+      requireClinicalService().deleteScheduleException(
+        serviceContext(token),
+        id,
+        reason,
       ),
   );
   ipcMain.handle(

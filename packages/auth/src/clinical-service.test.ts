@@ -157,3 +157,72 @@ describe("Step 5 clinical workflow service", () => {
     }
   });
 });
+
+it("manages recurring schedules and scoped exceptions with overlap guards", async () => {
+  const fixture = await createFixture();
+  try {
+    const specialty = fixture.clinical.createSpecialty(fixture.context, {
+      code: "ENT",
+      nameEn: "ENT",
+    });
+    const department = fixture.clinical.createDepartment(fixture.context, {
+      specialtyId: specialty.id,
+      code: "ENT-OPD",
+      nameEn: "ENT outpatient",
+    });
+    const schedule = {
+      doctorId: fixture.context.userId,
+      departmentId: department.id,
+      dayOfWeek: 6,
+      startTime: "09:00",
+      endTime: "13:00",
+      slotDurationMinutes: 15,
+    } as const;
+    fixture.clinical.createSchedule(fixture.context, schedule);
+    expect(fixture.clinical.listSchedules(fixture.context)).toHaveLength(1);
+    expect(() =>
+      fixture.clinical.createSchedule(fixture.context, {
+        ...schedule,
+        startTime: "12:00",
+        endTime: "14:00",
+      }),
+    ).toThrow("ELITE_SCHEDULE_OVERLAP");
+    expect(() =>
+      fixture.clinical.createScheduleException(fixture.context, {
+        departmentId: department.id,
+        exceptionDate: "2030-01-11",
+        kind: "open",
+        reason: "Missing open hours",
+      }),
+    ).toThrow("ELITE_SCHEDULE_EXCEPTION_RANGE_REQUIRED");
+    fixture.clinical.createScheduleException(fixture.context, {
+      departmentId: department.id,
+      exceptionDate: "2030-01-11",
+      kind: "closed",
+      reason: "Synthetic clinic closure",
+    });
+    expect(
+      fixture.clinical.listScheduleExceptions(fixture.context),
+    ).toHaveLength(1);
+    const listed = fixture.clinical.listSchedules(fixture.context)[0]!;
+    fixture.clinical.deleteSchedule(
+      fixture.context,
+      listed.id,
+      "Synthetic schedule cleanup",
+    );
+    const exception = fixture.clinical.listScheduleExceptions(
+      fixture.context,
+    )[0]!;
+    fixture.clinical.deleteScheduleException(
+      fixture.context,
+      exception.id,
+      "Synthetic exception cleanup",
+    );
+    expect(fixture.clinical.listSchedules(fixture.context)).toHaveLength(0);
+    expect(
+      fixture.clinical.listScheduleExceptions(fixture.context),
+    ).toHaveLength(0);
+  } finally {
+    fixture.database.close();
+  }
+});

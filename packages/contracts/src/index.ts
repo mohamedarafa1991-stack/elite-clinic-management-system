@@ -380,6 +380,12 @@ export const scheduleInputSchema = z.object({
 });
 export type ScheduleInput = z.infer<typeof scheduleInputSchema>;
 
+export const scheduleSchema = scheduleInputSchema.extend({
+  id: opaqueIdSchema,
+  version: z.number().int().positive(),
+});
+export type Schedule = z.infer<typeof scheduleSchema>;
+
 export const scheduleExceptionInputSchema = z.object({
   doctorId: opaqueIdSchema.optional(),
   departmentId: opaqueIdSchema.optional(),
@@ -398,6 +404,12 @@ export const scheduleExceptionInputSchema = z.object({
 export type ScheduleExceptionInput = z.infer<
   typeof scheduleExceptionInputSchema
 >;
+
+export const scheduleExceptionSchema = scheduleExceptionInputSchema.extend({
+  id: opaqueIdSchema,
+  createdAt: isoDateTimeSchema,
+});
+export type ScheduleException = z.infer<typeof scheduleExceptionSchema>;
 
 export const appointmentStatusSchema = z.enum([
   "scheduled",

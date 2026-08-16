@@ -9,10 +9,14 @@ import {
   type AppointmentStatusUpdate,
   departmentSchema,
   scheduleExceptionInputSchema,
+  scheduleExceptionSchema,
   scheduleInputSchema,
+  scheduleSchema,
   serviceSchema,
   specialtySchema,
   type Department,
+  type Schedule,
+  type ScheduleException,
   type ScheduleExceptionInput,
   type ScheduleInput,
   type Service,
@@ -252,11 +256,121 @@ export class ClinicalWorkflowService {
     ).map(mapService);
   }
 
+  public listSchedules(context: SessionContext): readonly Schedule[] {
+    requireCapability(context, "clinical.read");
+    return (
+      this.database.raw
+        .prepare(
+          "SELECT * FROM doctor_schedules ORDER BY doctor_id, day_of_week, start_time",
+        )
+        .all() as Array<Record<string, any>>
+    ).map((row) =>
+      scheduleSchema.parse({
+        id: String(row["id"]),
+        doctorId: String(row["doctor_id"]),
+        departmentId: String(row["department_id"]),
+        dayOfWeek: Number(row["day_of_week"]),
+        startTime: String(row["start_time"]),
+        endTime: String(row["end_time"]),
+        slotDurationMinutes: Number(row["slot_duration_minutes"]),
+        version: Number(row["version"]),
+      }),
+    );
+  }
+
+  public listScheduleExceptions(
+    context: SessionContext,
+  ): readonly ScheduleException[] {
+    requireCapability(context, "clinical.read");
+    return (
+      this.database.raw
+        .prepare(
+          "SELECT * FROM schedule_exceptions ORDER BY exception_date, start_time",
+        )
+        .all() as Array<Record<string, any>>
+    ).map((row) =>
+      scheduleExceptionSchema.parse({
+        id: String(row["id"]),
+        ...(row["doctor_id"] ? { doctorId: String(row["doctor_id"]) } : {}),
+        ...(row["department_id"]
+          ? { departmentId: String(row["department_id"]) }
+          : {}),
+        exceptionDate: String(row["exception_date"]),
+        kind: row["kind"],
+        ...(row["start_time"] ? { startTime: String(row["start_time"]) } : {}),
+        ...(row["end_time"] ? { endTime: String(row["end_time"]) } : {}),
+        reason: String(row["reason"]),
+        createdAt: String(row["created_at"]),
+      }),
+    );
+  }
+
+  public deleteSchedule(
+    context: SessionContext,
+    id: string,
+    reason: string,
+  ): void {
+    requireCapability(context, "module.manage");
+    const parsedReason = z.string().trim().min(3).max(500).parse(reason);
+    const result = this.database.raw
+      .prepare("DELETE FROM doctor_schedules WHERE id = ?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error("ELITE_SCHEDULE_NOT_FOUND: schedule does not exist");
+    this.writeClinicalAudit(context, "schedule.delete", id, {
+      reason: parsedReason,
+    });
+  }
+
+  public deleteScheduleException(
+    context: SessionContext,
+    id: string,
+    reason: string,
+  ): void {
+    requireCapability(context, "module.manage");
+    const parsedReason = z.string().trim().min(3).max(500).parse(reason);
+    const result = this.database.raw
+      .prepare("DELETE FROM schedule_exceptions WHERE id = ?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_SCHEDULE_EXCEPTION_NOT_FOUND: exception does not exist",
+      );
+    this.writeClinicalAudit(context, "schedule-exception.delete", id, {
+      reason: parsedReason,
+    });
+  }
+
   public createSchedule(context: SessionContext, input: ScheduleInput): void {
     requireCapability(context, "module.manage");
     const parsed = scheduleInputSchema.parse(input);
     if (parsed.startTime >= parsed.endTime)
       throw new Error("ELITE_SCHEDULE_INVALID_RANGE: start must be before end");
+    if (
+      !this.database.raw
+        .prepare("SELECT id FROM users WHERE id = ?")
+        .get(parsed.doctorId)
+    )
+      throw new Error("ELITE_DOCTOR_NOT_FOUND: doctor does not exist");
+    if (
+      !this.database.raw
+        .prepare(
+          "SELECT id FROM departments WHERE id = ? AND status = 'active'",
+        )
+        .get(parsed.departmentId)
+    )
+      throw new Error(
+        "ELITE_DEPARTMENT_NOT_ACTIVE: department is missing or archived",
+      );
+    const overlap = this.database.raw
+      .prepare(
+        "SELECT id FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ? AND start_time < ? AND end_time > ? LIMIT 1",
+      )
+      .get(parsed.doctorId, parsed.dayOfWeek, parsed.endTime, parsed.startTime);
+    if (overlap)
+      throw new Error(
+        "ELITE_SCHEDULE_OVERLAP: doctor schedule overlaps an existing interval",
+      );
     const timestamp = now();
     this.database.raw
       .prepare(
@@ -287,6 +401,16 @@ export class ClinicalWorkflowService {
       throw new Error(
         "ELITE_SCHEDULE_EXCEPTION_SCOPE_REQUIRED: doctor or department is required",
       );
+    if (parsed.kind === "open" && (!parsed.startTime || !parsed.endTime))
+      throw new Error(
+        "ELITE_SCHEDULE_EXCEPTION_RANGE_REQUIRED: open exceptions require a time range",
+      );
+    if (
+      parsed.startTime &&
+      parsed.endTime &&
+      parsed.startTime >= parsed.endTime
+    )
+      throw new Error("ELITE_SCHEDULE_INVALID_RANGE: start must be before end");
     const timestamp = now();
     this.database.raw
       .prepare(

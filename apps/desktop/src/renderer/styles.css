@@ -658,3 +658,44 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.schedule-management-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.schedule-management-list h3 {
+  margin: 8px 0 0;
+  color: #1e3a8a;
+}
+.schedule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+.schedule-row strong,
+.schedule-row span,
+.schedule-row small {
+  display: block;
+}
+.schedule-row span,
+.schedule-row small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .inline-fields {
+    grid-template-columns: 1fr;
+  }
+}

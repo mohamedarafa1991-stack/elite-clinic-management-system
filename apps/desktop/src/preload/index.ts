@@ -13,7 +13,9 @@ import type {
   Appointment,
   AppointmentCreateInput,
   AppointmentStatusUpdate,
+  Schedule,
   ScheduleInput,
+  ScheduleException,
   ScheduleExceptionInput,
 } from "@elite/contracts";
 import type {
@@ -213,17 +215,39 @@ const eliteApi = {
         token,
         input,
       ) as Promise<Service>,
+    listSchedules: (token: string) =>
+      ipcRenderer.invoke("clinical:schedules", token) as Promise<
+        readonly Schedule[]
+      >,
+    listExceptions: (token: string) =>
+      ipcRenderer.invoke("clinical:exceptions", token) as Promise<
+        readonly ScheduleException[]
+      >,
     createSchedule: (token: string, input: ScheduleInput) =>
       ipcRenderer.invoke(
         "clinical:schedule-create",
         token,
         input,
       ) as Promise<void>,
+    deleteSchedule: (token: string, id: string, reason: string) =>
+      ipcRenderer.invoke(
+        "clinical:schedule-delete",
+        token,
+        id,
+        reason,
+      ) as Promise<void>,
     createException: (token: string, input: ScheduleExceptionInput) =>
       ipcRenderer.invoke(
         "clinical:exception-create",
         token,
         input,
+      ) as Promise<void>,
+    deleteException: (token: string, id: string, reason: string) =>
+      ipcRenderer.invoke(
+        "clinical:exception-delete",
+        token,
+        id,
+        reason,
       ) as Promise<void>,
     listAppointments: (token: string, from?: string, to?: string) =>
       ipcRenderer.invoke("clinical:appointments", token, from, to) as Promise<
