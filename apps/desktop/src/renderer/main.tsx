@@ -659,6 +659,10 @@ function FoundationStatus(): ReactElement {
               </dd>
             </div>
             <div>
+              <dt>Database key provider</dt>
+              <dd>{security.databaseKeyProvider}</dd>
+            </div>
+            <div>
               <dt>Mode</dt>
               <dd>{security.isPackaged ? "Production" : "Development"}</dd>
             </div>

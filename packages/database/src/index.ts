@@ -1,11 +1,18 @@
-import Database from "better-sqlite3";
+import Database from "better-sqlite3-multiple-ciphers";
 import { nanoid } from "nanoid";
 
 export type DatabaseMode = "production" | "test";
 
+export interface DatabaseKeyProvider {
+  readonly providerName: string;
+  readonly storageScheme: "os-wrapped-random-key";
+  getOrCreateKey(): Buffer;
+}
+
 export interface OpenDatabaseOptions {
   filename: string;
   mode: DatabaseMode;
+  keyProvider?: DatabaseKeyProvider;
 }
 
 export interface EliteDatabase {
@@ -247,19 +254,41 @@ function checksum(sql: string): string {
 }
 
 function assertProductionEncryption(options: OpenDatabaseOptions): void {
-  if (options.mode === "production") {
+  if (options.mode === "production" && !options.keyProvider) {
     throw new Error(
-      "ELITE_DB_ENCRYPTION_REQUIRED: the production SQLCipher adapter and OS-backed key provider must be linked before patient storage can open",
+      "ELITE_DB_ENCRYPTION_REQUIRED: production storage requires the approved OS-backed key provider",
     );
+  }
+}
+
+function applyDatabaseKey(
+  database: Database.Database,
+  options: OpenDatabaseOptions,
+): void {
+  if (options.mode !== "production") {
+    return;
+  }
+  const key = options.keyProvider!.getOrCreateKey();
+  if (!Buffer.isBuffer(key) || key.length < 32) {
+    throw new Error(
+      "ELITE_DB_KEY_INVALID: the database key provider must return at least 256 bits of key material",
+    );
+  }
+  try {
+    database.key(Buffer.from(key));
+  } finally {
+    key.fill(0);
   }
 }
 
 export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
   assertProductionEncryption(options);
   const database = new Database(options.filename);
-  database.pragma("foreign_keys = ON");
+  try {
+    applyDatabaseKey(database, options);
+    database.pragma("foreign_keys = ON");
 
-  database.exec(`
+    database.exec(`
     CREATE TABLE IF NOT EXISTS migration_history (
       version INTEGER PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -268,50 +297,54 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
     );
   `);
 
-  const applied = new Map(
-    database
-      .prepare(
-        "SELECT version, checksum FROM migration_history ORDER BY version",
-      )
-      .all()
-      .map((row) => {
-        const typedRow = row as { version: number; checksum: string };
-        return [Number(typedRow.version), typedRow.checksum] as const;
-      }),
-  );
-
-  for (const migration of MIGRATIONS) {
-    const expectedChecksum = checksum(migration.sql);
-    const appliedChecksum = applied.get(migration.version);
-    if (appliedChecksum !== undefined) {
-      if (appliedChecksum !== expectedChecksum) {
-        throw new Error(
-          `ELITE_MIGRATION_CHECKSUM_MISMATCH: migration ${migration.version} has changed after application`,
-        );
-      }
-      continue;
-    }
-    const applyMigration = database.transaction(() => {
-      database.exec(migration.sql);
+    const applied = new Map(
       database
         .prepare(
-          "INSERT INTO migration_history (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+          "SELECT version, checksum FROM migration_history ORDER BY version",
         )
-        .run(migration.version, migration.name, expectedChecksum, now());
-    });
-    applyMigration();
+        .all()
+        .map((row) => {
+          const typedRow = row as { version: number; checksum: string };
+          return [Number(typedRow.version), typedRow.checksum] as const;
+        }),
+    );
+
+    for (const migration of MIGRATIONS) {
+      const expectedChecksum = checksum(migration.sql);
+      const appliedChecksum = applied.get(migration.version);
+      if (appliedChecksum !== undefined) {
+        if (appliedChecksum !== expectedChecksum) {
+          throw new Error(
+            `ELITE_MIGRATION_CHECKSUM_MISMATCH: migration ${migration.version} has changed after application`,
+          );
+        }
+        continue;
+      }
+      const applyMigration = database.transaction(() => {
+        database.exec(migration.sql);
+        database
+          .prepare(
+            "INSERT INTO migration_history (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+          )
+          .run(migration.version, migration.name, expectedChecksum, now());
+      });
+      applyMigration();
+    }
+
+    database
+      .prepare(
+        "INSERT OR IGNORE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
+      )
+      .run("installation_id", nanoid(24), now());
+
+    return {
+      raw: database,
+      close: () => database.close(),
+    };
+  } catch (error) {
+    database.close();
+    throw error;
   }
-
-  database
-    .prepare(
-      "INSERT OR IGNORE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
-    )
-    .run("installation_id", nanoid(24), now());
-
-  return {
-    raw: database,
-    close: () => database.close(),
-  };
 }
 
 export function migrationVersions(): readonly number[] {

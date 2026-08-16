@@ -4,6 +4,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { migrationVersions, openDatabase } from "./index.js";
 
+class SyntheticKeyProvider {
+  public readonly providerName = "synthetic-test-provider";
+  public readonly storageScheme = "os-wrapped-random-key" as const;
+  public readonly key = Buffer.alloc(32, 0x42);
+
+  public getOrCreateKey(): Buffer {
+    return Buffer.from(this.key);
+  }
+}
+
 describe("Elite database foundation", () => {
   it("opens synthetic test storage and applies the foundation migration", () => {
     const database = openDatabase({ filename: ":memory:", mode: "test" });
@@ -79,5 +89,41 @@ describe("Elite database foundation", () => {
     expect(() =>
       openDatabase({ filename: ":memory:", mode: "production" }),
     ).toThrow("ELITE_DB_ENCRYPTION_REQUIRED");
+  });
+
+  it("opens encrypted production storage through the key-provider contract", () => {
+    const directory = mkdtempSync(join(tmpdir(), "elite-encrypted-db-"));
+    const filename = join(directory, "encrypted.db");
+    const provider = new SyntheticKeyProvider();
+    try {
+      const database = openDatabase({
+        filename,
+        mode: "production",
+        keyProvider: provider,
+      });
+      database.raw
+        .prepare(
+          "INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
+        )
+        .run("synthetic-test", "ok", new Date().toISOString());
+      database.close();
+
+      const reopened = openDatabase({
+        filename,
+        mode: "production",
+        keyProvider: provider,
+      });
+      try {
+        const row = reopened.raw
+          .prepare("SELECT value FROM app_meta WHERE key = 'synthetic-test'")
+          .get() as { value: string } | undefined;
+        expect(row?.value).toBe("ok");
+      } finally {
+        reopened.close();
+      }
+      expect(provider.key.equals(Buffer.alloc(32, 0x42))).toBe(true);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

@@ -2,6 +2,7 @@ import { AuthService } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
 import { dirname, join } from "node:path";
+import { ElectronSafeStorageKeyProvider } from "./key-provider.js";
 import { fileURLToPath } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
@@ -16,15 +17,25 @@ function initializeServices(): void {
     const filename = app.isPackaged
       ? join(app.getPath("userData"), "elite-clinic.db")
       : ":memory:";
-    database = openDatabase({
-      filename,
-      mode: app.isPackaged ? "production" : "test",
-    });
+    const options = app.isPackaged
+      ? {
+          filename,
+          mode: "production" as const,
+          keyProvider: new ElectronSafeStorageKeyProvider(
+            safeStorage,
+            join(app.getPath("userData"), "elite-clinic.db.key"),
+          ),
+        }
+      : {
+          filename,
+          mode: "test" as const,
+        };
+    database = openDatabase(options);
     authService = new AuthService(database);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
-      ? "Secure encrypted storage is not configured for this production build."
+      ? "Secure encrypted storage could not be initialized for this production build."
       : "Secure local services could not be initialized.";
   }
 }
@@ -114,6 +125,11 @@ function registerIpc(): void {
     chromiumVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
     safeStorageAvailable: safeStorage.isEncryptionAvailable(),
+    databaseKeyProvider: app.isPackaged
+      ? serviceError
+        ? "unavailable"
+        : "electron-safe-storage"
+      : "test-in-memory",
     isPackaged: app.isPackaged,
     secureServicesReady: !serviceError,
     serviceError,

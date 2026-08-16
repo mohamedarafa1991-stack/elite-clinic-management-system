@@ -35,3 +35,17 @@ Backups are encrypted, integrity-checked, versioned, and stored on the Hub plus 
 ## Clinical safety
 
 Clinical rules, drug warnings, lab ranges, ultrasound formulas, CTG aids, and specialty modules require source/version metadata, test cases, a named Doctor approver, approval timestamp, and a visible status. Warnings are advisory only under the current product policy and must explain their inputs and source.
+
+## Step 3 research findings
+
+Electron's official safeStorage documentation states that on Windows it uses DPAPI and protects data from other Windows users, but not from other applications running in the same user's context. Elite will therefore use safeStorage only to wrap a random database key, not as a substitute for database encryption, process isolation, user authentication, or endpoint security. Source: https://www.electronjs.org/docs/latest/api/safe-storage
+
+Electron's official native-module guidance states that native modules must be rebuilt for Electron's ABI, and that Windows packaging requires the Electron-compatible rebuild path and correct delay-load behavior. The SQLite3MultipleCiphers provider must therefore be rebuilt against the exact Electron version and target architecture used by the desktop package, then exercised in a packaged Windows smoke test. Source: https://www.electronjs.org/docs/latest/tutorial/using-native-node-modules
+
+## Step 3 compatibility decision
+
+The current JourneyApps `@journeyapps/sqlcipher` repository explicitly states that Windows and prebuilt binary publishing are unsupported in its current phase. Source: https://github.com/journeyapps/node-sqlcipher
+
+The current `better-sqlite3-multiple-ciphers` package supports multiple encryption algorithms and Windows native builds, but its upstream README describes SQLite3MultipleCiphers rather than claiming official SQLCipher compatibility; package metadata identifies it as a fork with multiple-cipher support. Elite pins the upstream fixed `12.11.1` release for the current Electron 43 target. Source: https://github.com/m4heshd/better-sqlite3-multiple-ciphers
+
+Therefore Elite must not silently label `better-sqlite3-multiple-ciphers` as SQLCipher. The product decision is now **Choice B**: use `better-sqlite3-multiple-ciphers@12.11.1` with SQLite3MultipleCiphers, explicitly documented as a different encrypted SQLite provider. Production startup remains fail-closed unless the approved OS-backed key provider is available and the native module has been rebuilt and validated for the packaged Electron version and target architecture.

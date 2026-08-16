@@ -18,10 +18,12 @@
     "security:check": "pnpm audit --audit-level high",
     "desktop:dev": "pnpm --filter @elite/desktop dev",
     "desktop:build": "pnpm --filter @elite/desktop build",
+    "desktop:native-rebuild": "electron-rebuild --force --module-dir apps/desktop",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"
   },
   "devDependencies": {
+    "@electron/rebuild": "4.2.0",
     "@types/node": "^22.13.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",

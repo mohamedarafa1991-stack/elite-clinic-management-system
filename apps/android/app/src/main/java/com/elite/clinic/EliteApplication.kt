@@ -14,7 +14,7 @@ class EliteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         deviceKeyStore = DeviceKeyStore(this)
-        // Intentionally do not open local patient storage until the encrypted
-        // SQLCipher-compatible Room factory is configured in the next phase.
+        // Intentionally do not open local patient storage until the Android
+        // Keystore-backed encrypted Room boundary is configured in its own phase.
     }
 }

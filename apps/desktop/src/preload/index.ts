@@ -5,6 +5,8 @@ export interface EliteSecurityStatus {
   chromiumVersion: string;
   nodeVersion: string;
   safeStorageAvailable: boolean;
+  databaseKeyProvider:
+    "electron-safe-storage" | "test-in-memory" | "unavailable";
   isPackaged: boolean;
   secureServicesReady: boolean;
   serviceError?: string;
