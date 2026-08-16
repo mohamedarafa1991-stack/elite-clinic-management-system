@@ -33,6 +33,7 @@ describe("Elite shared contracts", () => {
       createdByUserId: "admin-01",
       updatedAt: "2026-01-01T10:00:00+00:00",
       updatedByUserId: "admin-01",
+      version: 1,
       schemaVersion: 1,
     });
 

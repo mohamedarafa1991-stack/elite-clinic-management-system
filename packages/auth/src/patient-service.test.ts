@@ -184,3 +184,45 @@ describe("Step 4 patient identity service", () => {
     }
   });
 });
+
+it("promotes a quick record to full registration and rejects stale profile edits", async () => {
+  const fixture = await createFixture();
+  try {
+    const created = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "quick",
+      nameEn: "Synthetic Profile Patient",
+      phone: "+201000000005",
+    });
+    const updated = fixture.service.updatePatient(
+      fixture.context,
+      created.patient.patientId,
+      {
+        registrationMode: "full",
+        nameEn: "Synthetic Profile Patient Updated",
+        nameAr: "مريض تجريبي",
+        dob: "1990-02-03",
+        sex: "female",
+        phone: "+201000000005",
+        nationalId: "SYNTHETIC-ID-005",
+      },
+      created.patient.version,
+    );
+    expect(updated.registrationMode).toBe("full");
+    expect(updated.completenessStatus).toBe("complete");
+    expect(updated.version).toBe(2);
+    expect(() =>
+      fixture.service.updatePatient(
+        fixture.context,
+        created.patient.patientId,
+        {
+          registrationMode: "full",
+          nameEn: "Stale Synthetic Edit",
+          phone: "+201000000005",
+        },
+        created.patient.version,
+      ),
+    ).toThrow("ELITE_PATIENT_VERSION_CONFLICT");
+  } finally {
+    fixture.database.close();
+  }
+});

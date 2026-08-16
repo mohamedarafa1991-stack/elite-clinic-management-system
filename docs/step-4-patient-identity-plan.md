@@ -132,3 +132,9 @@ The first Step 4 slice is now implemented in the workspace. It includes migratio
 The current desktop UI intentionally starts with quick registration and duplicate review. Full registration, patient profile editing, rich guardian-link editing, merge-case review screens, bilingual labels, and Android integration remain subsequent slices within Step 4. The service and IPC boundaries are in place so those additions do not require bypassing the database or authentication layers.
 
 The synthetic test suite currently covers the migrated schema, sequential identifiers, shared guardian phone reuse, phone-only duplicate warnings, explicit duplicate decisions, archive/unarchive, and approved merge execution. No real patient or identity data has been introduced.
+
+## Full-registration and profile-editing increment
+
+The next increment adds a shared patient form that supports quick and full modes. Full mode captures Arabic name, date of birth, sex, and optional national ID while retaining the required English name and phone. Selecting a patient loads the profile into the same form and displays related persons and guardian authorization separately from the patient’s own phone.
+
+Profile saves include the patient version returned by the database. The service increments the version transactionally and rejects stale saves with `ELITE_PATIENT_VERSION_CONFLICT`. Profile edits also rerun duplicate detection and require an explicit reason when the user chooses to continue despite a possible duplicate. The remaining guardian-link editing controls will be implemented as a subsequent UI slice; the current increment provides read visibility and preserves the secure service operation for existing related-person links.

@@ -15,7 +15,9 @@ import type {
   DuplicateCandidate,
   Patient,
   PatientRegistrationInput,
+  PatientUpdateInput,
 } from "@elite/contracts";
+import type { RelatedPersonSummary } from "@elite/auth";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -528,12 +530,30 @@ function PatientWorkspace({
   const [patients, setPatients] = useState<readonly Patient[]>([]);
   const [query, setQuery] = useState("");
   const [nameEn, setNameEn] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [dob, setDob] = useState("");
+  const [sex, setSex] = useState<
+    "female" | "male" | "intersex" | "unknown" | ""
+  >("");
   const [phone, setPhone] = useState("");
+  const [nationalId, setNationalId] = useState("");
+  const [registrationMode, setRegistrationMode] = useState<"quick" | "full">(
+    "quick",
+  );
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [relatedPersons, setRelatedPersons] = useState<
+    readonly RelatedPersonSummary[]
+  >([]);
   const [duplicates, setDuplicates] = useState<readonly DuplicateCandidate[]>(
     [],
   );
   const [pendingInput, setPendingInput] =
     useState<PatientRegistrationInput | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<{
+    patientId: string;
+    input: PatientUpdateInput;
+    expectedVersion: number;
+  } | null>(null);
   const [decisionReason, setDecisionReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -556,10 +576,25 @@ function PatientWorkspace({
   }, [token]);
 
   const buildInput = (): PatientRegistrationInput => ({
-    registrationMode: "quick",
+    registrationMode,
     nameEn,
+    ...(nameAr.trim() ? { nameAr: nameAr.trim() } : {}),
+    ...(dob ? { dob } : {}),
+    ...(sex ? { sex } : {}),
     phone,
+    ...(nationalId.trim() ? { nationalId: nationalId.trim() } : {}),
     relatedPersons: [],
+  });
+
+  const buildUpdateInput = (): PatientUpdateInput => ({
+    registrationMode,
+    nameEn,
+    ...(nameAr.trim() ? { nameAr: nameAr.trim() } : {}),
+    ...(dob ? { dob } : {}),
+    ...(sex ? { sex } : {}),
+    phone,
+    ...(nationalId.trim() ? { nationalId: nationalId.trim() } : {}),
+    relatedPersons: undefined,
   });
 
   const createPatient = async (
@@ -570,10 +605,18 @@ function PatientWorkspace({
     setError(null);
     try {
       await window.elite.patients.create(token, input, reason);
+      setSelectedPatient(null);
       setNameEn("");
+      setNameAr("");
+      setDob("");
+      setSex("");
       setPhone("");
+      setNationalId("");
+      setRegistrationMode("quick");
+      setRelatedPersons([]);
       setDuplicates([]);
       setPendingInput(null);
+      setPendingEdit(null);
       setDecisionReason("");
       await refresh();
     } catch (reasonValue: unknown) {
@@ -608,6 +651,102 @@ function PatientWorkspace({
         reason instanceof Error
           ? reason.message
           : "Unable to check duplicate patients",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const selectPatient = async (patient: Patient): Promise<void> => {
+    setSelectedPatient(patient);
+    setNameEn(patient.nameEn);
+    setNameAr(patient.nameAr ?? "");
+    setDob(patient.dob ?? "");
+    setSex(patient.sex ?? "");
+    setPhone(patient.phone);
+    setNationalId(patient.nationalId ?? "");
+    setRegistrationMode(patient.registrationMode);
+    setError(null);
+    try {
+      setRelatedPersons(
+        await window.elite.relatedPersons.list(token, patient.patientId),
+      );
+    } catch (reason: unknown) {
+      setRelatedPersons([]);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load related persons",
+      );
+    }
+  };
+
+  const saveProfile = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedPatient) return;
+    const input = buildUpdateInput();
+    setIsBusy(true);
+    setError(null);
+    try {
+      const candidates = await window.elite.patients.findDuplicates(
+        token,
+        input,
+        selectedPatient.patientId,
+      );
+      if (candidates.length > 0) {
+        setDuplicates(candidates);
+        setPendingEdit({
+          patientId: selectedPatient.patientId,
+          input,
+          expectedVersion: selectedPatient.version,
+        });
+        return;
+      }
+      const updated = await window.elite.patients.update(
+        token,
+        selectedPatient.patientId,
+        input,
+        selectedPatient.version,
+      );
+      setSelectedPatient(updated);
+      setDuplicates([]);
+      setPendingEdit(null);
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save patient profile",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const confirmProfileDuplicate = async (): Promise<void> => {
+    if (!pendingEdit) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const updated = await window.elite.patients.update(
+        token,
+        pendingEdit.patientId,
+        pendingEdit.input,
+        pendingEdit.expectedVersion,
+        decisionReason,
+      );
+      setSelectedPatient(updated);
+      setDuplicates([]);
+      setPendingEdit(null);
+      setDecisionReason("");
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save duplicate-reviewed profile",
       );
     } finally {
       setIsBusy(false);
@@ -668,10 +807,50 @@ function PatientWorkspace({
       </div>
       <form
         className="form patient-registration"
-        onSubmit={(event) => void submit(event)}
+        onSubmit={(event) => {
+          if (selectedPatient) void saveProfile(event);
+          else void submit(event);
+        }}
       >
-        <h3>Quick registration</h3>
+        <div className="form-heading-row">
+          <h3>
+            {selectedPatient
+              ? `Edit ${selectedPatient.patientId}`
+              : "Patient registration"}
+          </h3>
+          {selectedPatient ? (
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => {
+                setSelectedPatient(null);
+                setRelatedPersons([]);
+                setNameEn("");
+                setNameAr("");
+                setDob("");
+                setSex("");
+                setPhone("");
+                setNationalId("");
+                setRegistrationMode("quick");
+              }}
+            >
+              New patient
+            </button>
+          ) : null}
+        </div>
         <div className="form-grid">
+          <label>
+            Registration mode
+            <select
+              value={registrationMode}
+              onChange={(event) =>
+                setRegistrationMode(event.target.value as "quick" | "full")
+              }
+            >
+              <option value="quick">Quick</option>
+              <option value="full">Full</option>
+            </select>
+          </label>
           <label>
             Full English name
             <input
@@ -689,16 +868,56 @@ function PatientWorkspace({
             />
           </label>
         </div>
+        {registrationMode === "full" ? (
+          <div className="form-grid full-registration-fields">
+            <label>
+              Arabic name
+              <input
+                value={nameAr}
+                onChange={(event) => setNameAr(event.target.value)}
+              />
+            </label>
+            <label>
+              Date of birth
+              <input
+                type="date"
+                value={dob}
+                onChange={(event) => setDob(event.target.value)}
+              />
+            </label>
+            <label>
+              Sex
+              <select
+                value={sex}
+                onChange={(event) => setSex(event.target.value as typeof sex)}
+              >
+                <option value="">Not recorded</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="intersex">Intersex</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label>
+              National ID (optional)
+              <input
+                value={nationalId}
+                onChange={(event) => setNationalId(event.target.value)}
+              />
+            </label>
+          </div>
+        ) : null}
         <button className="button primary" type="submit" disabled={isBusy}>
-          Check and register
+          {selectedPatient ? "Check and save profile" : "Check and register"}
         </button>
       </form>
-      {pendingInput ? (
+      {pendingInput || pendingEdit ? (
         <div className="duplicate-panel" role="alert">
           <h3>Possible duplicate patients</h3>
           <p>
-            Review the matched signals. You may cancel or explicitly create
-            another patient with a reason.
+            Review the matched signals. You may cancel or explicitly{" "}
+            {pendingEdit ? "save this profile" : "create another patient"} with
+            a reason.
           </p>
           {duplicates.map((candidate) => (
             <div className="duplicate-row" key={candidate.patient.id}>
@@ -727,6 +946,7 @@ function PatientWorkspace({
               type="button"
               onClick={() => {
                 setPendingInput(null);
+                setPendingEdit(null);
                 setDuplicates([]);
               }}
             >
@@ -736,9 +956,15 @@ function PatientWorkspace({
               className="button primary"
               type="button"
               disabled={decisionReason.trim().length < 3 || isBusy}
-              onClick={() => void createPatient(pendingInput, decisionReason)}
+              onClick={() => {
+                if (pendingEdit) void confirmProfileDuplicate();
+                else if (pendingInput)
+                  void createPatient(pendingInput, decisionReason);
+              }}
             >
-              Create another patient
+              {pendingEdit
+                ? "Save profile after review"
+                : "Create another patient"}
             </button>
           </div>
         </div>
@@ -757,6 +983,14 @@ function PatientWorkspace({
                 {patient.status}
               </small>
             </div>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={isBusy}
+              onClick={() => void selectPatient(patient)}
+            >
+              Open profile
+            </button>
             {session.capabilities.includes("patient.archive") &&
             patient.status === "active" ? (
               <button
@@ -771,6 +1005,64 @@ function PatientWorkspace({
           </article>
         ))}
       </div>
+      {selectedPatient ? (
+        <div className="profile-summary">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Patient profile</p>
+              <h3>
+                {selectedPatient.patientId} · {selectedPatient.nameEn}
+              </h3>
+            </div>
+            <span
+              className={`status ${selectedPatient.status === "active" ? "ok" : "warn"}`}
+            >
+              {selectedPatient.status}
+            </span>
+          </div>
+          <dl className="status-grid profile-grid">
+            <div>
+              <dt>English name</dt>
+              <dd>{selectedPatient.nameEn}</dd>
+            </div>
+            <div>
+              <dt>Arabic name</dt>
+              <dd>{selectedPatient.nameAr ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Date of birth</dt>
+              <dd>{selectedPatient.dob ?? "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>National ID</dt>
+              <dd>
+                {selectedPatient.nationalId ? "Recorded" : "Not recorded"}
+              </dd>
+            </div>
+          </dl>
+          <h4>Related persons and guardians</h4>
+          {relatedPersons.length === 0 ? (
+            <p className="muted">No related persons linked.</p>
+          ) : (
+            <div className="related-person-list">
+              {relatedPersons.map((person) => (
+                <div className="related-person-row" key={person.id}>
+                  <strong>{person.displayNameEn}</strong>
+                  <span>
+                    {person.relationship} · {person.phoneNumbers.join(", ")}
+                  </span>
+                  <small>
+                    {person.isGuardian ? "Guardian" : "Related person"} ·{" "}
+                    {person.isAuthorizedToConsent
+                      ? "Consent authorized"
+                      : "No consent authority"}
+                  </small>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

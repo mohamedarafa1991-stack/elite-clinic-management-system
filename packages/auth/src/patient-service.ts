@@ -169,6 +169,7 @@ function rowToPatient(
     createdByUserId: String(row["created_by_user_id"]),
     updatedAt: String(row["updated_at"]),
     updatedByUserId: String(row["updated_by_user_id"]),
+    version: Number(row["version"]),
     schemaVersion: Number(row["schema_version"]),
   };
   for (const [key, value] of [
@@ -521,6 +522,7 @@ export class PatientIdentityService {
     patientId: string,
     input: PatientUpdateInput,
     expectedVersion: number,
+    decisionReason?: string,
   ): Patient {
     requireCapability(context, "patient.write");
     const parsedId = patientIdSchema.parse(patientId);
@@ -531,13 +533,21 @@ export class PatientIdentityService {
     if (!current)
       throw new Error("ELITE_PATIENT_NOT_FOUND: patient does not exist");
     const candidates = this.findDuplicateCandidates(context, parsed, parsedId);
+    if (candidates.length > 0 && !decisionReason) {
+      throw new Error(
+        "ELITE_PATIENT_DUPLICATE_REVIEW_REQUIRED: review duplicate candidates before updating",
+      );
+    }
     const timestamp = this.now();
+    const registrationMode =
+      parsed.registrationMode ??
+      (current["registration_mode"] as Patient["registrationMode"]);
     const completenessStatus =
-      current["registration_mode"] === "full" ? "complete" : "minimal";
+      registrationMode === "full" ? "complete" : "minimal";
     const result = this.database.raw
       .prepare(
         `UPDATE patients SET name_en = ?, name_ar = ?, dob = ?, sex = ?, phone = ?, national_id = ?, primary_department_id = ?,
-         completeness_status = ?, normalized_name_en = ?, normalized_name_ar = ?, normalized_phone = ?, normalized_national_id = ?,
+         registration_mode = ?, completeness_status = ?, normalized_name_en = ?, normalized_name_ar = ?, normalized_phone = ?, normalized_national_id = ?,
          updated_at = ?, updated_by_user_id = ?, version = version + 1
          WHERE patient_id = ? AND version = ? AND status = 'active'`,
       )
@@ -549,6 +559,7 @@ export class PatientIdentityService {
         parsed.phone,
         parsed.nationalId ?? null,
         parsed.primaryDepartmentId ?? null,
+        registrationMode,
         completenessStatus,
         normalizeText(parsed.nameEn),
         normalizeText(parsed.nameAr),
@@ -573,6 +584,25 @@ export class PatientIdentityService {
         context,
         timestamp,
       );
+    if (candidates.length > 0) {
+      const reviewStatement = this.database.raw.prepare(
+        "INSERT INTO patient_duplicate_reviews (id, patient_id, candidate_patient_id, score, signals_json, status, decision_reason, requested_by_user_id, requested_at, decided_by_user_id, decided_at) VALUES (?, ?, ?, ?, ?, 'created-another', ?, ?, ?, ?, ?)",
+      );
+      for (const candidate of candidates) {
+        reviewStatement.run(
+          nanoid(18),
+          row.id,
+          candidate.patient.id,
+          candidate.score,
+          JSON.stringify(candidate.signals),
+          decisionReason,
+          context.userId,
+          timestamp,
+          context.userId,
+          timestamp,
+        );
+      }
+    }
     this.recordIdentityHistory(
       row.id,
       "updated",
@@ -599,7 +629,10 @@ export class PatientIdentityService {
         entityId: row.id,
         patientId: parsedId,
         result: "success",
-        metadata: { duplicateCandidateCount: candidates.length },
+        metadata: {
+          duplicateCandidateCount: candidates.length,
+          decisionReason: decisionReason ? "recorded" : "none",
+        },
       },
       timestamp,
     );

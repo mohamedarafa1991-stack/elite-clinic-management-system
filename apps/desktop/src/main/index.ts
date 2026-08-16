@@ -274,12 +274,14 @@ function registerIpc(): void {
       patientId: string,
       input: unknown,
       expectedVersion: number,
+      decisionReason?: string,
     ) => {
       return requirePatientService().updatePatient(
         serviceContext(token),
         patientId,
         input as never,
         expectedVersion,
+        decisionReason,
       );
     },
   );

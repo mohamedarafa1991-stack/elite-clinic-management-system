@@ -215,6 +215,7 @@ export const patientSchema = z.object({
   createdByUserId: opaqueIdSchema,
   updatedAt: isoDateTimeSchema,
   updatedByUserId: opaqueIdSchema,
+  version: z.number().int().positive(),
   schemaVersion: z.number().int().positive(),
 });
 export type Patient = z.infer<typeof patientSchema>;
@@ -247,6 +248,7 @@ export type PatientRegistrationInput = z.infer<
 export const patientUpdateInputSchema = patientRegistrationInputSchema
   .omit({ registrationMode: true, relatedPersons: true })
   .extend({
+    registrationMode: patientRegistrationModeSchema.optional(),
     relatedPersons: z.array(patientRelationLinkInputSchema).max(20).optional(),
   });
 export type PatientUpdateInput = z.infer<typeof patientUpdateInputSchema>;

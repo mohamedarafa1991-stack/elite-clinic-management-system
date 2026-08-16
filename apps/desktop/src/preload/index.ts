@@ -108,6 +108,7 @@ const eliteApi = {
       patientId: string,
       input: PatientUpdateInput,
       expectedVersion: number,
+      decisionReason?: string,
     ) =>
       ipcRenderer.invoke(
         "patient:update",
@@ -115,6 +116,7 @@ const eliteApi = {
         patientId,
         input,
         expectedVersion,
+        decisionReason,
       ) as Promise<Patient>,
     archive: (token: string, patientId: string, reason: string) =>
       ipcRenderer.invoke(

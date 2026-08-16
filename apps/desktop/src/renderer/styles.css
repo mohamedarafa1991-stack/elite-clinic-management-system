@@ -421,3 +421,65 @@ input:focus {
   color: #991b1b;
   background: #fee2e2;
 }
+
+.form-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.form-heading-row h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 15px;
+}
+select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 500;
+}
+.full-registration-fields {
+  padding-top: 4px;
+}
+.profile-summary {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+.profile-summary .card-heading {
+  margin-bottom: 0;
+}
+.profile-summary h3,
+.profile-summary h4 {
+  margin: 0;
+  color: #1e3a8a;
+}
+.profile-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.related-person-list {
+  display: grid;
+  gap: 10px;
+}
+.related-person-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+.related-person-row span,
+.related-person-row small {
+  color: #64748b;
+  font-size: 12px;
+}
