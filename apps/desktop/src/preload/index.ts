@@ -15,6 +15,12 @@ import type {
   DoctorDirectoryEntry,
   MedicalHistoryEntry,
   MedicalHistoryInput,
+  Diagnosis,
+  DiagnosisInput,
+  Encounter,
+  EncounterInput,
+  Icd10Code,
+  Icd10CodeInput,
   AppointmentStatusUpdate,
   Schedule,
   ScheduleInput,
@@ -224,6 +230,87 @@ const eliteApi = {
       ) as Promise<PatientMergeCase>,
   },
   clinical: {
+    listIcd10Codes: (token: string) =>
+      ipcRenderer.invoke("clinical:icd10", token) as Promise<
+        readonly Icd10Code[]
+      >,
+    createIcd10Code: (token: string, input: Icd10CodeInput) =>
+      ipcRenderer.invoke(
+        "clinical:icd10-create",
+        token,
+        input,
+      ) as Promise<Icd10Code>,
+    getEncounterForAppointment: (token: string, appointmentId: string) =>
+      ipcRenderer.invoke(
+        "clinical:encounter-by-appointment",
+        token,
+        appointmentId,
+      ) as Promise<Encounter | null>,
+    createEncounter: (
+      token: string,
+      appointmentId: string,
+      input: EncounterInput,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:encounter-create",
+        token,
+        appointmentId,
+        input,
+      ) as Promise<Encounter>,
+    updateEncounter: (
+      token: string,
+      encounterId: string,
+      input: EncounterInput,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:encounter-update",
+        token,
+        encounterId,
+        input,
+        expectedVersion,
+      ) as Promise<Encounter>,
+    signEncounter: (
+      token: string,
+      encounterId: string,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:encounter-sign",
+        token,
+        encounterId,
+        expectedVersion,
+      ) as Promise<Encounter>,
+    listDiagnoses: (token: string, encounterId: string) =>
+      ipcRenderer.invoke("clinical:diagnoses", token, encounterId) as Promise<
+        readonly Diagnosis[]
+      >,
+    createDiagnosis: (
+      token: string,
+      encounterId: string,
+      input: DiagnosisInput,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:diagnosis-create",
+        token,
+        encounterId,
+        input,
+      ) as Promise<Diagnosis>,
+    approveDiagnosis: (
+      token: string,
+      diagnosisId: string,
+      decision: "approved" | "rejected",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:diagnosis-approve",
+        token,
+        diagnosisId,
+        decision,
+        reason,
+        expectedVersion,
+      ) as Promise<Diagnosis>,
     listSpecialties: (token: string) =>
       ipcRenderer.invoke("clinical:specialties", token) as Promise<
         readonly Specialty[]

@@ -1,6 +1,7 @@
 import {
   AuthService,
   ClinicalWorkflowService,
+  EncounterService,
   MedicalHistoryService,
   PatientIdentityService,
 } from "@elite/auth";
@@ -17,6 +18,7 @@ let database: EliteDatabase | undefined;
 let authService: AuthService | undefined;
 let patientService: PatientIdentityService | undefined;
 let medicalHistoryService: MedicalHistoryService | undefined;
+let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let serviceError: string | undefined;
 
@@ -42,6 +44,7 @@ function initializeServices(): void {
     authService = new AuthService(database);
     patientService = new PatientIdentityService(database);
     medicalHistoryService = new MedicalHistoryService(database);
+    encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
@@ -480,6 +483,94 @@ function registerIpc(): void {
       );
     },
   );
+  ipcMain.handle("clinical:icd10", (_event, token: string) =>
+    requireEncounterService().listIcd10Codes(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "clinical:icd10-create",
+    (_event, token: string, input: unknown) =>
+      requireEncounterService().createIcd10Code(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:encounter-by-appointment",
+    (_event, token: string, appointmentId: string) =>
+      requireEncounterService().getEncounterForAppointment(
+        serviceContext(token),
+        appointmentId,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:encounter-create",
+    (_event, token: string, appointmentId: string, input: unknown) =>
+      requireEncounterService().createEncounter(
+        serviceContext(token),
+        appointmentId,
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:encounter-update",
+    (
+      _event,
+      token: string,
+      encounterId: string,
+      input: unknown,
+      expectedVersion: number,
+    ) =>
+      requireEncounterService().updateEncounter(
+        serviceContext(token),
+        encounterId,
+        input as never,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:encounter-sign",
+    (_event, token: string, encounterId: string, expectedVersion: number) =>
+      requireEncounterService().signEncounter(
+        serviceContext(token),
+        encounterId,
+        expectedVersion,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:diagnoses",
+    (_event, token: string, encounterId: string) =>
+      requireEncounterService().listDiagnoses(
+        serviceContext(token),
+        encounterId,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:diagnosis-create",
+    (_event, token: string, encounterId: string, input: unknown) =>
+      requireEncounterService().createDiagnosis(
+        serviceContext(token),
+        encounterId,
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:diagnosis-approve",
+    (
+      _event,
+      token: string,
+      diagnosisId: string,
+      decision: "approved" | "rejected",
+      reason: string,
+      expectedVersion: number,
+    ) =>
+      requireEncounterService().approveDiagnosis(
+        serviceContext(token),
+        diagnosisId,
+        decision,
+        reason,
+        expectedVersion,
+      ),
+  );
   ipcMain.handle("clinical:specialties", (_event, token: string) =>
     requireClinicalService().listSpecialties(serviceContext(token)),
   );
@@ -589,6 +680,10 @@ function requireMedicalHistoryService(): MedicalHistoryService {
     throw new Error("Medical history service unavailable");
   return medicalHistoryService;
 }
+function requireEncounterService(): EncounterService {
+  if (!encounterService) throw new Error("Encounter service unavailable");
+  return encounterService;
+}
 function requireClinicalService(): ClinicalWorkflowService {
   if (!clinicalService)
     throw new Error("Clinical workflow service unavailable");
@@ -625,5 +720,6 @@ app.on("before-quit", () => {
   database = undefined;
   patientService = undefined;
   medicalHistoryService = undefined;
+  encounterService = undefined;
   clinicalService = undefined;
 });

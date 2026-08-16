@@ -279,6 +279,87 @@ export const medicalHistorySchema = medicalHistoryInputSchema.extend({
 });
 export type MedicalHistoryEntry = z.infer<typeof medicalHistorySchema>;
 
+export const icd10CodeInputSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1)
+    .max(32)
+    .regex(/^[A-Z][0-9A-Z.\-]{1,31}$/),
+  titleEn: z.string().trim().min(1).max(240),
+  titleAr: z.string().trim().max(240).optional(),
+  releaseVersion: z.string().trim().min(1).max(80),
+  sourceUrl: z.string().url().max(500).optional(),
+});
+export type Icd10CodeInput = z.infer<typeof icd10CodeInputSchema>;
+
+export const icd10CodeSchema = icd10CodeInputSchema.extend({
+  id: opaqueIdSchema,
+  isActive: z.boolean(),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+});
+export type Icd10Code = z.infer<typeof icd10CodeSchema>;
+
+export const encounterStatusSchema = z.enum(["draft", "signed"]);
+export type EncounterStatus = z.infer<typeof encounterStatusSchema>;
+
+export const encounterInputSchema = z.object({
+  subjective: z.string().trim().max(12000).optional(),
+  objective: z.string().trim().max(12000).optional(),
+  assessment: z.string().trim().max(12000).optional(),
+  plan: z.string().trim().max(12000).optional(),
+  followUp: z.string().trim().max(4000).optional(),
+});
+export type EncounterInput = z.infer<typeof encounterInputSchema>;
+
+export const encounterSchema = encounterInputSchema.extend({
+  id: opaqueIdSchema,
+  patientId: patientIdSchema,
+  appointmentId: opaqueIdSchema,
+  authorUserId: opaqueIdSchema,
+  encounterAt: isoDateTimeSchema,
+  status: encounterStatusSchema,
+  signedAt: isoDateTimeSchema.optional(),
+  signedByUserId: opaqueIdSchema.optional(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  version: z.number().int().positive(),
+});
+export type Encounter = z.infer<typeof encounterSchema>;
+
+export const diagnosisInputSchema = z.object({
+  icd10CodeId: opaqueIdSchema,
+  diagnosisTextEn: z.string().trim().min(1).max(240),
+  isPrimary: z.boolean().default(false),
+});
+export type DiagnosisInput = z.infer<typeof diagnosisInputSchema>;
+
+export const diagnosisApprovalStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+]);
+export type DiagnosisApprovalStatus = z.infer<
+  typeof diagnosisApprovalStatusSchema
+>;
+
+export const diagnosisSchema = diagnosisInputSchema.extend({
+  id: opaqueIdSchema,
+  encounterId: opaqueIdSchema,
+  patientId: patientIdSchema,
+  icd10Code: z.string().trim().min(1).max(32),
+  icd10TitleEn: z.string().trim().min(1).max(240),
+  approvalStatus: diagnosisApprovalStatusSchema,
+  recordedByUserId: opaqueIdSchema,
+  recordedAt: isoDateTimeSchema,
+  approvedByUserId: opaqueIdSchema.optional(),
+  approvedAt: isoDateTimeSchema.optional(),
+  approvalReason: z.string().max(500).optional(),
+  version: z.number().int().positive(),
+});
+export type Diagnosis = z.infer<typeof diagnosisSchema>;
+
 export const patientRelationLinkInputSchema = z.object({
   relatedPersonId: opaqueIdSchema,
   relationshipRole: z.string().trim().min(1).max(80),

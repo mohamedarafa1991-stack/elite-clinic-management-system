@@ -476,6 +476,61 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_patient_medical_history_category ON patient_medical_history(patient_id, category, status);
     `,
   },
+  {
+    version: 8,
+    name: "encounters-and-icd10-diagnoses",
+    sql: `
+      CREATE TABLE IF NOT EXISTS icd10_codes (
+        id TEXT PRIMARY KEY NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        title_en TEXT NOT NULL,
+        title_ar TEXT,
+        release_version TEXT NOT NULL,
+        source_url TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE TABLE IF NOT EXISTS encounters (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        appointment_id TEXT NOT NULL UNIQUE REFERENCES appointments(id),
+        author_user_id TEXT NOT NULL REFERENCES users(id),
+        encounter_at TEXT NOT NULL,
+        subjective TEXT,
+        objective TEXT,
+        assessment TEXT,
+        plan TEXT,
+        follow_up TEXT,
+        status TEXT NOT NULL CHECK (status IN ('draft', 'signed')) DEFAULT 'draft',
+        signed_at TEXT,
+        signed_by_user_id TEXT REFERENCES users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS diagnoses (
+        id TEXT PRIMARY KEY NOT NULL,
+        encounter_id TEXT NOT NULL REFERENCES encounters(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        icd10_code_id TEXT NOT NULL REFERENCES icd10_codes(id),
+        diagnosis_text_en TEXT NOT NULL,
+        is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+        approval_status TEXT NOT NULL CHECK (approval_status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+        recorded_by_user_id TEXT NOT NULL REFERENCES users(id),
+        recorded_at TEXT NOT NULL,
+        approved_by_user_id TEXT REFERENCES users(id),
+        approved_at TEXT,
+        approval_reason TEXT,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_icd10_codes_active ON icd10_codes(is_active, code);
+      CREATE INDEX IF NOT EXISTS idx_encounters_patient ON encounters(patient_id, encounter_at);
+      CREATE INDEX IF NOT EXISTS idx_encounters_status ON encounters(status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_diagnoses_encounter ON diagnoses(encounter_id, approval_status);
+      CREATE INDEX IF NOT EXISTS idx_diagnoses_patient ON diagnoses(patient_id, recorded_at);
+    `,
+  },
 ];
 
 function now(): string {

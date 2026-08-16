@@ -25,6 +25,12 @@ import type {
   DoctorDirectoryEntry,
   MedicalHistoryEntry,
   MedicalHistoryInput,
+  Diagnosis,
+  DiagnosisInput,
+  Encounter,
+  EncounterInput,
+  Icd10Code,
+  Icd10CodeInput,
   Service,
   Specialty,
   Schedule,
@@ -51,6 +57,22 @@ interface BootstrapFormState {
 }
 
 interface MedicalHistoryFormState extends MedicalHistoryInput {}
+interface EncounterFormState extends EncounterInput {}
+interface DiagnosisFormState extends DiagnosisInput {}
+
+const emptyEncounterForm: EncounterFormState = {
+  subjective: "",
+  objective: "",
+  assessment: "",
+  plan: "",
+  followUp: "",
+};
+
+const emptyDiagnosisForm: DiagnosisFormState = {
+  icd10CodeId: "",
+  diagnosisTextEn: "",
+  isPrimary: false,
+};
 
 const emptyMedicalHistoryForm: MedicalHistoryFormState = {
   category: "condition",
@@ -1969,9 +1991,17 @@ function formatCalendarHeading(
 function ClinicalWorkflowWorkspace({
   token,
   canManage,
+  canWriteClinical,
+  canSignClinical,
+  canApproveClinical,
+  canRecordDiagnosis,
 }: {
   token: string;
   canManage: boolean;
+  canWriteClinical: boolean;
+  canSignClinical: boolean;
+  canApproveClinical: boolean;
+  canRecordDiagnosis: boolean;
 }): ReactElement {
   const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
@@ -1981,6 +2011,23 @@ function ClinicalWorkflowWorkspace({
     [],
   );
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [icd10Codes, setIcd10Codes] = useState<readonly Icd10Code[]>([]);
+  const [selectedAppointment, setSelectedAppointment] =
+    useState<Appointment | null>(null);
+  const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(
+    null,
+  );
+  const [diagnoses, setDiagnoses] = useState<readonly Diagnosis[]>([]);
+  const [encounterForm, setEncounterForm] = useState<EncounterFormState | null>(
+    null,
+  );
+  const [diagnosisForm, setDiagnosisForm] = useState<DiagnosisFormState | null>(
+    null,
+  );
+  const [diagnosisReviewReason, setDiagnosisReviewReason] = useState("");
+  const [icd10Code, setIcd10Code] = useState("");
+  const [icd10Title, setIcd10Title] = useState("");
+  const [icd10Release, setIcd10Release] = useState("");
   const [doctors, setDoctors] = useState<readonly DoctorDirectoryEntry[]>([]);
   const [appointmentDoctorId, setAppointmentDoctorId] = useState("");
   const [calendarDoctorId, setCalendarDoctorId] = useState("");
@@ -2025,6 +2072,7 @@ function ClinicalWorkflowWorkspace({
         serviceRows,
         scheduleRows,
         exceptionRows,
+        icd10Rows,
         doctorRows,
         appointmentRows,
       ] = await Promise.all([
@@ -2033,6 +2081,7 @@ function ClinicalWorkflowWorkspace({
         window.elite.clinical.listServices(token),
         window.elite.clinical.listSchedules(token),
         window.elite.clinical.listExceptions(token),
+        window.elite.clinical.listIcd10Codes(token),
         window.elite.clinical.listDoctors(token),
         window.elite.clinical.listAppointments(
           token,
@@ -2046,6 +2095,7 @@ function ClinicalWorkflowWorkspace({
       setServices(serviceRows);
       setSchedules(scheduleRows);
       setExceptions(exceptionRows);
+      setIcd10Codes(icd10Rows);
       setDoctors(doctorRows);
       setAppointments(appointmentRows);
     } catch (reason: unknown) {
@@ -2114,6 +2164,182 @@ function ClinicalWorkflowWorkspace({
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const openEncounter = async (appointment: Appointment): Promise<void> => {
+    setSelectedAppointment(appointment);
+    setError(null);
+    try {
+      const encounter = await window.elite.clinical.getEncounterForAppointment(
+        token,
+        appointment.id,
+      );
+      setSelectedEncounter(encounter);
+      setEncounterForm(
+        canWriteClinical
+          ? encounter
+            ? {
+                subjective: encounter.subjective ?? "",
+                objective: encounter.objective ?? "",
+                assessment: encounter.assessment ?? "",
+                plan: encounter.plan ?? "",
+                followUp: encounter.followUp ?? "",
+              }
+            : { ...emptyEncounterForm }
+          : null,
+      );
+      setDiagnosisForm(null);
+      setDiagnoses(
+        encounter
+          ? await window.elite.clinical.listDiagnoses(token, encounter.id)
+          : [],
+      );
+    } catch (reason: unknown) {
+      setSelectedEncounter(null);
+      setEncounterForm(null);
+      setDiagnoses([]);
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load encounter",
+      );
+    }
+  };
+
+  const saveEncounter = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedAppointment || !encounterForm) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const saved = selectedEncounter
+        ? await window.elite.clinical.updateEncounter(
+            token,
+            selectedEncounter.id,
+            encounterForm,
+            selectedEncounter.version,
+          )
+        : await window.elite.clinical.createEncounter(
+            token,
+            selectedAppointment.id,
+            encounterForm,
+          );
+      setSelectedEncounter(saved);
+      setEncounterForm({
+        subjective: saved.subjective ?? "",
+        objective: saved.objective ?? "",
+        assessment: saved.assessment ?? "",
+        plan: saved.plan ?? "",
+        followUp: saved.followUp ?? "",
+      });
+      setDiagnoses(await window.elite.clinical.listDiagnoses(token, saved.id));
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to save encounter",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const signSelectedEncounter = async (): Promise<void> => {
+    if (!selectedEncounter) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const signed = await window.elite.clinical.signEncounter(
+        token,
+        selectedEncounter.id,
+        selectedEncounter.version,
+      );
+      setSelectedEncounter(signed);
+      setEncounterForm(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to sign encounter",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const saveDiagnosis = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedEncounter || !diagnosisForm) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.createDiagnosis(
+        token,
+        selectedEncounter.id,
+        diagnosisForm,
+      );
+      setDiagnoses(
+        await window.elite.clinical.listDiagnoses(token, selectedEncounter.id),
+      );
+      setDiagnosisForm(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to record diagnosis",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const reviewDiagnosis = async (
+    diagnosis: Diagnosis,
+    decision: "approved" | "rejected",
+  ): Promise<void> => {
+    if (diagnosisReviewReason.trim().length < 3) {
+      setError("Enter a reason before reviewing the diagnosis");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.approveDiagnosis(
+        token,
+        diagnosis.id,
+        decision,
+        diagnosisReviewReason,
+        diagnosis.version,
+      );
+      setDiagnosisReviewReason("");
+      if (selectedEncounter) {
+        setDiagnoses(
+          await window.elite.clinical.listDiagnoses(
+            token,
+            selectedEncounter.id,
+          ),
+        );
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to review diagnosis",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createIcd10Code = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    const input: Icd10CodeInput = {
+      code: icd10Code,
+      titleEn: icd10Title,
+      releaseVersion: icd10Release,
+    };
+    await manage(async () => {
+      await window.elite.clinical.createIcd10Code(token, input);
+      setIcd10Code("");
+      setIcd10Title("");
+      setIcd10Release("");
+    });
   };
 
   const navigateCalendar = (direction: -1 | 1): void => {
@@ -2441,6 +2667,40 @@ function ClinicalWorkflowWorkspace({
                 disabled={isBusy}
               >
                 Add service
+              </button>
+            </form>
+            <form
+              className="clinical-config-form"
+              onSubmit={(event) => void createIcd10Code(event)}
+            >
+              <h3>ICD-10 catalog</h3>
+              <input
+                required
+                placeholder="ICD-10 code, e.g. J06.9"
+                value={icd10Code}
+                onChange={(event) => setIcd10Code(event.target.value)}
+              />
+              <input
+                required
+                placeholder="English diagnosis title"
+                value={icd10Title}
+                onChange={(event) => setIcd10Title(event.target.value)}
+              />
+              <input
+                required
+                placeholder="Release version"
+                value={icd10Release}
+                onChange={(event) => setIcd10Release(event.target.value)}
+              />
+              <small className="muted">
+                {icd10Codes.length} active catalog codes available locally.
+              </small>
+              <button
+                className="button secondary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Add ICD-10 code
               </button>
             </form>
             <form
@@ -2867,6 +3127,14 @@ function ClinicalWorkflowWorkspace({
                   {appointment.status} · {appointment.durationMinutes} min
                 </small>
               </div>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={isBusy}
+                onClick={() => void openEncounter(appointment)}
+              >
+                Open encounter
+              </button>
               {appointment.status === "scheduled" ? (
                 <button
                   className="button secondary"
@@ -2901,6 +3169,330 @@ function ClinicalWorkflowWorkspace({
           ))
         )}
       </div>
+      {selectedAppointment ? (
+        <section className="encounter-panel" aria-labelledby="encounter-title">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Clinical record</p>
+              <h3 id="encounter-title">
+                Encounter note · {selectedAppointment.patientId}
+              </h3>
+              <p className="form-help">
+                {new Date(selectedAppointment.scheduledStart).toLocaleString()}{" "}
+                · {selectedAppointment.visitType}
+              </p>
+            </div>
+            <span
+              className={`status ${selectedEncounter?.status === "signed" ? "ok" : "warn"}`}
+            >
+              {selectedEncounter?.status ?? "not started"}
+            </span>
+          </div>
+          {!selectedEncounter && !encounterForm ? (
+            <p className="muted">
+              No encounter note exists for this appointment.
+            </p>
+          ) : null}
+          {encounterForm ? (
+            <form
+              className="encounter-editor"
+              onSubmit={(event) => void saveEncounter(event)}
+            >
+              <div className="form-grid">
+                <label>
+                  Subjective
+                  <textarea
+                    rows={5}
+                    value={encounterForm.subjective ?? ""}
+                    onChange={(event) =>
+                      setEncounterForm((current) =>
+                        current
+                          ? { ...current, subjective: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Objective
+                  <textarea
+                    rows={5}
+                    value={encounterForm.objective ?? ""}
+                    onChange={(event) =>
+                      setEncounterForm((current) =>
+                        current
+                          ? { ...current, objective: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Assessment
+                  <textarea
+                    rows={5}
+                    value={encounterForm.assessment ?? ""}
+                    onChange={(event) =>
+                      setEncounterForm((current) =>
+                        current
+                          ? { ...current, assessment: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Plan
+                  <textarea
+                    rows={5}
+                    value={encounterForm.plan ?? ""}
+                    onChange={(event) =>
+                      setEncounterForm((current) =>
+                        current
+                          ? { ...current, plan: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                Follow-up
+                <textarea
+                  rows={3}
+                  value={encounterForm.followUp ?? ""}
+                  onChange={(event) =>
+                    setEncounterForm((current) =>
+                      current
+                        ? { ...current, followUp: event.target.value }
+                        : current,
+                    )
+                  }
+                />
+              </label>
+              <div className="button-row">
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={isBusy}
+                >
+                  {selectedEncounter ? "Save draft note" : "Create draft note"}
+                </button>
+                {selectedEncounter && canSignClinical ? (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy || selectedEncounter.status !== "draft"}
+                    onClick={() => void signSelectedEncounter()}
+                  >
+                    Sign encounter
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : selectedEncounter ? (
+            <div className="encounter-readonly">
+              <dl className="encounter-note-grid">
+                <div>
+                  <dt>Subjective</dt>
+                  <dd>{selectedEncounter.subjective ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Objective</dt>
+                  <dd>{selectedEncounter.objective ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Assessment</dt>
+                  <dd>{selectedEncounter.assessment ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Plan</dt>
+                  <dd>{selectedEncounter.plan ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Follow-up</dt>
+                  <dd>{selectedEncounter.followUp ?? "Not recorded"}</dd>
+                </div>
+              </dl>
+              {selectedEncounter.status === "signed" ? (
+                <p className="status ok">
+                  Signed encounters are immutable; corrections require an
+                  amendment workflow.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {selectedEncounter ? (
+            <div className="diagnosis-section">
+              <div className="related-person-heading">
+                <div>
+                  <h4>ICD-10 diagnoses</h4>
+                  <p className="form-help">
+                    Diagnosis text is recorded in English and linked to a local
+                    ICD-10 release.
+                  </p>
+                </div>
+                {canRecordDiagnosis && selectedEncounter.status === "draft" ? (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => setDiagnosisForm({ ...emptyDiagnosisForm })}
+                  >
+                    Add diagnosis
+                  </button>
+                ) : null}
+              </div>
+              {diagnoses.length === 0 ? (
+                <p className="muted">
+                  No diagnoses recorded for this encounter.
+                </p>
+              ) : (
+                <div className="diagnosis-list">
+                  {diagnoses.map((diagnosis) => (
+                    <article className="diagnosis-row" key={diagnosis.id}>
+                      <div>
+                        <strong>
+                          {diagnosis.icd10Code} · {diagnosis.diagnosisTextEn}
+                        </strong>
+                        <span>
+                          {diagnosis.icd10TitleEn} ·{" "}
+                          {diagnosis.isPrimary ? "Primary" : "Additional"}
+                        </span>
+                        <small>
+                          Approval: {diagnosis.approvalStatus} · recorded by{" "}
+                          {diagnosis.recordedByUserId}
+                        </small>
+                      </div>
+                      {canApproveClinical &&
+                      diagnosis.approvalStatus === "pending" ? (
+                        <div className="button-row">
+                          <button
+                            className="button primary"
+                            type="button"
+                            disabled={
+                              isBusy || diagnosisReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void reviewDiagnosis(diagnosis, "approved")
+                            }
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="button danger"
+                            type="button"
+                            disabled={
+                              isBusy || diagnosisReviewReason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void reviewDiagnosis(diagnosis, "rejected")
+                            }
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+              {canApproveClinical &&
+              diagnoses.some(
+                (diagnosis) => diagnosis.approvalStatus === "pending",
+              ) ? (
+                <label className="history-audit-reason">
+                  Diagnosis review reason
+                  <input
+                    value={diagnosisReviewReason}
+                    onChange={(event) =>
+                      setDiagnosisReviewReason(event.target.value)
+                    }
+                    placeholder="Required for approval or rejection"
+                  />
+                </label>
+              ) : null}
+              {diagnosisForm ? (
+                <form
+                  className="diagnosis-editor"
+                  onSubmit={(event) => void saveDiagnosis(event)}
+                >
+                  <div className="form-grid">
+                    <label>
+                      ICD-10 code
+                      <select
+                        required
+                        value={diagnosisForm.icd10CodeId}
+                        onChange={(event) =>
+                          setDiagnosisForm((current) =>
+                            current
+                              ? { ...current, icd10CodeId: event.target.value }
+                              : current,
+                          )
+                        }
+                      >
+                        <option value="">Select code</option>
+                        {icd10Codes.map((code) => (
+                          <option key={code.id} value={code.id}>
+                            {code.code} · {code.titleEn} · {code.releaseVersion}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Diagnosis in English
+                      <input
+                        required
+                        value={diagnosisForm.diagnosisTextEn}
+                        onChange={(event) =>
+                          setDiagnosisForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  diagnosisTextEn: event.target.value,
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={diagnosisForm.isPrimary}
+                      onChange={(event) =>
+                        setDiagnosisForm((current) =>
+                          current
+                            ? { ...current, isPrimary: event.target.checked }
+                            : current,
+                        )
+                      }
+                    />
+                    Primary diagnosis
+                  </label>
+                  <div className="button-row">
+                    <button
+                      className="button primary"
+                      type="submit"
+                      disabled={isBusy}
+                    >
+                      Record diagnosis
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => setDiagnosisForm(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -3351,6 +3943,13 @@ function AuthenticatedView({
         <ClinicalWorkflowWorkspace
           token={token}
           canManage={session.capabilities.includes("module.manage")}
+          canWriteClinical={session.capabilities.includes("clinical.write")}
+          canSignClinical={session.capabilities.includes("clinical.sign")}
+          canApproveClinical={session.capabilities.includes("clinical.approve")}
+          canRecordDiagnosis={
+            session.role === "doctor" &&
+            session.capabilities.includes("clinical.write")
+          }
         />
       ) : null}
       {session.role === "admin" &&
