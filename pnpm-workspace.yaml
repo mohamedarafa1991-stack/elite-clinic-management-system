@@ -3,5 +3,6 @@ packages:
   - packages/*
 
 onlyBuiltDependencies:
+  - argon2
   - better-sqlite3
   - esbuild

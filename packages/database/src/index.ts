@@ -187,6 +187,50 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_audit_patient ON audit_events(patient_id, occurred_at);
     `,
   },
+  {
+    version: 2,
+    name: "authentication-and-device-enrollment",
+    sql: `
+      CREATE TABLE IF NOT EXISTS auth_credentials (
+        user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id),
+        password_hash TEXT NOT NULL,
+        password_algorithm TEXT NOT NULL CHECK (password_algorithm = 'argon2id'),
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        password_changed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        device_id TEXT NOT NULL REFERENCES devices(id),
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        revoked_at TEXT,
+        revoked_reason TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS device_enrollment_requests (
+        id TEXT PRIMARY KEY NOT NULL,
+        device_id TEXT NOT NULL REFERENCES devices(id),
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        rejection_reason TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auth_credentials_lock ON auth_credentials(locked_until);
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked_at, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id, revoked_at, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_enrollment_requests_status ON device_enrollment_requests(status, requested_at);
+    `,
+  },
 ];
 
 function now(): string {

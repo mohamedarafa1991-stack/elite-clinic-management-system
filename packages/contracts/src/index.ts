@@ -36,6 +36,59 @@ export const capabilitySchema = z.enum([
 ]);
 export type Capability = z.infer<typeof capabilitySchema>;
 
+export const roleCapabilities = {
+  admin: [
+    "patient.read",
+    "patient.write",
+    "patient.archive",
+    "patient.merge",
+    "clinical.read",
+    "clinical.write",
+    "clinical.sign",
+    "appointment.read",
+    "appointment.write",
+    "billing.read",
+    "billing.write",
+    "billing.refund",
+    "staff.manage",
+    "device.manage",
+    "backup.manage",
+    "export.manage",
+    "audit.read",
+    "module.manage",
+  ],
+  doctor: [
+    "patient.read",
+    "patient.write",
+    "clinical.read",
+    "clinical.write",
+    "clinical.sign",
+    "clinical.approve",
+    "appointment.read",
+    "appointment.write",
+    "billing.read",
+    "billing.write",
+    "export.manage",
+  ],
+  nurse: [
+    "patient.read",
+    "patient.write",
+    "clinical.read",
+    "clinical.write",
+    "appointment.read",
+    "appointment.write",
+  ],
+  receptionist: [
+    "patient.read",
+    "patient.write",
+    "appointment.read",
+    "appointment.write",
+    "billing.read",
+    "billing.write",
+    "billing.refund",
+  ],
+} as const satisfies Record<UserRole, readonly Capability[]>;
+
 export const userSchema = z.object({
   id: opaqueIdSchema,
   username: z.string().trim().min(3).max(80),

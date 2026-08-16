@@ -1,3 +1,5 @@
+import { AuthService } from "@elite/auth";
+import { openDatabase, type EliteDatabase } from "@elite/database";
 import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,6 +7,27 @@ import { fileURLToPath } from "node:url";
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
 let mainWindow: BrowserWindow | undefined;
+let database: EliteDatabase | undefined;
+let authService: AuthService | undefined;
+let serviceError: string | undefined;
+
+function initializeServices(): void {
+  try {
+    const filename = app.isPackaged
+      ? join(app.getPath("userData"), "elite-clinic.db")
+      : ":memory:";
+    database = openDatabase({
+      filename,
+      mode: app.isPackaged ? "production" : "test",
+    });
+    authService = new AuthService(database);
+  } catch {
+    // Never expose database paths, encryption keys, or native-driver details.
+    serviceError = app.isPackaged
+      ? "Secure encrypted storage is not configured for this production build."
+      : "Secure local services could not be initialized.";
+  }
+}
 
 function registerContentSecurityPolicy(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -76,6 +99,15 @@ async function loadRenderer(window: BrowserWindow): Promise<void> {
   await window.loadFile(join(currentDirectory, "../renderer/index.html"));
 }
 
+function requireAuthService(): AuthService {
+  if (!authService) {
+    throw new Error(
+      "ELITE_AUTH_STORAGE_UNAVAILABLE: secure local services are unavailable",
+    );
+  }
+  return authService;
+}
+
 function registerIpc(): void {
   ipcMain.handle("app:security-status", () => ({
     electronVersion: process.versions.electron,
@@ -83,11 +115,41 @@ function registerIpc(): void {
     nodeVersion: process.versions.node,
     safeStorageAvailable: safeStorage.isEncryptionAvailable(),
     isPackaged: app.isPackaged,
+    secureServicesReady: !serviceError,
+    serviceError,
   }));
+
+  ipcMain.handle("auth:status", () => {
+    const service = requireAuthService();
+    return service.bootstrapStatus();
+  });
+
+  ipcMain.handle("auth:bootstrap", async (_event, input: unknown) => {
+    const service = requireAuthService();
+    return service.bootstrapInitialAdmins(input as never);
+  });
+
+  ipcMain.handle("auth:login", async (_event, input: unknown) => {
+    const service = requireAuthService();
+    const sessionContext = await service.login(input as never);
+    return {
+      token: sessionContext.token,
+      session: service.sessionSummary(sessionContext.token),
+    };
+  });
+
+  ipcMain.handle("auth:session", (_event, token: string) => {
+    return requireAuthService().sessionSummary(token);
+  });
+
+  ipcMain.handle("auth:logout", (_event, token: string) => {
+    requireAuthService().logout(token);
+  });
 }
 
 app.whenReady().then(async () => {
   registerContentSecurityPolicy();
+  initializeServices();
   registerIpc();
   mainWindow = createWindow();
   await loadRenderer(mainWindow);
@@ -108,4 +170,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   mainWindow = undefined;
+  database?.close();
+  database = undefined;
+  authService = undefined;
 });

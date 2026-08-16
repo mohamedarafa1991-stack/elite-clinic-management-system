@@ -13,6 +13,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@elite/auth": "workspace:*",
     "@elite/contracts": "workspace:*",
     "@elite/database": "workspace:*",
     "electron": "^43.4.0",

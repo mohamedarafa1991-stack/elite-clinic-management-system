@@ -15,7 +15,7 @@ describe("Elite database foundation", () => {
         .all()
         .map((row) => (row as { name: string }).name);
 
-      expect(migrationVersions()).toEqual([1]);
+      expect(migrationVersions()).toEqual([1, 2]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
       expect(tables).toContain("appointments");

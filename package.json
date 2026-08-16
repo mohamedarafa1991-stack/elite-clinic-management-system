@@ -9,7 +9,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
+    "build:packages": "pnpm --filter @elite/contracts build && pnpm --filter @elite/database build && pnpm --filter @elite/auth build",
+    "typecheck": "pnpm build:packages && pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format:check": "pnpm exec prettier --check .",
