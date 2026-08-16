@@ -27,6 +27,8 @@ import type {
   MedicalHistoryInput,
   Diagnosis,
   DiagnosisInput,
+  EncounterAmendmentDiff,
+  ProjectionSnapshot,
   EncounterAmendment,
   EncounterAmendmentInput,
   EffectiveEncounter,
@@ -2035,6 +2037,13 @@ function ClinicalWorkflowWorkspace({
   const [amendments, setAmendments] = useState<readonly EncounterAmendment[]>(
     [],
   );
+  const [amendmentDiffs, setAmendmentDiffs] = useState<
+    readonly EncounterAmendmentDiff[]
+  >([]);
+  const [projectionSnapshots, setProjectionSnapshots] = useState<
+    readonly ProjectionSnapshot[]
+  >([]);
+  const [snapshotExportReason, setSnapshotExportReason] = useState("");
   const [amendmentForm, setAmendmentForm] = useState<AmendmentFormState | null>(
     null,
   );
@@ -2196,18 +2205,32 @@ function ClinicalWorkflowWorkspace({
         token,
         appointment.id,
       );
-      const [effectiveEncounter, amendmentRows] = encounter
-        ? await Promise.all([
-            window.elite.clinical.getEffectiveEncounterForAppointment(
-              token,
-              appointment.id,
-            ),
-            window.elite.clinical.listAmendments(token, encounter.id),
-          ])
-        : [null, [] as readonly EncounterAmendment[]];
+      const [effectiveEncounter, amendmentRows, diffRows, snapshotRows] =
+        encounter
+          ? await Promise.all([
+              window.elite.clinical.getEffectiveEncounterForAppointment(
+                token,
+                appointment.id,
+              ),
+              window.elite.clinical.listAmendments(token, encounter.id),
+              window.elite.clinical.listAmendmentDiffs(token, encounter.id),
+              window.elite.clinical.listProjectionSnapshots(
+                token,
+                encounter.id,
+              ),
+            ])
+          : [
+              null,
+              [] as readonly EncounterAmendment[],
+              [] as readonly EncounterAmendmentDiff[],
+              [] as readonly ProjectionSnapshot[],
+            ];
       setSelectedEncounter(encounter);
       setSelectedEffectiveEncounter(effectiveEncounter);
       setAmendments(amendmentRows);
+      setAmendmentDiffs(diffRows);
+      setProjectionSnapshots(snapshotRows);
+      setSnapshotExportReason("");
       setAmendmentForm(null);
       setAmendmentReviewReason("");
       setEncounterForm(
@@ -2233,6 +2256,9 @@ function ClinicalWorkflowWorkspace({
       setSelectedEncounter(null);
       setSelectedEffectiveEncounter(null);
       setAmendments([]);
+      setAmendmentDiffs([]);
+      setProjectionSnapshots([]);
+      setSnapshotExportReason("");
       setAmendmentForm(null);
       setAmendmentReviewReason("");
       setEncounterForm(null);
@@ -2240,6 +2266,53 @@ function ClinicalWorkflowWorkspace({
       setError(
         reason instanceof Error ? reason.message : "Unable to load encounter",
       );
+    }
+  };
+
+  const refreshProjectionArtifacts = async (): Promise<void> => {
+    if (!selectedEncounter || !selectedAppointment) return;
+    const [effective, amendmentRows, diffRows, snapshotRows] =
+      await Promise.all([
+        window.elite.clinical.getEffectiveEncounterForAppointment(
+          token,
+          selectedAppointment.id,
+        ),
+        window.elite.clinical.listAmendments(token, selectedEncounter.id),
+        window.elite.clinical.listAmendmentDiffs(token, selectedEncounter.id),
+        window.elite.clinical.listProjectionSnapshots(
+          token,
+          selectedEncounter.id,
+        ),
+      ]);
+    setSelectedEffectiveEncounter(effective);
+    setAmendments(amendmentRows);
+    setAmendmentDiffs(diffRows);
+    setProjectionSnapshots(snapshotRows);
+  };
+
+  const createProjectionSnapshot = async (): Promise<void> => {
+    if (!selectedEncounter || snapshotExportReason.trim().length < 3) {
+      setError("Enter an export reason before creating a projection snapshot");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.clinical.createProjectionSnapshot(
+        token,
+        selectedEncounter.id,
+        { exportReason: snapshotExportReason },
+      );
+      setSnapshotExportReason("");
+      await refreshProjectionArtifacts();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create projection snapshot",
+      );
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -2273,6 +2346,7 @@ function ClinicalWorkflowWorkspace({
         await window.elite.clinical.listAmendments(token, selectedEncounter.id),
       );
       setAmendmentForm(null);
+      await refreshProjectionArtifacts();
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -2347,6 +2421,7 @@ function ClinicalWorkflowWorkspace({
           ),
         );
       }
+      await refreshProjectionArtifacts();
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -2383,6 +2458,7 @@ function ClinicalWorkflowWorkspace({
           ),
         );
       }
+      await refreshProjectionArtifacts();
     } catch (reason: unknown) {
       setError(
         reason instanceof Error ? reason.message : "Unable to apply amendment",
@@ -3545,6 +3621,40 @@ function ClinicalWorkflowWorkspace({
                   </button>
                 ) : null}
               </div>
+              <div className="projection-snapshot-controls">
+                <label>
+                  Export snapshot reason
+                  <input
+                    value={snapshotExportReason}
+                    onChange={(event) =>
+                      setSnapshotExportReason(event.target.value)
+                    }
+                    placeholder="Required for patient-record export snapshot"
+                  />
+                </label>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy || snapshotExportReason.trim().length < 3}
+                  onClick={() => void createProjectionSnapshot()}
+                >
+                  Create immutable export snapshot
+                </button>
+              </div>
+              {projectionSnapshots.length > 0 ? (
+                <div className="projection-snapshot-list">
+                  <strong>Export snapshots</strong>
+                  {projectionSnapshots.map((snapshot) => (
+                    <small key={snapshot.id}>
+                      {new Date(snapshot.createdAt).toLocaleString()} ·
+                      effective v{snapshot.effectiveVersion} ·{" "}
+                      {snapshot.appliedAmendmentCount} amendment(s) · hash{" "}
+                      {snapshot.payloadHash.slice(0, 16)}… ·{" "}
+                      {snapshot.exportReason}
+                    </small>
+                  ))}
+                </div>
+              ) : null}
               {amendments.length === 0 ? (
                 <p className="muted">
                   No amendment requests for this signed note.
@@ -3572,6 +3682,15 @@ function ClinicalWorkflowWorkspace({
                         {amendment.conflictReason ? (
                           <small>Conflict: {amendment.conflictReason}</small>
                         ) : null}
+                        {amendmentDiffs
+                          .find((diff) => diff.amendmentId === amendment.id)
+                          ?.fields.map((fieldDiff) => (
+                            <small key={`${amendment.id}-${fieldDiff.field}`}>
+                              {fieldDiff.field}:{" "}
+                              {fieldDiff.before ?? "Not recorded"} →{" "}
+                              {fieldDiff.after ?? "Not recorded"}
+                            </small>
+                          ))}
                       </div>
                       {canApproveClinical && amendment.status === "pending" ? (
                         <div className="button-row">

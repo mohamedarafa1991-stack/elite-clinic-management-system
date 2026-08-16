@@ -545,6 +545,31 @@ function registerIpc(): void {
       ),
   );
   ipcMain.handle(
+    "clinical:amendment-diffs",
+    (_event, token: string, encounterId: string) =>
+      requireEncounterService().listAmendmentDiffs(
+        serviceContext(token),
+        encounterId,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:projection-snapshot-create",
+    (_event, token: string, encounterId: string, input: unknown) =>
+      requireEncounterService().createProjectionSnapshot(
+        serviceContext(token),
+        encounterId,
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "clinical:projection-snapshots",
+    (_event, token: string, encounterId: string) =>
+      requireEncounterService().listProjectionSnapshots(
+        serviceContext(token),
+        encounterId,
+      ),
+  );
+  ipcMain.handle(
     "clinical:amendments",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listAmendments(

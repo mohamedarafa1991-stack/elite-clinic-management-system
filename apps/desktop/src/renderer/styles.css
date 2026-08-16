@@ -1061,3 +1061,33 @@ select {
     flex-direction: column;
   }
 }
+
+.projection-snapshot-controls {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 10px;
+  background: #f5f3ff;
+}
+.projection-snapshot-controls label {
+  flex: 1;
+}
+.projection-snapshot-list {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #ddd6fe;
+  border-radius: 10px;
+  background: #faf5ff;
+}
+.projection-snapshot-list small {
+  color: #5b21b6;
+}
+@media (max-width: 720px) {
+  .projection-snapshot-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

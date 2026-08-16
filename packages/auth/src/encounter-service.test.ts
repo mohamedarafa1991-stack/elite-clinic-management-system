@@ -271,6 +271,32 @@ describe("EncounterService", () => {
       expect(projectedAfterTwo?.lastAppliedAmendmentId).toBe(
         secondAmendment.id,
       );
+      const diffsAfterTwo = encounters.listAmendmentDiffs(author, signed.id);
+      const secondDiff = diffsAfterTwo.find(
+        (diff) => diff.amendmentId === secondAmendment.id,
+      );
+      expect(secondDiff?.fields).toEqual(
+        expect.arrayContaining([
+          {
+            field: "assessment",
+            before: "Corrected synthetic assessment.",
+            after: "Second corrected synthetic assessment.",
+          },
+        ]),
+      );
+      const snapshotAtTwo = encounters.createProjectionSnapshot(
+        author,
+        signed.id,
+        { exportReason: "Synthetic patient record export at projection two" },
+      );
+      const duplicateSnapshot = encounters.createProjectionSnapshot(
+        author,
+        signed.id,
+        { exportReason: "Same synthetic projection requested again" },
+      );
+      expect(duplicateSnapshot.id).toBe(snapshotAtTwo.id);
+      expect(snapshotAtTwo.appliedAmendmentCount).toBe(2);
+      expect(snapshotAtTwo.payloadHash).toMatch(/^[a-f0-9]{64}$/);
 
       const branchA = encounters.createAmendment(author, signed.id, {
         assessment: "Branch A assessment.",
@@ -333,6 +359,16 @@ describe("EncounterService", () => {
         encounters.getEffectiveEncounterForAppointment(author, appointment.id);
       expect(projectedAfterRebase?.appliedAmendmentCount).toBe(4);
       expect(projectedAfterRebase?.assessment).toBe("Branch B assessment.");
+      const snapshotAtFour = encounters.createProjectionSnapshot(
+        author,
+        signed.id,
+        { exportReason: "Synthetic final patient record export" },
+      );
+      expect(snapshotAtFour.id).not.toBe(snapshotAtTwo.id);
+      expect(snapshotAtFour.appliedAmendmentCount).toBe(4);
+      expect(
+        encounters.listProjectionSnapshots(author, signed.id),
+      ).toHaveLength(2);
     } finally {
       database.close();
     }

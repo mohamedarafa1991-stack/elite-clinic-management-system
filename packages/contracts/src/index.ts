@@ -377,6 +377,57 @@ export const effectiveEncounterSchema = encounterSchema.extend({
 });
 export type EffectiveEncounter = z.infer<typeof effectiveEncounterSchema>;
 
+export const encounterAmendmentFieldSchema = z.enum([
+  "subjective",
+  "objective",
+  "assessment",
+  "plan",
+  "followUp",
+]);
+export type EncounterAmendmentField = z.infer<
+  typeof encounterAmendmentFieldSchema
+>;
+
+export const encounterFieldDiffSchema = z.object({
+  field: encounterAmendmentFieldSchema,
+  before: z.string().optional(),
+  after: z.string().optional(),
+});
+export type EncounterFieldDiff = z.infer<typeof encounterFieldDiffSchema>;
+
+export const encounterAmendmentDiffSchema = z.object({
+  amendmentId: opaqueIdSchema,
+  encounterId: opaqueIdSchema,
+  status: encounterAmendmentStatusSchema,
+  baseAmendmentId: opaqueIdSchema.optional(),
+  fields: z.array(encounterFieldDiffSchema),
+});
+export type EncounterAmendmentDiff = z.infer<
+  typeof encounterAmendmentDiffSchema
+>;
+
+export const projectionSnapshotInputSchema = z.object({
+  exportReason: z.string().trim().min(3).max(500),
+});
+export type ProjectionSnapshotInput = z.infer<
+  typeof projectionSnapshotInputSchema
+>;
+
+export const projectionSnapshotSchema = z.object({
+  id: opaqueIdSchema,
+  encounterId: opaqueIdSchema,
+  patientId: patientIdSchema,
+  signedEncounterVersion: z.number().int().positive(),
+  effectiveVersion: z.number().int().positive(),
+  appliedAmendmentCount: z.number().int().nonnegative(),
+  effectiveEncounter: effectiveEncounterSchema,
+  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  exportReason: z.string().trim().min(3).max(500),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+});
+export type ProjectionSnapshot = z.infer<typeof projectionSnapshotSchema>;
+
 export const amendmentConflictResolutionSchema = z.enum(["rebase", "reject"]);
 export type AmendmentConflictResolution = z.infer<
   typeof amendmentConflictResolutionSchema

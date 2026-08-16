@@ -17,6 +17,9 @@ import type {
   MedicalHistoryInput,
   Diagnosis,
   DiagnosisInput,
+  EncounterAmendmentDiff,
+  ProjectionSnapshot,
+  ProjectionSnapshotInput,
   EncounterAmendment,
   EncounterAmendmentInput,
   EffectiveEncounter,
@@ -293,6 +296,29 @@ const eliteApi = {
         encounterId,
         expectedVersion,
       ) as Promise<Encounter>,
+    listAmendmentDiffs: (token: string, encounterId: string) =>
+      ipcRenderer.invoke(
+        "clinical:amendment-diffs",
+        token,
+        encounterId,
+      ) as Promise<readonly EncounterAmendmentDiff[]>,
+    createProjectionSnapshot: (
+      token: string,
+      encounterId: string,
+      input: ProjectionSnapshotInput,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:projection-snapshot-create",
+        token,
+        encounterId,
+        input,
+      ) as Promise<ProjectionSnapshot>,
+    listProjectionSnapshots: (token: string, encounterId: string) =>
+      ipcRenderer.invoke(
+        "clinical:projection-snapshots",
+        token,
+        encounterId,
+      ) as Promise<readonly ProjectionSnapshot[]>,
     listAmendments: (token: string, encounterId: string) =>
       ipcRenderer.invoke("clinical:amendments", token, encounterId) as Promise<
         readonly EncounterAmendment[]

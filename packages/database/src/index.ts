@@ -611,6 +611,29 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX idx_encounter_amendments_base ON encounter_amendments(encounter_id, base_encounter_version, status);
     `,
   },
+  {
+    version: 11,
+    name: "encounter-projection-snapshots",
+    sql: `
+      CREATE TABLE IF NOT EXISTS encounter_projection_snapshots (
+        id TEXT PRIMARY KEY NOT NULL,
+        encounter_id TEXT NOT NULL REFERENCES encounters(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        signed_encounter_version INTEGER NOT NULL CHECK (signed_encounter_version >= 1),
+        effective_version INTEGER NOT NULL CHECK (effective_version >= 1),
+        applied_amendment_count INTEGER NOT NULL CHECK (applied_amendment_count >= 0),
+        effective_payload_json TEXT NOT NULL,
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        export_reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        schema_version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_encounter_projection_snapshots_encounter ON encounter_projection_snapshots(encounter_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_encounter_projection_snapshots_patient ON encounter_projection_snapshots(patient_id, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_projection_snapshots_hash ON encounter_projection_snapshots(encounter_id, payload_hash);
+    `,
+  },
 ];
 
 function now(): string {

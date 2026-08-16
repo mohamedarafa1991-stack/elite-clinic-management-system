@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import {
   amendmentConflictResolutionSchema,
+  encounterAmendmentDiffSchema,
+  projectionSnapshotInputSchema,
+  projectionSnapshotSchema,
   diagnosisApprovalStatusSchema,
   diagnosisInputSchema,
   effectiveEncounterSchema,
@@ -16,7 +20,11 @@ import {
   type Diagnosis,
   type DiagnosisInput,
   type AmendmentConflictResolution,
+  type EncounterAmendmentDiff,
+  type EncounterFieldDiff,
   type EffectiveEncounter,
+  type ProjectionSnapshot,
+  type ProjectionSnapshotInput,
   type EncounterAmendment,
   type EncounterAmendmentInput,
   type Encounter,
@@ -111,34 +119,104 @@ export class EncounterService {
   ): EffectiveEncounter | null {
     requireCapability(context, "clinical.read");
     const base = this.getEncounterForAppointment(context, appointmentId);
-    if (!base) return null;
+    return base ? this.buildEffectiveEncounter(context, base) : null;
+  }
+
+  public listAmendmentDiffs(
+    context: SessionContext,
+    encounterId: string,
+  ): readonly EncounterAmendmentDiff[] {
+    requireCapability(context, "clinical.read");
+    const amendments = this.listAmendmentRows(encounterId);
+    return amendments.map((row) => this.buildAmendmentDiff(context, row));
+  }
+
+  public createProjectionSnapshot(
+    context: SessionContext,
+    encounterId: string,
+    input: ProjectionSnapshotInput,
+  ): ProjectionSnapshot {
+    requireCapability(context, "clinical.read");
+    const parsedEncounterId = entityIdSchema.parse(encounterId);
+    const parsedInput = projectionSnapshotInputSchema.parse(input);
+    const base = this.getEncounter(context, parsedEncounterId);
+    const effective = this.buildEffectiveEncounter(context, base);
+    const payload = {
+      encounterId: base.id,
+      patientId: base.patientId,
+      signedEncounterVersion: base.version,
+      effectiveVersion: effective.effectiveVersion,
+      appliedAmendmentCount: effective.appliedAmendmentCount,
+      effectiveEncounter: effective,
+    };
+    const patient = this.database.raw
+      .prepare("SELECT id FROM patients WHERE patient_id = ?")
+      .get(base.patientId) as { id: string } | undefined;
+    if (!patient)
+      throw new Error(
+        "ELITE_PATIENT_NOT_FOUND: snapshot patient does not exist",
+      );
+    const payloadJson = JSON.stringify(payload);
+    const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
+    const existing = this.database.raw
+      .prepare(
+        `SELECT s.*, p.patient_id AS patient_display_id
+         FROM encounter_projection_snapshots s
+         JOIN patients p ON p.id = s.patient_id
+         WHERE s.encounter_id = ? AND s.payload_hash = ?`,
+      )
+      .get(base.id, payloadHash) as Record<string, unknown> | undefined;
+    if (existing) return this.mapProjectionSnapshot(existing);
+    const id = nanoid(18);
+    const timestamp = this.now();
+    this.database.raw
+      .prepare(
+        `INSERT INTO encounter_projection_snapshots
+          (id, encounter_id, patient_id, signed_encounter_version, effective_version, applied_amendment_count,
+           effective_payload_json, payload_hash, export_reason, created_at, created_by_user_id, schema_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      )
+      .run(
+        id,
+        base.id,
+        patient.id,
+        base.version,
+        effective.effectiveVersion,
+        effective.appliedAmendmentCount,
+        payloadJson,
+        payloadHash,
+        parsedInput.exportReason,
+        timestamp,
+        context.userId,
+      );
+    this.writeAudit(
+      context,
+      "encounter-projection-snapshot.create",
+      id,
+      base.patientId,
+      {
+        payloadHash,
+        exportReason: parsedInput.exportReason,
+        effectiveVersion: effective.effectiveVersion,
+      },
+    );
+    return this.getProjectionSnapshot(context, id);
+  }
+
+  public listProjectionSnapshots(
+    context: SessionContext,
+    encounterId: string,
+  ): readonly ProjectionSnapshot[] {
+    requireCapability(context, "clinical.read");
     const rows = this.database.raw
       .prepare(
-        `SELECT subjective, objective, assessment, plan, follow_up, id, applied_at
-         FROM encounter_amendments
-         WHERE encounter_id = ? AND status = 'applied'
-         ORDER BY applied_sequence ASC, applied_at ASC`,
+        `SELECT s.*, p.patient_id AS patient_display_id
+         FROM encounter_projection_snapshots s
+         JOIN patients p ON p.id = s.patient_id
+         WHERE s.encounter_id = ? ORDER BY s.created_at DESC`,
       )
-      .all(base.id) as Array<Record<string, unknown>>;
-    const effective: Record<string, unknown> = {
-      ...base,
-      effectiveVersion: base.version + rows.length,
-      appliedAmendmentCount: rows.length,
-    };
-    for (const row of rows) {
-      if (row["subjective"] !== null)
-        effective["subjective"] = String(row["subjective"]);
-      if (row["objective"] !== null)
-        effective["objective"] = String(row["objective"]);
-      if (row["assessment"] !== null)
-        effective["assessment"] = String(row["assessment"]);
-      if (row["plan"] !== null) effective["plan"] = String(row["plan"]);
-      if (row["follow_up"] !== null)
-        effective["followUp"] = String(row["follow_up"]);
-      effective["lastAppliedAmendmentId"] = String(row["id"]);
-      effective["lastAmendedAt"] = String(row["applied_at"]);
-    }
-    return effectiveEncounterSchema.parse(effective);
+      .all(entityIdSchema.parse(encounterId)) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapProjectionSnapshot(row));
   }
 
   public createEncounter(
@@ -766,6 +844,168 @@ export class EncounterService {
     if (!row)
       throw new Error("ELITE_ENCOUNTER_NOT_FOUND: encounter does not exist");
     return this.mapEncounter(row);
+  }
+
+  private listAmendmentRows(
+    encounterId: string,
+  ): Array<Record<string, unknown>> {
+    return this.database.raw
+      .prepare(
+        `SELECT a.*, p.patient_id AS patient_display_id
+         FROM encounter_amendments a JOIN patients p ON p.id = a.patient_id
+         WHERE a.encounter_id = ? ORDER BY a.requested_at ASC`,
+      )
+      .all(entityIdSchema.parse(encounterId)) as Array<Record<string, unknown>>;
+  }
+
+  private buildEffectiveEncounter(
+    context: SessionContext,
+    base: Encounter,
+  ): EffectiveEncounter {
+    requireCapability(context, "clinical.read");
+    const rows = this.database.raw
+      .prepare(
+        `SELECT subjective, objective, assessment, plan, follow_up, id, applied_at
+         FROM encounter_amendments
+         WHERE encounter_id = ? AND status = 'applied'
+         ORDER BY applied_sequence ASC, applied_at ASC`,
+      )
+      .all(base.id) as Array<Record<string, unknown>>;
+    const effective: Record<string, unknown> = {
+      ...base,
+      effectiveVersion: base.version + rows.length,
+      appliedAmendmentCount: rows.length,
+    };
+    for (const row of rows) {
+      if (row["subjective"] !== null)
+        effective["subjective"] = String(row["subjective"]);
+      if (row["objective"] !== null)
+        effective["objective"] = String(row["objective"]);
+      if (row["assessment"] !== null)
+        effective["assessment"] = String(row["assessment"]);
+      if (row["plan"] !== null) effective["plan"] = String(row["plan"]);
+      if (row["follow_up"] !== null)
+        effective["followUp"] = String(row["follow_up"]);
+      effective["lastAppliedAmendmentId"] = String(row["id"]);
+      effective["lastAmendedAt"] = String(row["applied_at"]);
+    }
+    return effectiveEncounterSchema.parse(effective);
+  }
+
+  private buildAmendmentDiff(
+    context: SessionContext,
+    row: Record<string, unknown>,
+  ): EncounterAmendmentDiff {
+    const base = this.getEncounter(context, String(row["encounter_id"]));
+    const state: Record<string, string | undefined> = {
+      subjective: base.subjective,
+      objective: base.objective,
+      assessment: base.assessment,
+      plan: base.plan,
+      followUp: base.followUp,
+    };
+    const baseAmendmentId = row["base_amendment_id"]
+      ? String(row["base_amendment_id"])
+      : null;
+    const priorRows = this.database.raw
+      .prepare(
+        `SELECT subjective, objective, assessment, plan, follow_up
+         FROM encounter_amendments
+         WHERE encounter_id = ? AND status = 'applied'
+           AND (? IS NULL OR applied_sequence <= (SELECT applied_sequence FROM encounter_amendments WHERE id = ?))
+         ORDER BY applied_sequence ASC`,
+      )
+      .all(
+        String(row["encounter_id"]),
+        baseAmendmentId,
+        baseAmendmentId,
+      ) as Array<Record<string, unknown>>;
+    for (const prior of priorRows) this.applyAmendmentFields(state, prior);
+    const fields: EncounterFieldDiff[] = [];
+    const pairs: readonly [string, string][] = [
+      ["subjective", "subjective"],
+      ["objective", "objective"],
+      ["assessment", "assessment"],
+      ["plan", "plan"],
+      ["followUp", "follow_up"],
+    ];
+    for (const [field, column] of pairs) {
+      const after =
+        row[column] === null || row[column] === undefined
+          ? state[field]
+          : String(row[column]);
+      if (state[field] !== after) {
+        fields.push({
+          field: field as EncounterFieldDiff["field"],
+          ...(state[field] !== undefined ? { before: state[field] } : {}),
+          ...(after !== undefined ? { after } : {}),
+        });
+      }
+    }
+    return encounterAmendmentDiffSchema.parse({
+      amendmentId: String(row["id"]),
+      encounterId: String(row["encounter_id"]),
+      status: row["status"],
+      ...(baseAmendmentId ? { baseAmendmentId } : {}),
+      fields,
+    });
+  }
+
+  private applyAmendmentFields(
+    state: Record<string, string | undefined>,
+    row: Record<string, unknown>,
+  ): void {
+    if (row["subjective"] !== null && row["subjective"] !== undefined)
+      state["subjective"] = String(row["subjective"]);
+    if (row["objective"] !== null && row["objective"] !== undefined)
+      state["objective"] = String(row["objective"]);
+    if (row["assessment"] !== null && row["assessment"] !== undefined)
+      state["assessment"] = String(row["assessment"]);
+    if (row["plan"] !== null && row["plan"] !== undefined)
+      state["plan"] = String(row["plan"]);
+    if (row["follow_up"] !== null && row["follow_up"] !== undefined)
+      state["followUp"] = String(row["follow_up"]);
+  }
+
+  private getProjectionSnapshot(
+    context: SessionContext,
+    id: string,
+  ): ProjectionSnapshot {
+    requireCapability(context, "clinical.read");
+    const row = this.database.raw
+      .prepare(
+        `SELECT s.*, p.patient_id AS patient_display_id
+         FROM encounter_projection_snapshots s
+         JOIN patients p ON p.id = s.patient_id
+         WHERE s.id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row)
+      throw new Error(
+        "ELITE_PROJECTION_SNAPSHOT_NOT_FOUND: snapshot does not exist",
+      );
+    return this.mapProjectionSnapshot(row);
+  }
+
+  private mapProjectionSnapshot(
+    row: Record<string, unknown>,
+  ): ProjectionSnapshot {
+    const payload = JSON.parse(String(row["effective_payload_json"])) as {
+      effectiveEncounter: unknown;
+    };
+    return projectionSnapshotSchema.parse({
+      id: String(row["id"]),
+      encounterId: String(row["encounter_id"]),
+      patientId: String(row["patient_display_id"] ?? row["patient_id"]),
+      signedEncounterVersion: Number(row["signed_encounter_version"]),
+      effectiveVersion: Number(row["effective_version"]),
+      appliedAmendmentCount: Number(row["applied_amendment_count"]),
+      effectiveEncounter: payload.effectiveEncounter,
+      payloadHash: String(row["payload_hash"]),
+      exportReason: String(row["export_reason"]),
+      createdAt: String(row["created_at"]),
+      createdByUserId: String(row["created_by_user_id"]),
+    });
   }
 
   private getLatestAppliedAmendment(encounterId: string): {
