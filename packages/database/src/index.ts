@@ -6,8 +6,6 @@ export type DatabaseMode = "production" | "test";
 export interface OpenDatabaseOptions {
   filename: string;
   mode: DatabaseMode;
-  encryptionDriver?: "sqlcipher";
-  encryptionKey?: string;
 }
 
 export interface EliteDatabase {
@@ -205,12 +203,9 @@ function checksum(sql: string): string {
 }
 
 function assertProductionEncryption(options: OpenDatabaseOptions): void {
-  if (options.mode !== "production") {
-    return;
-  }
-  if (options.encryptionDriver !== "sqlcipher" || !options.encryptionKey) {
+  if (options.mode === "production") {
     throw new Error(
-      "ELITE_DB_ENCRYPTION_REQUIRED: production storage requires a configured SQLCipher driver and key provider",
+      "ELITE_DB_ENCRYPTION_REQUIRED: the production SQLCipher adapter and OS-backed key provider must be linked before patient storage can open",
     );
   }
 }
@@ -219,10 +214,6 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
   assertProductionEncryption(options);
   const database = new Database(options.filename);
   database.pragma("foreign_keys = ON");
-
-  if (options.mode === "production") {
-    database.pragma(`key = '${options.encryptionKey!.replaceAll("'", "''")}'`);
-  }
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS migration_history (
@@ -233,15 +224,27 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
     );
   `);
 
-  const applied = new Set(
+  const applied = new Map(
     database
-      .prepare("SELECT version FROM migration_history ORDER BY version")
+      .prepare(
+        "SELECT version, checksum FROM migration_history ORDER BY version",
+      )
       .all()
-      .map((row) => Number((row as { version: number }).version)),
+      .map((row) => {
+        const typedRow = row as { version: number; checksum: string };
+        return [Number(typedRow.version), typedRow.checksum] as const;
+      }),
   );
 
   for (const migration of MIGRATIONS) {
-    if (applied.has(migration.version)) {
+    const expectedChecksum = checksum(migration.sql);
+    const appliedChecksum = applied.get(migration.version);
+    if (appliedChecksum !== undefined) {
+      if (appliedChecksum !== expectedChecksum) {
+        throw new Error(
+          `ELITE_MIGRATION_CHECKSUM_MISMATCH: migration ${migration.version} has changed after application`,
+        );
+      }
       continue;
     }
     const applyMigration = database.transaction(() => {
@@ -250,14 +253,14 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
         .prepare(
           "INSERT INTO migration_history (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
         )
-        .run(migration.version, migration.name, checksum(migration.sql), now());
+        .run(migration.version, migration.name, expectedChecksum, now());
     });
     applyMigration();
   }
 
   database
     .prepare(
-      "INSERT OR REPLACE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
+      "INSERT OR IGNORE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
     )
     .run("installation_id", nanoid(24), now());
 

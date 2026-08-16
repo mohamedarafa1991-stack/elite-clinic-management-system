@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { migrationVersions, openDatabase } from "./index.js";
 
@@ -18,6 +21,45 @@ describe("Elite database foundation", () => {
       expect(tables).toContain("appointments");
       expect(tables).toContain("outbox_events");
       expect(tables).toContain("audit_events");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps the installation identity stable across openings", () => {
+    const directory = mkdtempSync(join(tmpdir(), "elite-db-"));
+    const filename = join(directory, "foundation.db");
+    try {
+      const database = openDatabase({ filename, mode: "test" });
+      const first = database.raw
+        .prepare("SELECT value FROM app_meta WHERE key = 'installation_id'")
+        .get() as { value: string };
+      database.close();
+
+      const reopened = openDatabase({ filename, mode: "test" });
+      try {
+        const second = reopened.raw
+          .prepare("SELECT value FROM app_meta WHERE key = 'installation_id'")
+          .get() as { value: string };
+        expect(first.value).toBeTruthy();
+        expect(second.value).toBe(first.value);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("records a migration checksum", () => {
+    const database = openDatabase({ filename: ":memory:", mode: "test" });
+    try {
+      const migration = database.raw
+        .prepare("SELECT version, name, checksum FROM migration_history")
+        .get() as { version: number; name: string; checksum: string };
+      expect(migration.version).toBe(1);
+      expect(migration.name).toBe("foundation");
+      expect(migration.checksum).toMatch(/^[0-9a-f]+$/);
     } finally {
       database.close();
     }
