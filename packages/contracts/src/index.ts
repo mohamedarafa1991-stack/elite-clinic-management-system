@@ -1,33 +1,38 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const isoDateTimeSchema = z.string().datetime({ offset: true });
 export const opaqueIdSchema = z.string().min(8).max(128);
 export const patientIdSchema = z.string().regex(/^EL-\d{5,}$/);
 export const phoneSchema = z.string().trim().min(3).max(32);
 
-export const userRoleSchema = z.enum(['admin', 'doctor', 'nurse', 'receptionist']);
+export const userRoleSchema = z.enum([
+  "admin",
+  "doctor",
+  "nurse",
+  "receptionist",
+]);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
 export const capabilitySchema = z.enum([
-  'patient.read',
-  'patient.write',
-  'patient.archive',
-  'patient.merge',
-  'clinical.read',
-  'clinical.write',
-  'clinical.sign',
-  'clinical.approve',
-  'appointment.read',
-  'appointment.write',
-  'billing.read',
-  'billing.write',
-  'billing.refund',
-  'staff.manage',
-  'device.manage',
-  'backup.manage',
-  'export.manage',
-  'audit.read',
-  'module.manage',
+  "patient.read",
+  "patient.write",
+  "patient.archive",
+  "patient.merge",
+  "clinical.read",
+  "clinical.write",
+  "clinical.sign",
+  "clinical.approve",
+  "appointment.read",
+  "appointment.write",
+  "billing.read",
+  "billing.write",
+  "billing.refund",
+  "staff.manage",
+  "device.manage",
+  "backup.manage",
+  "export.manage",
+  "audit.read",
+  "module.manage",
 ]);
 export type Capability = z.infer<typeof capabilitySchema>;
 
@@ -45,13 +50,18 @@ export const userSchema = z.object({
 });
 export type User = z.infer<typeof userSchema>;
 
-export const deviceStatusSchema = z.enum(['pending', 'active', 'revoked', 'wipe-pending']);
+export const deviceStatusSchema = z.enum([
+  "pending",
+  "active",
+  "revoked",
+  "wipe-pending",
+]);
 export type DeviceStatus = z.infer<typeof deviceStatusSchema>;
 
 export const deviceSchema = z.object({
   id: opaqueIdSchema,
   friendlyName: z.string().trim().min(1).max(120),
-  platform: z.enum(['windows', 'android']),
+  platform: z.enum(["windows", "android"]),
   appVersion: z.string().trim().min(1).max(64),
   apiLevel: z.number().int().nonnegative().optional(),
   securityPatchLevel: z.string().trim().max(32).optional(),
@@ -70,8 +80,15 @@ export type Device = z.infer<typeof deviceSchema>;
 export const consentRecordSchema = z.object({
   id: opaqueIdSchema,
   patientId: patientIdSchema,
-  consentType: z.enum(['treatment', 'data-processing', 'guardian', 'communications', 'media', 'research']),
-  status: z.enum(['requested', 'granted', 'refused', 'withdrawn', 'expired']),
+  consentType: z.enum([
+    "treatment",
+    "data-processing",
+    "guardian",
+    "communications",
+    "media",
+    "research",
+  ]),
+  status: z.enum(["requested", "granted", "refused", "withdrawn", "expired"]),
   grantedByRelatedPersonId: opaqueIdSchema.optional(),
   recordedByUserId: opaqueIdSchema,
   recordedAt: isoDateTimeSchema,
@@ -90,7 +107,7 @@ export const relatedPersonSchema = z.object({
   isGuardian: z.boolean(),
   isAuthorizedToConsent: z.boolean(),
   isAuthorizedToContact: z.boolean(),
-  verificationStatus: z.enum(['unverified', 'verified', 'rejected']),
+  verificationStatus: z.enum(["unverified", "verified", "rejected"]),
 });
 export type RelatedPerson = z.infer<typeof relatedPersonSchema>;
 
@@ -100,12 +117,12 @@ export const patientSchema = z.object({
   nameEn: z.string().trim().min(1).max(160),
   nameAr: z.string().trim().max(160).optional(),
   dob: z.string().date().optional(),
-  sex: z.enum(['female', 'male', 'intersex', 'unknown']).optional(),
+  sex: z.enum(["female", "male", "intersex", "unknown"]).optional(),
   phone: phoneSchema,
   nationalId: z.string().trim().max(64).optional(),
   relatedPersonIds: z.array(opaqueIdSchema),
   primaryDepartmentId: opaqueIdSchema.optional(),
-  status: z.enum(['active', 'archived', 'merged']),
+  status: z.enum(["active", "archived", "merged"]),
   createdAt: isoDateTimeSchema,
   createdByUserId: opaqueIdSchema,
   updatedAt: isoDateTimeSchema,
@@ -115,13 +132,13 @@ export const patientSchema = z.object({
 export type Patient = z.infer<typeof patientSchema>;
 
 export const appointmentStatusSchema = z.enum([
-  'scheduled',
-  'arrived',
-  'in-consultation',
-  'completed',
-  'cancelled',
-  'no-show',
-  'rescheduled',
+  "scheduled",
+  "arrived",
+  "in-consultation",
+  "completed",
+  "cancelled",
+  "no-show",
+  "rescheduled",
 ]);
 export type AppointmentStatus = z.infer<typeof appointmentStatusSchema>;
 
@@ -144,7 +161,13 @@ export const appointmentSchema = z.object({
 });
 export type Appointment = z.infer<typeof appointmentSchema>;
 
-export const syncOperationSchema = z.enum(['create', 'update', 'archive', 'amend', 'merge']);
+export const syncOperationSchema = z.enum([
+  "create",
+  "update",
+  "archive",
+  "amend",
+  "merge",
+]);
 export type SyncOperation = z.infer<typeof syncOperationSchema>;
 
 export const syncEventSchema = z.object({
@@ -168,8 +191,10 @@ export const syncConflictSchema = z.object({
   entityId: opaqueIdSchema,
   leftEventId: opaqueIdSchema,
   rightEventId: opaqueIdSchema,
-  status: z.enum(['open', 'resolved', 'rejected']),
-  resolution: z.enum(['amendment', 'keep-left', 'keep-right', 'manual-merge']).optional(),
+  status: z.enum(["open", "resolved", "rejected"]),
+  resolution: z
+    .enum(["amendment", "keep-left", "keep-right", "manual-merge"])
+    .optional(),
   resolvedByUserId: opaqueIdSchema.optional(),
   resolvedAt: isoDateTimeSchema.optional(),
   createdAt: isoDateTimeSchema,

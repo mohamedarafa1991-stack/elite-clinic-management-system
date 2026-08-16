@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, safeStorage, session } from 'electron';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -23,12 +23,12 @@ function registerContentSecurityPolicy(): void {
       "base-uri 'none'",
       "form-action 'self'",
       "frame-ancestors 'none'",
-    ].join('; ');
+    ].join("; ");
 
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [policy],
+        "Content-Security-Policy": [policy],
       },
     });
   });
@@ -41,9 +41,9 @@ function createWindow(): BrowserWindow {
     minWidth: 1024,
     minHeight: 720,
     show: false,
-    backgroundColor: '#f7f8fa',
+    backgroundColor: "#f7f8fa",
     webPreferences: {
-      preload: join(currentDirectory, '../preload/index.js'),
+      preload: join(currentDirectory, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -52,10 +52,12 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  window.once('ready-to-show', () => window.show());
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-navigate', (event, targetUrl) => {
-    const allowed = targetUrl.startsWith('http://localhost:5173') || targetUrl.startsWith('file://');
+  window.once("ready-to-show", () => window.show());
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, targetUrl) => {
+    const allowed =
+      targetUrl.startsWith("http://localhost:5173") ||
+      targetUrl.startsWith("file://");
     if (!allowed) {
       event.preventDefault();
     }
@@ -65,16 +67,17 @@ function createWindow(): BrowserWindow {
 }
 
 async function loadRenderer(window: BrowserWindow): Promise<void> {
-  const developmentUrl = process.env['ELITE_RENDERER_URL'] ?? 'http://localhost:5173';
+  const developmentUrl =
+    process.env["ELITE_RENDERER_URL"] ?? "http://localhost:5173";
   if (!app.isPackaged) {
     await window.loadURL(developmentUrl);
     return;
   }
-  await window.loadFile(join(currentDirectory, '../renderer/index.html'));
+  await window.loadFile(join(currentDirectory, "../renderer/index.html"));
 }
 
 function registerIpc(): void {
-  ipcMain.handle('app:security-status', () => ({
+  ipcMain.handle("app:security-status", () => ({
     electronVersion: process.versions.electron,
     chromiumVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
@@ -89,7 +92,7 @@ app.whenReady().then(async () => {
   mainWindow = createWindow();
   await loadRenderer(mainWindow);
 
-  app.on('activate', () => {
+  app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
       void loadRenderer(mainWindow);
@@ -97,12 +100,12 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   mainWindow = undefined;
 });

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer } from "electron";
 
 export interface EliteSecurityStatus {
   electronVersion: string;
@@ -10,11 +10,12 @@ export interface EliteSecurityStatus {
 
 const eliteApi = {
   app: {
-    getSecurityStatus: (): Promise<EliteSecurityStatus> => ipcRenderer.invoke('app:security-status') as Promise<EliteSecurityStatus>,
+    getSecurityStatus: (): Promise<EliteSecurityStatus> =>
+      ipcRenderer.invoke("app:security-status") as Promise<EliteSecurityStatus>,
   },
 };
 
-contextBridge.exposeInMainWorld('elite', eliteApi);
+contextBridge.exposeInMainWorld("elite", eliteApi);
 
 declare global {
   interface Window {

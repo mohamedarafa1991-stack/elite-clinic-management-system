@@ -1,12 +1,12 @@
-import Database from 'better-sqlite3';
-import { nanoid } from 'nanoid';
+import Database from "better-sqlite3";
+import { nanoid } from "nanoid";
 
-export type DatabaseMode = 'production' | 'test';
+export type DatabaseMode = "production" | "test";
 
 export interface OpenDatabaseOptions {
   filename: string;
   mode: DatabaseMode;
-  encryptionDriver?: 'sqlcipher';
+  encryptionDriver?: "sqlcipher";
   encryptionKey?: string;
 }
 
@@ -18,7 +18,7 @@ export interface EliteDatabase {
 const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
   {
     version: 1,
-    name: 'foundation',
+    name: "foundation",
     sql: `
       CREATE TABLE IF NOT EXISTS app_meta (
         key TEXT PRIMARY KEY NOT NULL,
@@ -201,24 +201,26 @@ function checksum(sql: string): string {
     hash ^= sql.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function assertProductionEncryption(options: OpenDatabaseOptions): void {
-  if (options.mode !== 'production') {
+  if (options.mode !== "production") {
     return;
   }
-  if (options.encryptionDriver !== 'sqlcipher' || !options.encryptionKey) {
-    throw new Error('ELITE_DB_ENCRYPTION_REQUIRED: production storage requires a configured SQLCipher driver and key provider');
+  if (options.encryptionDriver !== "sqlcipher" || !options.encryptionKey) {
+    throw new Error(
+      "ELITE_DB_ENCRYPTION_REQUIRED: production storage requires a configured SQLCipher driver and key provider",
+    );
   }
 }
 
 export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
   assertProductionEncryption(options);
   const database = new Database(options.filename);
-  database.pragma('foreign_keys = ON');
+  database.pragma("foreign_keys = ON");
 
-  if (options.mode === 'production') {
+  if (options.mode === "production") {
     database.pragma(`key = '${options.encryptionKey!.replaceAll("'", "''")}'`);
   }
 
@@ -232,7 +234,10 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
   `);
 
   const applied = new Set(
-    database.prepare('SELECT version FROM migration_history ORDER BY version').all().map((row) => Number((row as { version: number }).version)),
+    database
+      .prepare("SELECT version FROM migration_history ORDER BY version")
+      .all()
+      .map((row) => Number((row as { version: number }).version)),
   );
 
   for (const migration of MIGRATIONS) {
@@ -241,18 +246,20 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
     }
     const applyMigration = database.transaction(() => {
       database.exec(migration.sql);
-      database.prepare(
-        'INSERT INTO migration_history (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)',
-      ).run(migration.version, migration.name, checksum(migration.sql), now());
+      database
+        .prepare(
+          "INSERT INTO migration_history (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+        )
+        .run(migration.version, migration.name, checksum(migration.sql), now());
     });
     applyMigration();
   }
 
-  database.prepare('INSERT OR REPLACE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)').run(
-    'installation_id',
-    nanoid(24),
-    now(),
-  );
+  database
+    .prepare(
+      "INSERT OR REPLACE INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)",
+    )
+    .run("installation_id", nanoid(24), now());
 
   return {
     raw: database,

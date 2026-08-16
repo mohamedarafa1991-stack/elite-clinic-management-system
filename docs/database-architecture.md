@@ -10,17 +10,17 @@ The local stores expose repository APIs to application services. UI code never c
 
 The first schema contract includes these domains:
 
-| Domain | Entities |
-|---|---|
-| Identity | patient, patient_identifier, related_person, patient_related_person, consent_record, duplicate_candidate, patient_merge, soft_delete |
-| Workforce | user, role, capability, user_capability, device, session, device_credential |
-| Care | care_episode, encounter, encounter_amendment, diagnosis, allergy, medication_statement, prescription, care_plan, referral, procedure |
-| Diagnostics | investigation_order, specimen, observation_result, diagnostic_report, imaging_study, media_asset |
-| Obstetrics | pregnancy_episode, pregnancy_history, fetal_assessment, delivery_record |
-| Operations | department, specialty_module, appointment, queue_event, room, service, service_price_version, invoice, payment, refund |
-| Governance | audit_event, export_event, print_event, backup_manifest, restore_event, incident, data_subject_request |
-| Reference | icd_release, icd_code, drug_catalog_version, drug_item, drug_override, lab_reference_set, clinical_rule, translation_release |
-| Synchronization | outbox_event, inbox_event, sync_checkpoint, sync_conflict, conflict_resolution |
+| Domain          | Entities                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Identity        | patient, patient_identifier, related_person, patient_related_person, consent_record, duplicate_candidate, patient_merge, soft_delete |
+| Workforce       | user, role, capability, user_capability, device, session, device_credential                                                          |
+| Care            | care_episode, encounter, encounter_amendment, diagnosis, allergy, medication_statement, prescription, care_plan, referral, procedure |
+| Diagnostics     | investigation_order, specimen, observation_result, diagnostic_report, imaging_study, media_asset                                     |
+| Obstetrics      | pregnancy_episode, pregnancy_history, fetal_assessment, delivery_record                                                              |
+| Operations      | department, specialty_module, appointment, queue_event, room, service, service_price_version, invoice, payment, refund               |
+| Governance      | audit_event, export_event, print_event, backup_manifest, restore_event, incident, data_subject_request                               |
+| Reference       | icd_release, icd_code, drug_catalog_version, drug_item, drug_override, lab_reference_set, clinical_rule, translation_release         |
+| Synchronization | outbox_event, inbox_event, sync_checkpoint, sync_conflict, conflict_resolution                                                       |
 
 ## Required record metadata
 
