@@ -3,6 +3,7 @@ import type {
   DuplicateCandidate,
   Patient,
   PatientMergeCase,
+  PatientMergeFieldDecisions,
   PatientMergeRequest,
   PatientRegistrationInput,
   PatientUpdateInput,
@@ -149,6 +150,7 @@ const eliteApi = {
       caseId: string,
       decision: "approve" | "reject",
       reason: string,
+      fieldDecisions?: PatientMergeFieldDecisions,
     ) =>
       ipcRenderer.invoke(
         "patient:merge-review",
@@ -156,6 +158,7 @@ const eliteApi = {
         caseId,
         decision,
         reason,
+        fieldDecisions,
       ) as Promise<PatientMergeCase>,
     executeMerge: (token: string, caseId: string) =>
       ipcRenderer.invoke(

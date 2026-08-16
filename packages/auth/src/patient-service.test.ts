@@ -330,3 +330,57 @@ it("edits a related person and manages guardian-link metadata safely", async () 
     fixture.database.close();
   }
 });
+
+it("rejects self-merges and records Admin review decisions", async () => {
+  const fixture = await createFixture();
+  try {
+    const source = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Merge Source",
+      phone: "+201000000010",
+    });
+    const target = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Merge Target",
+      phone: "+201000000011",
+    });
+    expect(() =>
+      fixture.service.requestMerge(fixture.context, {
+        sourcePatientId: source.patient.patientId,
+        targetPatientId: source.patient.patientId,
+        reason: "Invalid self merge",
+        fieldDecisions: { nameEn: "source" },
+      }),
+    ).toThrow("ELITE_PATIENT_MERGE_SELF_FORBIDDEN");
+
+    const pending = fixture.service.requestMerge(fixture.context, {
+      sourcePatientId: source.patient.patientId,
+      targetPatientId: target.patient.patientId,
+      reason: "Synthetic duplicate review",
+      fieldDecisions: { nameEn: "source", phone: "target" },
+    });
+    expect(fixture.service.listMergeCases(fixture.context)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: pending.id, status: "pending" }),
+      ]),
+    );
+    const rejected = fixture.service.reviewMergeCase(
+      fixture.context,
+      pending.id,
+      "reject",
+      "Synthetic rejection reason",
+    );
+    expect(rejected.status).toBe("rejected");
+    expect(rejected.reviewReason).toBe("Synthetic rejection reason");
+    expect(() =>
+      fixture.service.reviewMergeCase(
+        fixture.context,
+        pending.id,
+        "approve",
+        "Second review should fail",
+      ),
+    ).toThrow("ELITE_PATIENT_MERGE_CASE_NOT_PENDING");
+  } finally {
+    fixture.database.close();
+  }
+});

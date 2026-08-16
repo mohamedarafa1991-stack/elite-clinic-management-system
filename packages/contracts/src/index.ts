@@ -273,10 +273,29 @@ export const duplicateCandidateSchema = z.object({
 });
 export type DuplicateCandidate = z.infer<typeof duplicateCandidateSchema>;
 
-export const patientMergeFieldDecisionsSchema = z.record(
-  z.string().min(1).max(80),
-  z.enum(["source", "target"]),
-);
+export const patientMergeFieldSchema = z.enum([
+  "nameEn",
+  "nameAr",
+  "dob",
+  "sex",
+  "phone",
+  "nationalId",
+  "primaryDepartmentId",
+]);
+export type PatientMergeField = z.infer<typeof patientMergeFieldSchema>;
+
+const patientMergeDecisionSchema = z.enum(["source", "target"]);
+export const patientMergeFieldDecisionsSchema = z
+  .object({
+    nameEn: patientMergeDecisionSchema.optional(),
+    nameAr: patientMergeDecisionSchema.optional(),
+    dob: patientMergeDecisionSchema.optional(),
+    sex: patientMergeDecisionSchema.optional(),
+    phone: patientMergeDecisionSchema.optional(),
+    nationalId: patientMergeDecisionSchema.optional(),
+    primaryDepartmentId: patientMergeDecisionSchema.optional(),
+  })
+  .strict();
 export type PatientMergeFieldDecisions = z.infer<
   typeof patientMergeFieldDecisionsSchema
 >;

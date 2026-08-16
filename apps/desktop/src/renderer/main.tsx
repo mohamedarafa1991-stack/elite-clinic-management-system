@@ -14,6 +14,9 @@ import type {
 import type {
   DuplicateCandidate,
   Patient,
+  PatientMergeCase,
+  PatientMergeField,
+  PatientMergeFieldDecisions,
   PatientRegistrationInput,
   PatientUpdateInput,
 } from "@elite/contracts";
@@ -1493,6 +1496,386 @@ function PatientWorkspace({
   );
 }
 
+const MERGE_FIELDS: readonly PatientMergeField[] = [
+  "nameEn",
+  "nameAr",
+  "dob",
+  "sex",
+  "phone",
+  "nationalId",
+  "primaryDepartmentId",
+];
+
+const MERGE_FIELD_LABELS: Record<PatientMergeField, string> = {
+  nameEn: "English name",
+  nameAr: "Arabic name",
+  dob: "Date of birth",
+  sex: "Sex",
+  phone: "Phone",
+  nationalId: "National ID",
+  primaryDepartmentId: "Primary department",
+};
+
+function defaultMergeDecisions(): PatientMergeFieldDecisions {
+  return {
+    nameEn: "target",
+    nameAr: "target",
+    dob: "target",
+    sex: "target",
+    phone: "target",
+    nationalId: "target",
+    primaryDepartmentId: "target",
+  };
+}
+
+function mergePatientValue(
+  patient: Patient | null,
+  field: PatientMergeField,
+): string {
+  if (!patient) return "Loading…";
+  const values: Record<PatientMergeField, string | undefined> = {
+    nameEn: patient.nameEn,
+    nameAr: patient.nameAr,
+    dob: patient.dob,
+    sex: patient.sex,
+    phone: patient.phone,
+    nationalId: patient.nationalId,
+    primaryDepartmentId: patient.primaryDepartmentId,
+  };
+  return values[field] ?? "Not recorded";
+}
+
+function MergeReviewQueue({ token }: { token: string }): ReactElement {
+  const [cases, setCases] = useState<readonly PatientMergeCase[]>([]);
+  const [selectedCase, setSelectedCase] = useState<PatientMergeCase | null>(
+    null,
+  );
+  const [sourcePatient, setSourcePatient] = useState<Patient | null>(null);
+  const [targetPatient, setTargetPatient] = useState<Patient | null>(null);
+  const [fieldDecisions, setFieldDecisions] =
+    useState<PatientMergeFieldDecisions>(defaultMergeDecisions);
+  const [reviewReason, setReviewReason] = useState("");
+  const [requestSourceId, setRequestSourceId] = useState("");
+  const [requestTargetId, setRequestTargetId] = useState("");
+  const [requestReason, setRequestReason] = useState("");
+  const [requestDecisions, setRequestDecisions] =
+    useState<PatientMergeFieldDecisions>(defaultMergeDecisions);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const refresh = async (): Promise<void> => {
+    try {
+      setCases(await window.elite.patients.listMergeCases(token));
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load merge cases",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const selectCase = async (mergeCase: PatientMergeCase): Promise<void> => {
+    setSelectedCase(mergeCase);
+    setFieldDecisions({
+      ...defaultMergeDecisions(),
+      ...mergeCase.fieldDecisions,
+    });
+    setReviewReason(mergeCase.reviewReason ?? "");
+    setError(null);
+    try {
+      const [source, target] = await Promise.all([
+        window.elite.patients.get(token, mergeCase.sourcePatientId),
+        window.elite.patients.get(token, mergeCase.targetPatientId),
+      ]);
+      setSourcePatient(source);
+      setTargetPatient(target);
+    } catch (reason: unknown) {
+      setSourcePatient(null);
+      setTargetPatient(null);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load merge patients",
+      );
+    }
+  };
+
+  const reviewCase = async (decision: "approve" | "reject"): Promise<void> => {
+    if (!selectedCase || reviewReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const reviewed = await window.elite.patients.reviewMerge(
+        token,
+        selectedCase.id,
+        decision,
+        reviewReason,
+        fieldDecisions,
+      );
+      setSelectedCase(reviewed);
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to review merge case",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const executeCase = async (): Promise<void> => {
+    if (!selectedCase || selectedCase.status !== "approved") return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const executed = await window.elite.patients.executeMerge(
+        token,
+        selectedCase.id,
+      );
+      setSelectedCase(executed);
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to execute merge case",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const requestMerge = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (requestSourceId.trim() === requestTargetId.trim()) {
+      setError("Source and target patients must be different");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const created = await window.elite.patients.requestMerge(token, {
+        sourcePatientId: requestSourceId.trim(),
+        targetPatientId: requestTargetId.trim(),
+        reason: requestReason,
+        fieldDecisions: requestDecisions,
+      });
+      setRequestSourceId("");
+      setRequestTargetId("");
+      setRequestReason("");
+      setRequestDecisions(defaultMergeDecisions());
+      await refresh();
+      await selectCase(created);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create merge request",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const decisionFields = (
+    decisions: PatientMergeFieldDecisions,
+    setDecisions: React.Dispatch<
+      React.SetStateAction<PatientMergeFieldDecisions>
+    >,
+    source: Patient | null,
+    target: Patient | null,
+  ): ReactElement => (
+    <div className="merge-field-list">
+      {MERGE_FIELDS.map((field) => (
+        <div className="merge-field-row" key={field}>
+          <div>
+            <strong>{MERGE_FIELD_LABELS[field]}</strong>
+            <small>
+              Source: {mergePatientValue(source, field)} · Target:{" "}
+              {mergePatientValue(target, field)}
+            </small>
+          </div>
+          <select
+            value={decisions[field] ?? "target"}
+            onChange={(event) =>
+              setDecisions((current) => ({
+                ...current,
+                [field]: event.target.value as "source" | "target",
+              }))
+            }
+          >
+            <option value="target">Keep target</option>
+            <option value="source">Use source</option>
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+
+  const pendingCount = cases.filter(
+    (mergeCase) => mergeCase.status === "pending",
+  ).length;
+
+  return (
+    <section
+      className="card merge-review-card"
+      aria-labelledby="merge-review-title"
+    >
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Admin control</p>
+          <h2 id="merge-review-title">Patient merge review queue</h2>
+        </div>
+        <span className={`status ${pendingCount > 0 ? "warn" : "ok"}`}>
+          {pendingCount} pending
+        </span>
+      </div>
+      <ErrorMessage message={error} />
+      <form
+        className="merge-request-form"
+        onSubmit={(event) => void requestMerge(event)}
+      >
+        <h3>Request a controlled merge</h3>
+        <div className="form-grid">
+          <label>
+            Source patient ID
+            <input
+              required
+              placeholder="EL-00001"
+              value={requestSourceId}
+              onChange={(event) => setRequestSourceId(event.target.value)}
+            />
+          </label>
+          <label>
+            Target patient ID
+            <input
+              required
+              placeholder="EL-00002"
+              value={requestTargetId}
+              onChange={(event) => setRequestTargetId(event.target.value)}
+            />
+          </label>
+        </div>
+        <label>
+          Reason
+          <textarea
+            required
+            minLength={3}
+            maxLength={500}
+            value={requestReason}
+            onChange={(event) => setRequestReason(event.target.value)}
+          />
+        </label>
+        {decisionFields(requestDecisions, setRequestDecisions, null, null)}
+        <button className="button primary" type="submit" disabled={isBusy}>
+          Create merge request
+        </button>
+      </form>
+      <div className="merge-queue-list">
+        {cases.length === 0 ? (
+          <p className="muted">No merge cases have been requested.</p>
+        ) : null}
+        {cases.map((mergeCase) => (
+          <button
+            className={`merge-case-row ${selectedCase?.id === mergeCase.id ? "selected" : ""}`}
+            type="button"
+            key={mergeCase.id}
+            onClick={() => void selectCase(mergeCase)}
+            disabled={isBusy}
+          >
+            <strong>
+              {mergeCase.sourcePatientId} → {mergeCase.targetPatientId}
+            </strong>
+            <span>
+              {mergeCase.status} · requested{" "}
+              {new Date(mergeCase.requestedAt).toLocaleString()}
+            </span>
+            <small>Correlation {mergeCase.correlationId}</small>
+          </button>
+        ))}
+      </div>
+      {selectedCase ? (
+        <div className="merge-case-detail">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Selected case</p>
+              <h3>
+                {selectedCase.sourcePatientId} → {selectedCase.targetPatientId}
+              </h3>
+            </div>
+            <span
+              className={`status ${selectedCase.status === "pending" ? "warn" : selectedCase.status === "executed" ? "ok" : "info"}`}
+            >
+              {selectedCase.status}
+            </span>
+          </div>
+          <p className="form-help">
+            Correlation ID: <strong>{selectedCase.correlationId}</strong>
+          </p>
+          {decisionFields(
+            fieldDecisions,
+            setFieldDecisions,
+            sourcePatient,
+            targetPatient,
+          )}
+          <label>
+            Review reason
+            <textarea
+              minLength={3}
+              maxLength={500}
+              value={reviewReason}
+              onChange={(event) => setReviewReason(event.target.value)}
+            />
+          </label>
+          {selectedCase.status === "pending" ? (
+            <div className="button-row">
+              <button
+                className="button primary"
+                type="button"
+                disabled={isBusy || reviewReason.trim().length < 3}
+                onClick={() => void reviewCase("approve")}
+              >
+                Approve case
+              </button>
+              <button
+                className="button danger"
+                type="button"
+                disabled={isBusy || reviewReason.trim().length < 3}
+                onClick={() => void reviewCase("reject")}
+              >
+                Reject case
+              </button>
+            </div>
+          ) : null}
+          {selectedCase.status === "approved" ? (
+            <button
+              className="button primary"
+              type="button"
+              disabled={isBusy}
+              onClick={() => void executeCase()}
+            >
+              Execute approved merge
+            </button>
+          ) : null}
+          {selectedCase.status === "executed" ? (
+            <p className="status ok">
+              Merge executed transactionally. The source patient remains as a
+              merged redirect record.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -1554,6 +1937,10 @@ function AuthenticatedView({
       ) : null}
       {session.capabilities.includes("patient.read") ? (
         <PatientWorkspace token={token} session={session} />
+      ) : null}
+      {session.role === "admin" &&
+      session.capabilities.includes("patient.merge") ? (
+        <MergeReviewQueue token={token} />
       ) : null}
       <button
         className="button secondary"

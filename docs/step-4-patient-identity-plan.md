@@ -144,3 +144,9 @@ Profile saves include the patient version returned by the database. The service 
 The related-person increment adds migration 5 with an optimistic version column for related-person records. The authenticated service now supports editing a related person, listing active patient-specific links, creating or reactivating links, editing relationship role, primary-link status, consent authority, and verification, and unlinking with a mandatory reason and audit event. Existing related persons remain reusable across patients, so a shared guardian phone does not require duplicate person records.
 
 The desktop profile now provides Add, Edit, and Unlink controls for related persons and guardians. The form captures person identity and contact data separately from patient-specific link metadata. Guardian status, consent authority, primary-link status, contact authorization, and verification are displayed and editable only through capability-checked IPC. The service preserves link history with `ended_at` rather than deleting the relationship.
+
+## Admin merge-review queue and controlled merge increment
+
+The Admin desktop now includes a capability-gated merge-review queue. Administrators can create a merge request using source and target patient IDs, record a reason, choose field-level source or target values, review pending cases, and approve or reject them with a mandatory review reason. The queue displays correlation IDs and status metadata for traceability.
+
+Field decisions are now constrained to the supported patient fields and are persisted when the Admin reviews a case. Execution remains a separate action available only after approval. The service enforces distinct source and target patients, active-record requirements, pending-only review transitions, approved-only execution, and transactional preservation of the source patient as a merged redirect record. Active related-person links are moved without deleting historical ended links.

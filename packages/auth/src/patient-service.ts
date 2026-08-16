@@ -5,6 +5,7 @@ import {
   patientArchiveInputSchema,
   patientIdSchema,
   patientMergeCaseSchema,
+  patientMergeFieldDecisionsSchema,
   patientMergeRequestSchema,
   patientRegistrationInputSchema,
   patientSchema,
@@ -997,6 +998,10 @@ export class PatientIdentityService {
   ): PatientMergeCase {
     requireCapability(context, "patient.merge");
     const parsed = patientMergeRequestSchema.parse(input);
+    if (parsed.sourcePatientId === parsed.targetPatientId)
+      throw new Error(
+        "ELITE_PATIENT_MERGE_SELF_FORBIDDEN: source and target must differ",
+      );
     const source = this.getPatient(context, parsed.sourcePatientId);
     const target = this.getPatient(context, parsed.targetPatientId);
     if (source.status !== "active" || target.status !== "active")
@@ -1057,18 +1062,29 @@ export class PatientIdentityService {
     caseId: string,
     decision: "approve" | "reject",
     reason: string,
+    fieldDecisions?: unknown,
   ): PatientMergeCase {
     requireCapability(context, "patient.merge");
     if (!hasCapability(context, "patient.merge"))
       throw new Error("ELITE_AUTH_CAPABILITY_REQUIRED: patient.merge");
     const parsedReason = z.string().trim().min(3).max(500).parse(reason);
+    const parsedFieldDecisions = patientMergeFieldDecisionsSchema.parse(
+      fieldDecisions ?? {},
+    );
     const timestamp = this.now();
     const nextStatus = decision === "approve" ? "approved" : "rejected";
     const result = this.database.raw
       .prepare(
-        "UPDATE patient_merge_cases SET status = ?, reviewed_by_user_id = ?, reviewed_at = ?, review_reason = ? WHERE id = ? AND status = 'pending'",
+        "UPDATE patient_merge_cases SET status = ?, field_decisions_json = ?, reviewed_by_user_id = ?, reviewed_at = ?, review_reason = ? WHERE id = ? AND status = 'pending'",
       )
-      .run(nextStatus, context.userId, timestamp, parsedReason, caseId);
+      .run(
+        nextStatus,
+        JSON.stringify(parsedFieldDecisions),
+        context.userId,
+        timestamp,
+        parsedReason,
+        caseId,
+      );
     if (result.changes !== 1)
       throw new Error(
         "ELITE_PATIENT_MERGE_CASE_NOT_PENDING: merge case is not pending",
@@ -1160,7 +1176,7 @@ export class PatientIdentityService {
         );
       this.database.raw
         .prepare(
-          "UPDATE patient_related_persons SET patient_id = ? WHERE patient_id = ? AND NOT EXISTS (SELECT 1 FROM patient_related_persons existing WHERE existing.patient_id = ? AND existing.related_person_id = patient_related_persons.related_person_id)",
+          "UPDATE patient_related_persons SET patient_id = ? WHERE patient_id = ? AND ended_at IS NULL AND NOT EXISTS (SELECT 1 FROM patient_related_persons existing WHERE existing.patient_id = ? AND existing.related_person_id = patient_related_persons.related_person_id AND existing.ended_at IS NULL)",
         )
         .run(target["id"], source["id"], target["id"]);
       this.database.raw

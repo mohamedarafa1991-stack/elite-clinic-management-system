@@ -521,3 +521,84 @@ select {
 .checkbox-row input[type="checkbox"] {
   width: auto;
 }
+
+.merge-review-card {
+  margin-top: 20px;
+}
+.merge-request-form,
+.merge-case-detail {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.merge-request-form h3,
+.merge-case-detail h3 {
+  margin: 0;
+  color: #1e3a8a;
+}
+.merge-field-list {
+  display: grid;
+  gap: 8px;
+}
+.merge-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #fff;
+}
+.merge-field-row strong,
+.merge-field-row small {
+  display: block;
+}
+.merge-field-row small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+.merge-queue-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.merge-case-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.merge-case-row:hover,
+.merge-case-row.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+.merge-case-row span,
+.merge-case-row small {
+  color: #64748b;
+  font-size: 12px;
+}
+.merge-case-detail {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.merge-case-detail .card-heading {
+  margin-bottom: 0;
+}
+@media (max-width: 720px) {
+  .merge-field-row {
+    grid-template-columns: 1fr;
+  }
+}

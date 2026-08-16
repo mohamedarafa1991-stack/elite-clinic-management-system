@@ -401,12 +401,14 @@ function registerIpc(): void {
       caseId: string,
       decision: "approve" | "reject",
       reason: string,
+      fieldDecisions: unknown,
     ) => {
       return requirePatientService().reviewMergeCase(
         serviceContext(token),
         caseId,
         decision,
         reason,
+        fieldDecisions,
       );
     },
   );
