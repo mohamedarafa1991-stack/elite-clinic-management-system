@@ -790,3 +790,11 @@ export class AuthService {
     });
   }
 }
+
+export { PatientIdentityService } from "./patient-service.js";
+export type {
+  PatientIdentityServiceOptions,
+  PatientSearchFilters,
+  RelatedPersonInput,
+  RelatedPersonSummary,
+} from "./patient-service.js";

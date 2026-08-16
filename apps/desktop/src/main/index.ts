@@ -1,4 +1,4 @@
-import { AuthService } from "@elite/auth";
+import { AuthService, PatientIdentityService } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import { app, BrowserWindow, ipcMain, safeStorage, session } from "electron";
 import { dirname, join } from "node:path";
@@ -10,6 +10,7 @@ const currentDirectory = dirname(currentFile);
 let mainWindow: BrowserWindow | undefined;
 let database: EliteDatabase | undefined;
 let authService: AuthService | undefined;
+let patientService: PatientIdentityService | undefined;
 let serviceError: string | undefined;
 
 function initializeServices(): void {
@@ -32,6 +33,7 @@ function initializeServices(): void {
         };
     database = openDatabase(options);
     authService = new AuthService(database);
+    patientService = new PatientIdentityService(database);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -117,6 +119,15 @@ function requireAuthService(): AuthService {
     );
   }
   return authService;
+}
+
+function requirePatientService(): PatientIdentityService {
+  if (!patientService) {
+    throw new Error(
+      "ELITE_PATIENT_STORAGE_UNAVAILABLE: secure patient services are unavailable",
+    );
+  }
+  return patientService;
 }
 
 function registerIpc(): void {
@@ -206,6 +217,133 @@ function registerIpc(): void {
       service.revokeDevice(service.getSession(token), deviceId, reason);
     },
   );
+
+  ipcMain.handle(
+    "patient:search",
+    (_event, token: string, filters: unknown) => {
+      const service = requirePatientService();
+      return service.searchPatients(serviceContext(token), filters as never);
+    },
+  );
+  ipcMain.handle("patient:get", (_event, token: string, patientId: string) => {
+    return requirePatientService().getPatient(serviceContext(token), patientId);
+  });
+  ipcMain.handle(
+    "patient:duplicates",
+    (_event, token: string, input: unknown, excludePatientId?: string) => {
+      return requirePatientService().findDuplicateCandidates(
+        serviceContext(token),
+        input as never,
+        excludePatientId,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:create",
+    (_event, token: string, input: unknown, decisionReason?: string) => {
+      return requirePatientService().registerPatient(
+        serviceContext(token),
+        input as never,
+        decisionReason,
+      );
+    },
+  );
+  ipcMain.handle(
+    "related-person:create",
+    (_event, token: string, input: unknown) => {
+      return requirePatientService().createRelatedPerson(
+        serviceContext(token),
+        input as never,
+      );
+    },
+  );
+  ipcMain.handle(
+    "related-person:list",
+    (_event, token: string, patientId: string) => {
+      return requirePatientService().listRelatedPersons(
+        serviceContext(token),
+        patientId,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:update",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      input: unknown,
+      expectedVersion: number,
+    ) => {
+      return requirePatientService().updatePatient(
+        serviceContext(token),
+        patientId,
+        input as never,
+        expectedVersion,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:archive",
+    (_event, token: string, patientId: string, reason: string) => {
+      requirePatientService().archivePatient(serviceContext(token), {
+        patientId,
+        reason,
+      });
+    },
+  );
+  ipcMain.handle(
+    "patient:unarchive",
+    (_event, token: string, patientId: string, reason: string) => {
+      requirePatientService().unarchivePatient(
+        serviceContext(token),
+        patientId,
+        reason,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:merge-request",
+    (_event, token: string, input: unknown) => {
+      return requirePatientService().requestMerge(
+        serviceContext(token),
+        input as never,
+      );
+    },
+  );
+  ipcMain.handle("patient:merge-list", (_event, token: string) => {
+    return requirePatientService().listMergeCases(serviceContext(token));
+  });
+  ipcMain.handle(
+    "patient:merge-review",
+    (
+      _event,
+      token: string,
+      caseId: string,
+      decision: "approve" | "reject",
+      reason: string,
+    ) => {
+      return requirePatientService().reviewMergeCase(
+        serviceContext(token),
+        caseId,
+        decision,
+        reason,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:merge-execute",
+    (_event, token: string, caseId: string) => {
+      return requirePatientService().executeMerge(
+        serviceContext(token),
+        caseId,
+      );
+    },
+  );
+}
+
+function serviceContext(token: string) {
+  return requireAuthService().getSession(token);
 }
 
 app.whenReady().then(async () => {
@@ -234,4 +372,5 @@ app.on("before-quit", () => {
   database?.close();
   database = undefined;
   authService = undefined;
+  patientService = undefined;
 });

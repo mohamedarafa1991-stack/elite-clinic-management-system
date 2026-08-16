@@ -25,12 +25,16 @@ describe("Elite database foundation", () => {
         .all()
         .map((row) => (row as { name: string }).name);
 
-      expect(migrationVersions()).toEqual([1, 2]);
+      expect(migrationVersions()).toEqual([1, 2, 3, 4]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
       expect(tables).toContain("appointments");
       expect(tables).toContain("outbox_events");
       expect(tables).toContain("audit_events");
+      expect(tables).toContain("patient_identity_sequence");
+      expect(tables).toContain("patient_duplicate_reviews");
+      expect(tables).toContain("patient_merge_cases");
+      expect(tables).toContain("patient_identity_history");
     } finally {
       database.close();
     }

@@ -164,6 +164,36 @@ export const relatedPersonSchema = z.object({
 });
 export type RelatedPerson = z.infer<typeof relatedPersonSchema>;
 
+export const patientRegistrationModeSchema = z.enum(["quick", "full"]);
+export type PatientRegistrationMode = z.infer<
+  typeof patientRegistrationModeSchema
+>;
+
+export const patientCompletenessStatusSchema = z.enum(["minimal", "complete"]);
+export type PatientCompletenessStatus = z.infer<
+  typeof patientCompletenessStatusSchema
+>;
+
+export const relationshipConsentAuthoritySchema = z.enum([
+  "none",
+  "inform",
+  "consent",
+]);
+export type RelationshipConsentAuthority = z.infer<
+  typeof relationshipConsentAuthoritySchema
+>;
+
+export const preferredContactMethodSchema = z.enum([
+  "phone",
+  "sms",
+  "whatsapp",
+  "email",
+  "none",
+]);
+export type PreferredContactMethod = z.infer<
+  typeof preferredContactMethodSchema
+>;
+
 export const patientSchema = z.object({
   id: opaqueIdSchema,
   patientId: patientIdSchema,
@@ -175,7 +205,12 @@ export const patientSchema = z.object({
   nationalId: z.string().trim().max(64).optional(),
   relatedPersonIds: z.array(opaqueIdSchema),
   primaryDepartmentId: opaqueIdSchema.optional(),
+  registrationMode: patientRegistrationModeSchema,
+  completenessStatus: patientCompletenessStatusSchema,
   status: z.enum(["active", "archived", "merged"]),
+  archivedAt: isoDateTimeSchema.optional(),
+  archiveReason: z.string().optional(),
+  mergedIntoPatientId: patientIdSchema.optional(),
   createdAt: isoDateTimeSchema,
   createdByUserId: opaqueIdSchema,
   updatedAt: isoDateTimeSchema,
@@ -183,6 +218,98 @@ export const patientSchema = z.object({
   schemaVersion: z.number().int().positive(),
 });
 export type Patient = z.infer<typeof patientSchema>;
+
+export const patientRelationLinkInputSchema = z.object({
+  relatedPersonId: opaqueIdSchema,
+  relationshipRole: z.string().trim().min(1).max(80),
+  isPrimary: z.boolean().default(false),
+  consentAuthority: relationshipConsentAuthoritySchema.default("none"),
+});
+export type PatientRelationLinkInput = z.infer<
+  typeof patientRelationLinkInputSchema
+>;
+
+export const patientRegistrationInputSchema = z.object({
+  registrationMode: patientRegistrationModeSchema,
+  nameEn: z.string().trim().min(1).max(160),
+  nameAr: z.string().trim().max(160).optional(),
+  dob: z.string().date().optional(),
+  sex: z.enum(["female", "male", "intersex", "unknown"]).optional(),
+  phone: phoneSchema,
+  nationalId: z.string().trim().max(64).optional(),
+  primaryDepartmentId: opaqueIdSchema.optional(),
+  relatedPersons: z.array(patientRelationLinkInputSchema).max(20).optional(),
+});
+export type PatientRegistrationInput = z.infer<
+  typeof patientRegistrationInputSchema
+>;
+
+export const patientUpdateInputSchema = patientRegistrationInputSchema
+  .omit({ registrationMode: true, relatedPersons: true })
+  .extend({
+    relatedPersons: z.array(patientRelationLinkInputSchema).max(20).optional(),
+  });
+export type PatientUpdateInput = z.infer<typeof patientUpdateInputSchema>;
+
+export const duplicateDecisionSchema = z.object({
+  type: z.literal("create-another"),
+  reason: z.string().trim().min(3).max(500),
+});
+export type DuplicateDecision = z.infer<typeof duplicateDecisionSchema>;
+
+export const duplicateSignalSchema = z.object({
+  code: z.enum(["national-id", "name-en", "dob", "phone", "name-ar", "sex"]),
+  weight: z.number().int().nonnegative(),
+});
+export type DuplicateSignal = z.infer<typeof duplicateSignalSchema>;
+
+export const duplicateCandidateSchema = z.object({
+  patient: patientSchema,
+  score: z.number().int().nonnegative(),
+  severity: z.enum(["possible", "high"]),
+  signals: z.array(duplicateSignalSchema),
+});
+export type DuplicateCandidate = z.infer<typeof duplicateCandidateSchema>;
+
+export const patientMergeFieldDecisionsSchema = z.record(
+  z.string().min(1).max(80),
+  z.enum(["source", "target"]),
+);
+export type PatientMergeFieldDecisions = z.infer<
+  typeof patientMergeFieldDecisionsSchema
+>;
+
+export const patientMergeRequestSchema = z.object({
+  sourcePatientId: patientIdSchema,
+  targetPatientId: patientIdSchema,
+  reason: z.string().trim().min(3).max(500),
+  fieldDecisions: patientMergeFieldDecisionsSchema.default({}),
+});
+export type PatientMergeRequest = z.infer<typeof patientMergeRequestSchema>;
+
+export const patientMergeCaseSchema = z.object({
+  id: opaqueIdSchema,
+  sourcePatientId: patientIdSchema,
+  targetPatientId: patientIdSchema,
+  status: z.enum(["pending", "approved", "rejected", "cancelled", "executed"]),
+  reason: z.string().trim().min(3).max(500),
+  fieldDecisions: patientMergeFieldDecisionsSchema,
+  correlationId: opaqueIdSchema,
+  requestedByUserId: opaqueIdSchema,
+  requestedAt: isoDateTimeSchema,
+  reviewedByUserId: opaqueIdSchema.optional(),
+  reviewedAt: isoDateTimeSchema.optional(),
+  reviewReason: z.string().optional(),
+  executedByUserId: opaqueIdSchema.optional(),
+  executedAt: isoDateTimeSchema.optional(),
+});
+export type PatientMergeCase = z.infer<typeof patientMergeCaseSchema>;
+
+export const patientArchiveInputSchema = z.object({
+  patientId: patientIdSchema,
+  reason: z.string().trim().min(3).max(500),
+});
+export type PatientArchiveInput = z.infer<typeof patientArchiveInputSchema>;
 
 export const appointmentStatusSchema = z.enum([
   "scheduled",

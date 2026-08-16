@@ -1,4 +1,17 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  DuplicateCandidate,
+  Patient,
+  PatientMergeCase,
+  PatientMergeRequest,
+  PatientRegistrationInput,
+  PatientUpdateInput,
+} from "@elite/contracts";
+import type {
+  PatientSearchFilters,
+  RelatedPersonInput,
+  RelatedPersonSummary,
+} from "@elite/auth";
 
 export interface EliteSecurityStatus {
   electronVersion: string;
@@ -57,6 +70,107 @@ const eliteApi = {
   app: {
     getSecurityStatus: (): Promise<EliteSecurityStatus> =>
       ipcRenderer.invoke("app:security-status") as Promise<EliteSecurityStatus>,
+  },
+  patients: {
+    search: (token: string, filters?: PatientSearchFilters) =>
+      ipcRenderer.invoke("patient:search", token, filters) as Promise<
+        readonly Patient[]
+      >,
+    get: (token: string, patientId: string) =>
+      ipcRenderer.invoke("patient:get", token, patientId) as Promise<Patient>,
+    findDuplicates: (
+      token: string,
+      input: PatientRegistrationInput | PatientUpdateInput,
+      excludePatientId?: string,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:duplicates",
+        token,
+        input,
+        excludePatientId,
+      ) as Promise<readonly DuplicateCandidate[]>,
+    create: (
+      token: string,
+      input: PatientRegistrationInput,
+      decisionReason?: string,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:create",
+        token,
+        input,
+        decisionReason,
+      ) as Promise<{
+        patient: Patient;
+        duplicateCandidates: readonly DuplicateCandidate[];
+      }>,
+    update: (
+      token: string,
+      patientId: string,
+      input: PatientUpdateInput,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:update",
+        token,
+        patientId,
+        input,
+        expectedVersion,
+      ) as Promise<Patient>,
+    archive: (token: string, patientId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "patient:archive",
+        token,
+        patientId,
+        reason,
+      ) as Promise<void>,
+    unarchive: (token: string, patientId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "patient:unarchive",
+        token,
+        patientId,
+        reason,
+      ) as Promise<void>,
+    requestMerge: (token: string, input: PatientMergeRequest) =>
+      ipcRenderer.invoke(
+        "patient:merge-request",
+        token,
+        input,
+      ) as Promise<PatientMergeCase>,
+    listMergeCases: (token: string) =>
+      ipcRenderer.invoke("patient:merge-list", token) as Promise<
+        readonly PatientMergeCase[]
+      >,
+    reviewMerge: (
+      token: string,
+      caseId: string,
+      decision: "approve" | "reject",
+      reason: string,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:merge-review",
+        token,
+        caseId,
+        decision,
+        reason,
+      ) as Promise<PatientMergeCase>,
+    executeMerge: (token: string, caseId: string) =>
+      ipcRenderer.invoke(
+        "patient:merge-execute",
+        token,
+        caseId,
+      ) as Promise<PatientMergeCase>,
+  },
+  relatedPersons: {
+    create: (token: string, input: RelatedPersonInput) =>
+      ipcRenderer.invoke(
+        "related-person:create",
+        token,
+        input,
+      ) as Promise<RelatedPersonSummary>,
+    list: (token: string, patientId: string) =>
+      ipcRenderer.invoke("related-person:list", token, patientId) as Promise<
+        readonly RelatedPersonSummary[]
+      >,
   },
   auth: {
     getStatus: (): Promise<AuthStatus> =>

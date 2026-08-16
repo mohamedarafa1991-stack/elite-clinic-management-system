@@ -11,6 +11,11 @@ import type {
   EliteSecurityStatus,
   SessionSummary,
 } from "../preload/index.js";
+import type {
+  DuplicateCandidate,
+  Patient,
+  PatientRegistrationInput,
+} from "@elite/contracts";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -513,6 +518,263 @@ function DevicePanel({ token }: { token: string }): ReactElement {
   );
 }
 
+function PatientWorkspace({
+  token,
+  session,
+}: {
+  token: string;
+  session: SessionSummary;
+}): ReactElement {
+  const [patients, setPatients] = useState<readonly Patient[]>([]);
+  const [query, setQuery] = useState("");
+  const [nameEn, setNameEn] = useState("");
+  const [phone, setPhone] = useState("");
+  const [duplicates, setDuplicates] = useState<readonly DuplicateCandidate[]>(
+    [],
+  );
+  const [pendingInput, setPendingInput] =
+    useState<PatientRegistrationInput | null>(null);
+  const [decisionReason, setDecisionReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const refresh = async (): Promise<void> => {
+    setError(null);
+    try {
+      setPatients(
+        await window.elite.patients.search(token, { query, limit: 50 }),
+      );
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load patients",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const buildInput = (): PatientRegistrationInput => ({
+    registrationMode: "quick",
+    nameEn,
+    phone,
+    relatedPersons: [],
+  });
+
+  const createPatient = async (
+    input: PatientRegistrationInput,
+    reason?: string,
+  ): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.patients.create(token, input, reason);
+      setNameEn("");
+      setPhone("");
+      setDuplicates([]);
+      setPendingInput(null);
+      setDecisionReason("");
+      await refresh();
+    } catch (reasonValue: unknown) {
+      setError(
+        reasonValue instanceof Error
+          ? reasonValue.message
+          : "Unable to register patient",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    const input = buildInput();
+    setIsBusy(true);
+    setError(null);
+    try {
+      const candidates = await window.elite.patients.findDuplicates(
+        token,
+        input,
+      );
+      if (candidates.length > 0) {
+        setDuplicates(candidates);
+        setPendingInput(input);
+        return;
+      }
+      await createPatient(input);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to check duplicate patients",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const archive = async (patient: Patient): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.patients.archive(
+        token,
+        patient.patientId,
+        "Archived from Step 4 patient workspace",
+      );
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to archive patient",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" aria-labelledby="patients-title">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Step 4</p>
+          <h2 id="patients-title">Patient identity workspace</h2>
+        </div>
+        <span className="status ok">Local-first</span>
+      </div>
+      <p className="form-help">
+        Patient IDs are sequential and phones are not unique. Duplicate matches
+        are warnings, never silent merges.
+      </p>
+      <ErrorMessage message={error} />
+      <div className="patient-toolbar">
+        <input
+          aria-label="Search patients"
+          placeholder="Search patient ID, name, or phone"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void refresh();
+          }}
+        />
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => void refresh()}
+          disabled={isBusy}
+        >
+          Search
+        </button>
+      </div>
+      <form
+        className="form patient-registration"
+        onSubmit={(event) => void submit(event)}
+      >
+        <h3>Quick registration</h3>
+        <div className="form-grid">
+          <label>
+            Full English name
+            <input
+              required
+              value={nameEn}
+              onChange={(event) => setNameEn(event.target.value)}
+            />
+          </label>
+          <label>
+            Phone
+            <input
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+            />
+          </label>
+        </div>
+        <button className="button primary" type="submit" disabled={isBusy}>
+          Check and register
+        </button>
+      </form>
+      {pendingInput ? (
+        <div className="duplicate-panel" role="alert">
+          <h3>Possible duplicate patients</h3>
+          <p>
+            Review the matched signals. You may cancel or explicitly create
+            another patient with a reason.
+          </p>
+          {duplicates.map((candidate) => (
+            <div className="duplicate-row" key={candidate.patient.id}>
+              <strong>
+                {candidate.patient.patientId} — {candidate.patient.nameEn}
+              </strong>
+              <span>
+                Score {candidate.score} · {candidate.severity}
+              </span>
+              <span>
+                {candidate.signals.map((signal) => signal.code).join(", ")}
+              </span>
+            </div>
+          ))}
+          <label>
+            Reason to create another patient
+            <input
+              value={decisionReason}
+              onChange={(event) => setDecisionReason(event.target.value)}
+              minLength={3}
+            />
+          </label>
+          <div className="button-row">
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => {
+                setPendingInput(null);
+                setDuplicates([]);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={decisionReason.trim().length < 3 || isBusy}
+              onClick={() => void createPatient(pendingInput, decisionReason)}
+            >
+              Create another patient
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div className="patient-list" aria-live="polite">
+        {patients.length === 0 ? (
+          <p className="muted">No active patients match this search.</p>
+        ) : null}
+        {patients.map((patient) => (
+          <article className="patient-row" key={patient.id}>
+            <div>
+              <strong>{patient.patientId}</strong>
+              <span>{patient.nameEn}</span>
+              <small>
+                {patient.phone} · {patient.completenessStatus} ·{" "}
+                {patient.status}
+              </small>
+            </div>
+            {session.capabilities.includes("patient.archive") &&
+            patient.status === "active" ? (
+              <button
+                className="button danger"
+                type="button"
+                disabled={isBusy}
+                onClick={() => void archive(patient)}
+              >
+                Archive
+              </button>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -572,6 +834,9 @@ function AuthenticatedView({
       session.capabilities.includes("device.manage") ? (
         <DevicePanel token={token} />
       ) : null}
+      {session.capabilities.includes("patient.read") ? (
+        <PatientWorkspace token={token} session={session} />
+      ) : null}
       <button
         className="button secondary"
         type="button"
@@ -625,11 +890,12 @@ function FoundationStatus(): ReactElement {
           <p className="eyebrow">Elite Clinic Management System</p>
           <h1 id="page-title">Secure access foundation</h1>
           <p className="subtitle">
-            Authentication, Admin bootstrap, capability enforcement, and device
-            enrollment are now connected to the local secure service boundary.
+            Authentication, encrypted local storage, patient identity, guardian
+            links, duplicate review, and controlled archive workflows are
+            connected to the local secure service boundary.
           </p>
         </div>
-        <div className="badge">Step 2</div>
+        <div className="badge">Step 4</div>
       </header>
 
       <section className="card" aria-labelledby="status-title">

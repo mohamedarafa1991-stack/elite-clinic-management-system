@@ -26,6 +26,8 @@ describe("Elite shared contracts", () => {
       sex: "female",
       phone: "+201000000000",
       relatedPersonIds: [relatedPerson.id],
+      registrationMode: "full",
+      completenessStatus: "complete",
       status: "active",
       createdAt: "2026-01-01T10:00:00+00:00",
       createdByUserId: "admin-01",

@@ -238,6 +238,121 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_enrollment_requests_status ON device_enrollment_requests(status, requested_at);
     `,
   },
+  {
+    version: 3,
+    name: "patient-identity-lifecycle",
+    sql: `
+      INSERT OR IGNORE INTO app_meta (key, value, updated_at)
+      VALUES ('patient_sequence_next', '1', CURRENT_TIMESTAMP);
+
+      ALTER TABLE patients ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'quick'
+        CHECK (registration_mode IN ('quick', 'full'));
+      ALTER TABLE patients ADD COLUMN completeness_status TEXT NOT NULL DEFAULT 'minimal'
+        CHECK (completeness_status IN ('minimal', 'complete'));
+      ALTER TABLE patients ADD COLUMN normalized_name_en TEXT NOT NULL DEFAULT '';
+      ALTER TABLE patients ADD COLUMN normalized_name_ar TEXT;
+      ALTER TABLE patients ADD COLUMN normalized_phone TEXT NOT NULL DEFAULT '';
+      ALTER TABLE patients ADD COLUMN normalized_national_id TEXT;
+      ALTER TABLE patients ADD COLUMN archived_at TEXT;
+      ALTER TABLE patients ADD COLUMN archived_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE patients ADD COLUMN archive_reason TEXT;
+      ALTER TABLE patients ADD COLUMN merged_into_patient_id TEXT REFERENCES patients(id);
+      ALTER TABLE patients ADD COLUMN merged_at TEXT;
+      ALTER TABLE patients ADD COLUMN merged_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE patients ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+
+      ALTER TABLE related_persons ADD COLUMN preferred_contact_method TEXT
+        CHECK (preferred_contact_method IN ('phone', 'sms', 'whatsapp', 'email', 'none'));
+      ALTER TABLE related_persons ADD COLUMN created_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE related_persons ADD COLUMN updated_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE patient_related_persons ADD COLUMN consent_authority TEXT NOT NULL DEFAULT 'none'
+        CHECK (consent_authority IN ('none', 'inform', 'consent'));
+      ALTER TABLE patient_related_persons ADD COLUMN verified_at TEXT;
+      ALTER TABLE patient_related_persons ADD COLUMN verified_by_user_id TEXT REFERENCES users(id);
+      ALTER TABLE patient_related_persons ADD COLUMN ended_at TEXT;
+
+      CREATE TABLE IF NOT EXISTS patient_identity_sequence (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        next_number INTEGER NOT NULL CHECK (next_number >= 1),
+        updated_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO patient_identity_sequence (id, next_number, updated_at)
+      SELECT 1,
+             COALESCE(MAX(CAST(SUBSTR(patient_id, 4) AS INTEGER)), 0) + 1,
+             CURRENT_TIMESTAMP
+      FROM patients
+      WHERE patient_id GLOB 'EL-[0-9]*';
+
+      UPDATE patients
+      SET normalized_name_en = lower(trim(name_en)),
+          normalized_name_ar = CASE WHEN name_ar IS NULL THEN NULL ELSE trim(name_ar) END,
+          normalized_phone = trim(phone),
+          normalized_national_id = CASE WHEN national_id IS NULL THEN NULL ELSE trim(national_id) END,
+          completeness_status = CASE WHEN name_en IS NOT NULL AND phone IS NOT NULL THEN 'complete' ELSE 'minimal' END
+      WHERE normalized_name_en = '';
+
+      CREATE INDEX IF NOT EXISTS idx_patients_normalized_name ON patients(normalized_name_en, normalized_name_ar);
+      CREATE INDEX IF NOT EXISTS idx_patients_normalized_phone ON patients(normalized_phone);
+      CREATE INDEX IF NOT EXISTS idx_patients_normalized_national_id ON patients(normalized_national_id);
+      CREATE INDEX IF NOT EXISTS idx_patients_merged_into ON patients(merged_into_patient_id);
+      CREATE INDEX IF NOT EXISTS idx_patient_related_active ON patient_related_persons(patient_id, ended_at);
+    `,
+  },
+  {
+    version: 4,
+    name: "patient-duplicate-and-merge-workflows",
+    sql: `
+      CREATE TABLE IF NOT EXISTS patient_duplicate_reviews (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        candidate_patient_id TEXT NOT NULL REFERENCES patients(id),
+        score INTEGER NOT NULL CHECK (score >= 0),
+        signals_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('open', 'created-another', 'merge-requested', 'dismissed')),
+        decision_reason TEXT,
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        decided_by_user_id TEXT REFERENCES users(id),
+        decided_at TEXT,
+        CHECK (patient_id != candidate_patient_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS patient_merge_cases (
+        id TEXT PRIMARY KEY NOT NULL,
+        source_patient_id TEXT NOT NULL REFERENCES patients(id),
+        target_patient_id TEXT NOT NULL REFERENCES patients(id),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'executed')),
+        reason TEXT NOT NULL,
+        field_decisions_json TEXT NOT NULL,
+        correlation_id TEXT NOT NULL UNIQUE,
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        review_reason TEXT,
+        executed_by_user_id TEXT REFERENCES users(id),
+        executed_at TEXT,
+        CHECK (source_patient_id != target_patient_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS patient_identity_history (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        action TEXT NOT NULL,
+        change_summary_json TEXT NOT NULL,
+        correlation_id TEXT,
+        actor_user_id TEXT REFERENCES users(id),
+        device_id TEXT REFERENCES devices(id),
+        occurred_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_duplicate_reviews_status ON patient_duplicate_reviews(status, requested_at);
+      CREATE INDEX IF NOT EXISTS idx_duplicate_reviews_patient ON patient_duplicate_reviews(patient_id, candidate_patient_id);
+      CREATE INDEX IF NOT EXISTS idx_merge_cases_status ON patient_merge_cases(status, requested_at);
+      CREATE INDEX IF NOT EXISTS idx_merge_cases_source ON patient_merge_cases(source_patient_id);
+      CREATE INDEX IF NOT EXISTS idx_identity_history_patient ON patient_identity_history(patient_id, occurred_at);
+    `,
+  },
 ];
 
 function now(): string {
