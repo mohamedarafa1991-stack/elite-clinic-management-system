@@ -8,8 +8,10 @@ import type {
   PatientUpdateInput,
 } from "@elite/contracts";
 import type {
+  PatientRelatedPersonLinkSummary,
   PatientSearchFilters,
   RelatedPersonInput,
+  RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "@elite/auth";
 
@@ -169,10 +171,66 @@ const eliteApi = {
         token,
         input,
       ) as Promise<RelatedPersonSummary>,
+    update: (
+      token: string,
+      relatedPersonId: string,
+      input: RelatedPersonInput,
+      expectedVersion: number,
+    ) =>
+      ipcRenderer.invoke(
+        "related-person:update",
+        token,
+        relatedPersonId,
+        input,
+        expectedVersion,
+      ) as Promise<RelatedPersonSummary>,
     list: (token: string, patientId: string) =>
       ipcRenderer.invoke("related-person:list", token, patientId) as Promise<
         readonly RelatedPersonSummary[]
       >,
+    listLinks: (token: string, patientId: string) =>
+      ipcRenderer.invoke("patient:related-links", token, patientId) as Promise<
+        readonly PatientRelatedPersonLinkSummary[]
+      >,
+    link: (
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      input: RelatedPersonLinkInput,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:related-link",
+        token,
+        patientId,
+        relatedPersonId,
+        input,
+      ) as Promise<PatientRelatedPersonLinkSummary>,
+    updateLink: (
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      input: RelatedPersonLinkInput,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:related-link-update",
+        token,
+        patientId,
+        relatedPersonId,
+        input,
+      ) as Promise<PatientRelatedPersonLinkSummary>,
+    unlink: (
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      reason: string,
+    ) =>
+      ipcRenderer.invoke(
+        "patient:related-link-unlink",
+        token,
+        patientId,
+        relatedPersonId,
+        reason,
+      ) as Promise<void>,
   },
   auth: {
     getStatus: (): Promise<AuthStatus> =>

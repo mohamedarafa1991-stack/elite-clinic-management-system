@@ -794,7 +794,9 @@ export class AuthService {
 export { PatientIdentityService } from "./patient-service.js";
 export type {
   PatientIdentityServiceOptions,
+  PatientRelatedPersonLinkSummary,
   PatientSearchFilters,
   RelatedPersonInput,
+  RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "./patient-service.js";

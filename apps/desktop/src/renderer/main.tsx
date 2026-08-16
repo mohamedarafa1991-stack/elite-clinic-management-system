@@ -17,7 +17,12 @@ import type {
   PatientRegistrationInput,
   PatientUpdateInput,
 } from "@elite/contracts";
-import type { RelatedPersonSummary } from "@elite/auth";
+import type {
+  PatientRelatedPersonLinkSummary,
+  RelatedPersonInput,
+  RelatedPersonLinkInput,
+  RelatedPersonSummary,
+} from "@elite/auth";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -29,6 +34,34 @@ interface BootstrapFormState {
   backupDisplayName: string;
   hubDeviceName: string;
 }
+
+interface RelatedPersonFormState {
+  displayNameEn: string;
+  displayNameAr: string;
+  relationship: string;
+  phone: string;
+  isGuardian: boolean;
+  isAuthorizedToConsent: boolean;
+  isAuthorizedToContact: boolean;
+  verificationStatus: "unverified" | "verified";
+  relationshipRole: string;
+  isPrimary: boolean;
+  consentAuthority: "none" | "inform" | "consent";
+}
+
+const emptyRelatedPersonForm: RelatedPersonFormState = {
+  displayNameEn: "",
+  displayNameAr: "",
+  relationship: "",
+  phone: "",
+  isGuardian: true,
+  isAuthorizedToConsent: true,
+  isAuthorizedToContact: true,
+  verificationStatus: "unverified",
+  relationshipRole: "",
+  isPrimary: false,
+  consentAuthority: "consent",
+};
 
 const initialBootstrap: BootstrapFormState = {
   primaryUsername: "",
@@ -541,9 +574,13 @@ function PatientWorkspace({
     "quick",
   );
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [relatedPersons, setRelatedPersons] = useState<
-    readonly RelatedPersonSummary[]
+  const [relatedLinks, setRelatedLinks] = useState<
+    readonly PatientRelatedPersonLinkSummary[]
   >([]);
+  const [relatedPersonForm, setRelatedPersonForm] =
+    useState<RelatedPersonFormState | null>(null);
+  const [editingRelatedLink, setEditingRelatedLink] =
+    useState<PatientRelatedPersonLinkSummary | null>(null);
   const [duplicates, setDuplicates] = useState<readonly DuplicateCandidate[]>(
     [],
   );
@@ -613,7 +650,9 @@ function PatientWorkspace({
       setPhone("");
       setNationalId("");
       setRegistrationMode("quick");
-      setRelatedPersons([]);
+      setRelatedLinks([]);
+      setRelatedPersonForm(null);
+      setEditingRelatedLink(null);
       setDuplicates([]);
       setPendingInput(null);
       setPendingEdit(null);
@@ -667,17 +706,156 @@ function PatientWorkspace({
     setNationalId(patient.nationalId ?? "");
     setRegistrationMode(patient.registrationMode);
     setError(null);
+    setRelatedPersonForm(null);
+    setEditingRelatedLink(null);
     try {
-      setRelatedPersons(
-        await window.elite.relatedPersons.list(token, patient.patientId),
+      setRelatedLinks(
+        await window.elite.relatedPersons.listLinks(token, patient.patientId),
       );
     } catch (reason: unknown) {
-      setRelatedPersons([]);
+      setRelatedLinks([]);
+      setRelatedPersonForm(null);
+      setEditingRelatedLink(null);
       setError(
         reason instanceof Error
           ? reason.message
           : "Unable to load related persons",
       );
+    }
+  };
+
+  const openNewRelatedPerson = (): void => {
+    if (!selectedPatient) return;
+    setEditingRelatedLink(null);
+    setRelatedPersonForm({
+      ...emptyRelatedPersonForm,
+      relationshipRole: "guardian",
+    });
+    setError(null);
+  };
+
+  const openEditRelatedPerson = (
+    link: PatientRelatedPersonLinkSummary,
+  ): void => {
+    setEditingRelatedLink(link);
+    setRelatedPersonForm({
+      displayNameEn: link.relatedPerson.displayNameEn,
+      displayNameAr: link.relatedPerson.displayNameAr ?? "",
+      relationship: link.relatedPerson.relationship,
+      phone: link.relatedPerson.phoneNumbers[0] ?? "",
+      isGuardian: link.relatedPerson.isGuardian,
+      isAuthorizedToConsent: link.relatedPerson.isAuthorizedToConsent,
+      isAuthorizedToContact: link.relatedPerson.isAuthorizedToContact,
+      verificationStatus: link.verificationStatus,
+      relationshipRole: link.relationshipRole,
+      isPrimary: link.isPrimary,
+      consentAuthority: link.consentAuthority,
+    });
+    setError(null);
+  };
+
+  const saveRelatedPerson = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedPatient || !relatedPersonForm) return;
+    const form = relatedPersonForm;
+    const personInput: RelatedPersonInput = {
+      displayNameEn: form.displayNameEn,
+      ...(form.displayNameAr.trim()
+        ? { displayNameAr: form.displayNameAr.trim() }
+        : {}),
+      relationship: form.relationship,
+      phoneNumbers: [form.phone],
+      isGuardian: form.isGuardian,
+      isAuthorizedToConsent: form.isAuthorizedToConsent,
+      isAuthorizedToContact: form.isAuthorizedToContact,
+      verificationStatus: form.verificationStatus,
+    };
+    const linkInput: RelatedPersonLinkInput = {
+      relationshipRole: form.relationshipRole,
+      isPrimary: form.isPrimary,
+      consentAuthority: form.consentAuthority,
+      verificationStatus: form.verificationStatus,
+    };
+    setIsBusy(true);
+    setError(null);
+    try {
+      if (editingRelatedLink) {
+        await window.elite.relatedPersons.update(
+          token,
+          editingRelatedLink.relatedPersonId,
+          personInput,
+          editingRelatedLink.relatedPerson.version,
+        );
+        await window.elite.relatedPersons.updateLink(
+          token,
+          selectedPatient.patientId,
+          editingRelatedLink.relatedPersonId,
+          linkInput,
+        );
+      } else {
+        const created = await window.elite.relatedPersons.create(
+          token,
+          personInput,
+        );
+        await window.elite.relatedPersons.link(
+          token,
+          selectedPatient.patientId,
+          created.id,
+          linkInput,
+        );
+      }
+      setRelatedLinks(
+        await window.elite.relatedPersons.listLinks(
+          token,
+          selectedPatient.patientId,
+        ),
+      );
+      setRelatedPersonForm(null);
+      setEditingRelatedLink(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save related person",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const unlinkRelatedPerson = async (
+    link: PatientRelatedPersonLinkSummary,
+  ): Promise<void> => {
+    if (!selectedPatient) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.relatedPersons.unlink(
+        token,
+        selectedPatient.patientId,
+        link.relatedPersonId,
+        "Unlinked from patient profile",
+      );
+      setRelatedLinks(
+        await window.elite.relatedPersons.listLinks(
+          token,
+          selectedPatient.patientId,
+        ),
+      );
+      if (editingRelatedLink?.relatedPersonId === link.relatedPersonId) {
+        setRelatedPersonForm(null);
+        setEditingRelatedLink(null);
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to unlink related person",
+      );
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -824,7 +1002,9 @@ function PatientWorkspace({
               type="button"
               onClick={() => {
                 setSelectedPatient(null);
-                setRelatedPersons([]);
+                setRelatedLinks([]);
+                setRelatedPersonForm(null);
+                setEditingRelatedLink(null);
                 setNameEn("");
                 setNameAr("");
                 setDob("");
@@ -1040,27 +1220,273 @@ function PatientWorkspace({
               </dd>
             </div>
           </dl>
-          <h4>Related persons and guardians</h4>
-          {relatedPersons.length === 0 ? (
+          <div className="related-person-heading">
+            <h4>Related persons and guardians</h4>
+            {session.capabilities.includes("patient.write") ? (
+              <button
+                className="button secondary"
+                type="button"
+                disabled={isBusy}
+                onClick={openNewRelatedPerson}
+              >
+                Add related person
+              </button>
+            ) : null}
+          </div>
+          {relatedLinks.length === 0 ? (
             <p className="muted">No related persons linked.</p>
           ) : (
             <div className="related-person-list">
-              {relatedPersons.map((person) => (
-                <div className="related-person-row" key={person.id}>
-                  <strong>{person.displayNameEn}</strong>
-                  <span>
-                    {person.relationship} · {person.phoneNumbers.join(", ")}
-                  </span>
-                  <small>
-                    {person.isGuardian ? "Guardian" : "Related person"} ·{" "}
-                    {person.isAuthorizedToConsent
-                      ? "Consent authorized"
-                      : "No consent authority"}
-                  </small>
+              {relatedLinks.map((link) => (
+                <div className="related-person-row" key={link.relatedPersonId}>
+                  <div>
+                    <strong>{link.relatedPerson.displayNameEn}</strong>
+                    <span>
+                      {link.relationshipRole} ·{" "}
+                      {link.relatedPerson.phoneNumbers.join(", ")}
+                    </span>
+                    <small>
+                      {link.relatedPerson.isGuardian
+                        ? "Guardian"
+                        : "Related person"}{" "}
+                      · {link.consentAuthority} consent ·{" "}
+                      {link.verificationStatus}
+                    </small>
+                  </div>
+                  {session.capabilities.includes("patient.write") ? (
+                    <div className="button-row">
+                      <button
+                        className="button secondary"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => openEditRelatedPerson(link)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="button danger"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void unlinkRelatedPerson(link)}
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
           )}
+          {relatedPersonForm ? (
+            <form
+              className="related-person-editor"
+              onSubmit={(event) => void saveRelatedPerson(event)}
+            >
+              <div className="form-heading-row">
+                <h4>
+                  {editingRelatedLink
+                    ? "Edit related person and link"
+                    : "Add related person and link"}
+                </h4>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => {
+                    setRelatedPersonForm(null);
+                    setEditingRelatedLink(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="form-grid">
+                <label>
+                  English name
+                  <input
+                    required
+                    value={relatedPersonForm.displayNameEn}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, displayNameEn: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Arabic name
+                  <input
+                    value={relatedPersonForm.displayNameAr}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, displayNameAr: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Phone
+                  <input
+                    required
+                    value={relatedPersonForm.phone}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, phone: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Person relationship
+                  <input
+                    required
+                    value={relatedPersonForm.relationship}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, relationship: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Patient link role
+                  <input
+                    required
+                    value={relatedPersonForm.relationshipRole}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, relationshipRole: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </label>
+                <label>
+                  Consent authority
+                  <select
+                    value={relatedPersonForm.consentAuthority}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              consentAuthority: event.target
+                                .value as RelatedPersonFormState["consentAuthority"],
+                            }
+                          : current,
+                      )
+                    }
+                  >
+                    <option value="none">None</option>
+                    <option value="inform">Inform</option>
+                    <option value="consent">Consent</option>
+                  </select>
+                </label>
+              </div>
+              <div className="checkbox-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={relatedPersonForm.isGuardian}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, isGuardian: event.target.checked }
+                          : current,
+                      )
+                    }
+                  />{" "}
+                  Guardian
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={relatedPersonForm.isAuthorizedToConsent}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              isAuthorizedToConsent: event.target.checked,
+                            }
+                          : current,
+                      )
+                    }
+                  />{" "}
+                  Authorized to consent
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={relatedPersonForm.isAuthorizedToContact}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              isAuthorizedToContact: event.target.checked,
+                            }
+                          : current,
+                      )
+                    }
+                  />{" "}
+                  Authorized to contact
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={relatedPersonForm.isPrimary}
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? { ...current, isPrimary: event.target.checked }
+                          : current,
+                      )
+                    }
+                  />{" "}
+                  Primary link
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={
+                      relatedPersonForm.verificationStatus === "verified"
+                    }
+                    onChange={(event) =>
+                      setRelatedPersonForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              verificationStatus: event.target.checked
+                                ? "verified"
+                                : "unverified",
+                            }
+                          : current,
+                      )
+                    }
+                  />{" "}
+                  Verified identity/link
+                </label>
+              </div>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={isBusy}
+              >
+                {editingRelatedLink
+                  ? "Save related person and link"
+                  : "Create and link related person"}
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
     </section>

@@ -226,3 +226,107 @@ it("promotes a quick record to full registration and rejects stale profile edits
     fixture.database.close();
   }
 });
+
+it("edits a related person and manages guardian-link metadata safely", async () => {
+  const fixture = await createFixture();
+  try {
+    const patient = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Guardian Link Patient",
+      phone: "+201000000006",
+    });
+    const relatedPerson = fixture.service.createRelatedPerson(fixture.context, {
+      displayNameEn: "Synthetic Guardian One",
+      relationship: "parent",
+      phoneNumbers: ["+201000000007"],
+      isGuardian: true,
+      isAuthorizedToConsent: true,
+      isAuthorizedToContact: true,
+      verificationStatus: "unverified",
+    });
+    const linked = fixture.service.linkRelatedPerson(
+      fixture.context,
+      patient.patient.patientId,
+      relatedPerson.id,
+      {
+        relationshipRole: "mother",
+        isPrimary: true,
+        consentAuthority: "consent",
+        verificationStatus: "verified",
+      },
+    );
+    expect(linked.relatedPersonId).toBe(relatedPerson.id);
+    expect(linked.isPrimary).toBe(true);
+    expect(linked.consentAuthority).toBe("consent");
+    expect(linked.verificationStatus).toBe("verified");
+
+    const editedPerson = fixture.service.updateRelatedPerson(
+      fixture.context,
+      relatedPerson.id,
+      {
+        displayNameEn: "Synthetic Guardian One Updated",
+        relationship: "parent",
+        phoneNumbers: ["+201000000008"],
+        isGuardian: true,
+        isAuthorizedToConsent: true,
+        isAuthorizedToContact: true,
+        verificationStatus: "verified",
+      },
+      relatedPerson.version,
+    );
+    expect(editedPerson.displayNameEn).toBe("Synthetic Guardian One Updated");
+    expect(editedPerson.version).toBe(2);
+
+    const updatedLink = fixture.service.updatePatientRelatedLink(
+      fixture.context,
+      patient.patient.patientId,
+      relatedPerson.id,
+      {
+        relationshipRole: "legal guardian",
+        isPrimary: false,
+        consentAuthority: "inform",
+        verificationStatus: "verified",
+      },
+    );
+    expect(updatedLink.relationshipRole).toBe("legal guardian");
+    expect(updatedLink.isPrimary).toBe(false);
+    expect(updatedLink.consentAuthority).toBe("inform");
+
+    expect(
+      fixture.service.listPatientRelatedLinks(
+        fixture.context,
+        patient.patient.patientId,
+      ),
+    ).toHaveLength(1);
+    fixture.service.unlinkRelatedPerson(
+      fixture.context,
+      patient.patient.patientId,
+      relatedPerson.id,
+      "Synthetic unlink workflow",
+    );
+    expect(
+      fixture.service.listPatientRelatedLinks(
+        fixture.context,
+        patient.patient.patientId,
+      ),
+    ).toHaveLength(0);
+    expect(() =>
+      fixture.service.updateRelatedPerson(
+        fixture.context,
+        relatedPerson.id,
+        {
+          displayNameEn: "Stale Guardian Edit",
+          relationship: "parent",
+          phoneNumbers: ["+201000000009"],
+          isGuardian: true,
+          isAuthorizedToConsent: true,
+          isAuthorizedToContact: true,
+          verificationStatus: "verified",
+        },
+        relatedPerson.version,
+      ),
+    ).toThrow("ELITE_RELATED_PERSON_VERSION_CONFLICT");
+  } finally {
+    fixture.database.close();
+  }
+});

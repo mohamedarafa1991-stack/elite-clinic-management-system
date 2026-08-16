@@ -39,8 +39,25 @@ export interface RelatedPersonInput {
 export interface RelatedPersonSummary extends RelatedPersonInput {
   id: string;
   verificationStatus: NonNullable<RelatedPersonInput["verificationStatus"]>;
+  version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RelatedPersonLinkInput {
+  relationshipRole: string;
+  isPrimary: boolean;
+  consentAuthority: "none" | "inform" | "consent";
+  verificationStatus: "unverified" | "verified";
+}
+
+export interface PatientRelatedPersonLinkSummary extends RelatedPersonLinkInput {
+  patientId: string;
+  relatedPersonId: string;
+  relatedPerson: RelatedPersonSummary;
+  verifiedAt?: string;
+  verifiedByUserId?: string;
+  endedAt?: string;
 }
 
 export interface PatientSearchFilters {
@@ -69,6 +86,12 @@ const relatedPersonInputSchema = z.object({
   preferredContactMethod: z
     .enum(["phone", "sms", "whatsapp", "email", "none"])
     .optional(),
+});
+const relatedPersonLinkInputSchema = z.object({
+  relationshipRole: z.string().trim().min(1).max(80),
+  isPrimary: z.boolean(),
+  consentAuthority: z.enum(["none", "inform", "consent"]),
+  verificationStatus: z.enum(["unverified", "verified"]),
 });
 const SIGNAL_WEIGHTS = {
   nationalId: 45,
@@ -306,6 +329,248 @@ export class PatientIdentityService {
       )
       .all(parsedId) as Array<Record<string, unknown>>;
     return rows.map((row) => this.mapRelatedPerson(row));
+  }
+
+  public updateRelatedPerson(
+    context: SessionContext,
+    relatedPersonId: string,
+    input: RelatedPersonInput,
+    expectedVersion: number,
+  ): RelatedPersonSummary {
+    requireCapability(context, "patient.write");
+    const parsed = relatedPersonInputSchema.parse(input);
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        `UPDATE related_persons SET display_name_en = ?, display_name_ar = ?, relationship = ?, phone_numbers_json = ?, national_id = ?,
+         is_guardian = ?, is_authorized_to_consent = ?, is_authorized_to_contact = ?, verification_status = ?, preferred_contact_method = ?,
+         updated_by_user_id = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+      )
+      .run(
+        parsed.displayNameEn,
+        parsed.displayNameAr ?? null,
+        parsed.relationship,
+        JSON.stringify(parsed.phoneNumbers),
+        parsed.nationalId ?? null,
+        parsed.isGuardian ? 1 : 0,
+        parsed.isAuthorizedToConsent ? 1 : 0,
+        parsed.isAuthorizedToContact ? 1 : 0,
+        parsed.verificationStatus,
+        parsed.preferredContactMethod ?? null,
+        context.userId,
+        timestamp,
+        relatedPersonId,
+        expectedVersion,
+      );
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_RELATED_PERSON_VERSION_CONFLICT: related person was changed by another device",
+      );
+    writeAudit(
+      this.database,
+      context,
+      {
+        action: "related-person.update",
+        entityType: "related-person",
+        entityId: relatedPersonId,
+        result: "success",
+        metadata: { expectedVersion },
+      },
+      timestamp,
+    );
+    return this.getRelatedPerson(relatedPersonId);
+  }
+
+  public listPatientRelatedLinks(
+    context: SessionContext,
+    patientId: string,
+  ): readonly PatientRelatedPersonLinkSummary[] {
+    requireCapability(context, "patient.read");
+    const parsedPatientId = patientIdSchema.parse(patientId);
+    const rows = this.database.raw
+      .prepare(
+        `SELECT p.patient_id, link.related_person_id, link.relationship_role, link.is_primary, link.consent_authority,
+                link.verified_at, link.verified_by_user_id, link.ended_at,
+                r.*
+         FROM patients p
+         JOIN patient_related_persons link ON link.patient_id = p.id
+         JOIN related_persons r ON r.id = link.related_person_id
+         WHERE p.patient_id = ? AND link.ended_at IS NULL
+         ORDER BY link.is_primary DESC, r.display_name_en`,
+      )
+      .all(parsedPatientId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapPatientRelatedLink(row));
+  }
+
+  public linkRelatedPerson(
+    context: SessionContext,
+    patientId: string,
+    relatedPersonId: string,
+    input: RelatedPersonLinkInput,
+  ): PatientRelatedPersonLinkSummary {
+    requireCapability(context, "patient.write");
+    const parsedPatientId = patientIdSchema.parse(patientId);
+    const parsedRelatedPersonId = z
+      .string()
+      .trim()
+      .min(1)
+      .parse(relatedPersonId);
+    const parsed = relatedPersonLinkInputSchema.parse(input);
+    const patient = this.database.raw
+      .prepare("SELECT id, status FROM patients WHERE patient_id = ?")
+      .get(parsedPatientId) as { id: string; status: string } | undefined;
+    if (!patient)
+      throw new Error("ELITE_PATIENT_NOT_FOUND: patient does not exist");
+    if (patient.status !== "active")
+      throw new Error(
+        "ELITE_PATIENT_LINK_REQUIRES_ACTIVE: patient is not active",
+      );
+    if (
+      !this.database.raw
+        .prepare("SELECT id FROM related_persons WHERE id = ?")
+        .get(parsedRelatedPersonId)
+    )
+      throw new Error(
+        "ELITE_RELATED_PERSON_NOT_FOUND: related person does not exist",
+      );
+    const timestamp = this.now();
+    const verifiedAt =
+      parsed.verificationStatus === "verified" ? timestamp : null;
+    this.database.raw
+      .prepare(
+        `INSERT INTO patient_related_persons
+           (patient_id, related_person_id, relationship_role, is_primary, created_at, consent_authority, verified_at, verified_by_user_id, ended_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(patient_id, related_person_id) DO UPDATE SET
+           relationship_role = excluded.relationship_role,
+           is_primary = excluded.is_primary,
+           consent_authority = excluded.consent_authority,
+           verified_at = excluded.verified_at,
+           verified_by_user_id = excluded.verified_by_user_id,
+           ended_at = NULL`,
+      )
+      .run(
+        patient.id,
+        parsedRelatedPersonId,
+        parsed.relationshipRole,
+        parsed.isPrimary ? 1 : 0,
+        timestamp,
+        parsed.consentAuthority,
+        verifiedAt,
+        parsed.verificationStatus === "verified" ? context.userId : null,
+      );
+    writeAudit(
+      this.database,
+      context,
+      {
+        action: "patient.related-person.link",
+        entityType: "patient-related-person",
+        entityId: `${patient.id}:${parsedRelatedPersonId}`,
+        patientId: parsedPatientId,
+        result: "success",
+        metadata: parsed,
+      },
+      timestamp,
+    );
+    return this.getPatientRelatedLink(parsedPatientId, parsedRelatedPersonId);
+  }
+
+  public updatePatientRelatedLink(
+    context: SessionContext,
+    patientId: string,
+    relatedPersonId: string,
+    input: RelatedPersonLinkInput,
+  ): PatientRelatedPersonLinkSummary {
+    requireCapability(context, "patient.write");
+    const parsedPatientId = patientIdSchema.parse(patientId);
+    const parsedRelatedPersonId = z
+      .string()
+      .trim()
+      .min(1)
+      .parse(relatedPersonId);
+    const parsed = relatedPersonLinkInputSchema.parse(input);
+    const patient = this.database.raw
+      .prepare("SELECT id, status FROM patients WHERE patient_id = ?")
+      .get(parsedPatientId) as { id: string; status: string } | undefined;
+    if (!patient)
+      throw new Error("ELITE_PATIENT_NOT_FOUND: patient does not exist");
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        `UPDATE patient_related_persons SET relationship_role = ?, is_primary = ?, consent_authority = ?, verified_at = ?, verified_by_user_id = ?
+         WHERE patient_id = ? AND related_person_id = ? AND ended_at IS NULL`,
+      )
+      .run(
+        parsed.relationshipRole,
+        parsed.isPrimary ? 1 : 0,
+        parsed.consentAuthority,
+        parsed.verificationStatus === "verified" ? timestamp : null,
+        parsed.verificationStatus === "verified" ? context.userId : null,
+        patient.id,
+        parsedRelatedPersonId,
+      );
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_PATIENT_LINK_NOT_FOUND: active related-person link does not exist",
+      );
+    writeAudit(
+      this.database,
+      context,
+      {
+        action: "patient.related-person.update",
+        entityType: "patient-related-person",
+        entityId: `${patient.id}:${parsedRelatedPersonId}`,
+        patientId: parsedPatientId,
+        result: "success",
+        metadata: parsed,
+      },
+      timestamp,
+    );
+    return this.getPatientRelatedLink(parsedPatientId, parsedRelatedPersonId);
+  }
+
+  public unlinkRelatedPerson(
+    context: SessionContext,
+    patientId: string,
+    relatedPersonId: string,
+    reason: string,
+  ): void {
+    requireCapability(context, "patient.write");
+    const parsedPatientId = patientIdSchema.parse(patientId);
+    const parsedRelatedPersonId = z
+      .string()
+      .trim()
+      .min(1)
+      .parse(relatedPersonId);
+    const parsedReason = z.string().trim().min(3).max(500).parse(reason);
+    const patient = this.database.raw
+      .prepare("SELECT id FROM patients WHERE patient_id = ?")
+      .get(parsedPatientId) as { id: string } | undefined;
+    if (!patient)
+      throw new Error("ELITE_PATIENT_NOT_FOUND: patient does not exist");
+    const timestamp = this.now();
+    const result = this.database.raw
+      .prepare(
+        "UPDATE patient_related_persons SET ended_at = ? WHERE patient_id = ? AND related_person_id = ? AND ended_at IS NULL",
+      )
+      .run(timestamp, patient.id, parsedRelatedPersonId);
+    if (result.changes !== 1)
+      throw new Error(
+        "ELITE_PATIENT_LINK_NOT_FOUND: active related-person link does not exist",
+      );
+    writeAudit(
+      this.database,
+      context,
+      {
+        action: "patient.related-person.unlink",
+        entityType: "patient-related-person",
+        entityId: `${patient.id}:${parsedRelatedPersonId}`,
+        patientId: parsedPatientId,
+        result: "success",
+        metadata: { reason: parsedReason },
+      },
+      timestamp,
+    );
   }
 
   public searchPatients(
@@ -942,6 +1207,53 @@ export class PatientIdentityService {
     return this.mapRelatedPerson(row);
   }
 
+  private getPatientRelatedLink(
+    patientId: string,
+    relatedPersonId: string,
+  ): PatientRelatedPersonLinkSummary {
+    const row = this.database.raw
+      .prepare(
+        `SELECT p.patient_id, link.related_person_id, link.relationship_role, link.is_primary, link.consent_authority,
+                link.verified_at, link.verified_by_user_id, link.ended_at,
+                r.*
+         FROM patients p
+         JOIN patient_related_persons link ON link.patient_id = p.id
+         JOIN related_persons r ON r.id = link.related_person_id
+         WHERE p.patient_id = ? AND link.related_person_id = ? AND link.ended_at IS NULL`,
+      )
+      .get(patientId, relatedPersonId) as Record<string, unknown> | undefined;
+    if (!row)
+      throw new Error(
+        "ELITE_PATIENT_LINK_NOT_FOUND: active related-person link does not exist",
+      );
+    return this.mapPatientRelatedLink(row);
+  }
+
+  private mapPatientRelatedLink(
+    row: Record<string, unknown>,
+  ): PatientRelatedPersonLinkSummary {
+    const result: Record<string, unknown> = {
+      patientId: String(row["patient_id"]),
+      relatedPersonId: String(row["related_person_id"]),
+      relationshipRole: String(row["relationship_role"]),
+      isPrimary: Number(row["is_primary"]) === 1,
+      consentAuthority: row[
+        "consent_authority"
+      ] as RelatedPersonLinkInput["consentAuthority"],
+      verificationStatus: row["verified_at"] ? "verified" : "unverified",
+      relatedPerson: this.mapRelatedPerson(row),
+    };
+    for (const [key, column] of [
+      ["verifiedAt", "verified_at"],
+      ["verifiedByUserId", "verified_by_user_id"],
+      ["endedAt", "ended_at"],
+    ] as Array<[string, string]>) {
+      if (row[column] !== null && row[column] !== undefined)
+        result[key] = row[column];
+    }
+    return result as unknown as PatientRelatedPersonLinkSummary;
+  }
+
   private mapRelatedPerson(row: Record<string, unknown>): RelatedPersonSummary {
     const result: Record<string, unknown> = {
       id: String(row["id"]),
@@ -954,6 +1266,7 @@ export class PatientIdentityService {
       verificationStatus: row[
         "verification_status"
       ] as RelatedPersonSummary["verificationStatus"],
+      version: Number(row["version"] ?? 1),
       createdAt: String(row["created_at"]),
       updatedAt: String(row["updated_at"]),
     };

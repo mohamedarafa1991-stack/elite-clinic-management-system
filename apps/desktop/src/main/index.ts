@@ -267,6 +267,83 @@ function registerIpc(): void {
     },
   );
   ipcMain.handle(
+    "related-person:update",
+    (
+      _event,
+      token: string,
+      relatedPersonId: string,
+      input: unknown,
+      expectedVersion: number,
+    ) => {
+      return requirePatientService().updateRelatedPerson(
+        serviceContext(token),
+        relatedPersonId,
+        input as never,
+        expectedVersion,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:related-links",
+    (_event, token: string, patientId: string) => {
+      return requirePatientService().listPatientRelatedLinks(
+        serviceContext(token),
+        patientId,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:related-link",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      input: unknown,
+    ) => {
+      return requirePatientService().linkRelatedPerson(
+        serviceContext(token),
+        patientId,
+        relatedPersonId,
+        input as never,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:related-link-update",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      input: unknown,
+    ) => {
+      return requirePatientService().updatePatientRelatedLink(
+        serviceContext(token),
+        patientId,
+        relatedPersonId,
+        input as never,
+      );
+    },
+  );
+  ipcMain.handle(
+    "patient:related-link-unlink",
+    (
+      _event,
+      token: string,
+      patientId: string,
+      relatedPersonId: string,
+      reason: string,
+    ) => {
+      requirePatientService().unlinkRelatedPerson(
+        serviceContext(token),
+        patientId,
+        relatedPersonId,
+        reason,
+      );
+    },
+  );
+  ipcMain.handle(
     "patient:update",
     (
       _event,

@@ -483,3 +483,41 @@ select {
   color: #64748b;
   font-size: 12px;
 }
+
+.related-person-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.related-person-heading h4 {
+  margin: 0;
+}
+.related-person-editor {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #fff;
+}
+.related-person-editor .button.secondary,
+.related-person-heading .button.secondary,
+.patient-row .button.secondary,
+.profile-summary .button.secondary {
+  margin-top: 0;
+}
+.checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.checkbox-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+}

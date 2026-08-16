@@ -353,6 +353,14 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_identity_history_patient ON patient_identity_history(patient_id, occurred_at);
     `,
   },
+  {
+    version: 5,
+    name: "related-person-editing-version",
+    sql: `
+      ALTER TABLE related_persons ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+      CREATE INDEX IF NOT EXISTS idx_related_persons_version ON related_persons(id, version);
+    `,
+  },
 ];
 
 function now(): string {
