@@ -12,6 +12,7 @@
     "build:packages": "pnpm --filter @elite/contracts build && pnpm --filter @elite/database build && pnpm --filter @elite/auth build",
     "typecheck": "pnpm build:packages && pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:coverage": "pnpm --filter @elite/auth test:coverage",
     "lint": "pnpm -r lint",
     "format:check": "pnpm exec prettier --check .",
     "format": "pnpm exec prettier --write .",
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
     "@types/node": "^22.13.0",
+    "@vitest/coverage-v8": "3.2.7",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
