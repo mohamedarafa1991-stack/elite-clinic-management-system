@@ -213,3 +213,122 @@ describe("ElectronExportSigner", () => {
     }
   });
 });
+
+describe("ElectronExportSigner hardening", () => {
+  it("rejects recovery metadata tampering before restoring a key", () => {
+    const sourceDirectory = mkdtempSync(
+      join(tmpdir(), "elite-recovery-aad-source-"),
+    );
+    const targetDirectory = mkdtempSync(
+      join(tmpdir(), "elite-recovery-aad-target-"),
+    );
+    const storage = new SyntheticSafeStorage();
+    try {
+      const source = new ElectronExportSigner(
+        storage,
+        join(sourceDirectory, "signer.json"),
+      );
+      const bundle = source.exportRecoveryBundle(
+        "synthetic recovery passphrase",
+      );
+      const target = new ElectronExportSigner(
+        storage,
+        join(targetDirectory, "signer.json"),
+      );
+      expect(() =>
+        target.restoreRecoveryBundle(
+          { ...bundle, keyVersion: bundle.keyVersion + 1 },
+          "synthetic recovery passphrase",
+        ),
+      ).toThrow("ELITE_EXPORT_SIGNING_KEY_RECOVERY_INVALID");
+      expect(() =>
+        target.restoreRecoveryBundle(
+          {
+            ...bundle,
+            kdfParameters: {
+              ...bundle.kdfParameters,
+              cost: 32_768,
+            },
+          },
+          "synthetic recovery passphrase",
+        ),
+      ).toThrow("ELITE_EXPORT_SIGNING_KEY_RECOVERY_INVALID");
+    } finally {
+      rmSync(sourceDirectory, { recursive: true, force: true });
+      rmSync(targetDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when persisted public metadata is inconsistent", () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "elite-signer-store-integrity-"),
+    );
+    const storage = new SyntheticSafeStorage();
+    try {
+      const path = join(directory, "signer.json");
+      const signer = new ElectronExportSigner(storage, path);
+      signer.getActiveKeyMetadata();
+      const store = JSON.parse(readFileSync(path, "utf8")) as {
+        keys: Array<Record<string, unknown>>;
+      };
+      store.keys[0]!["publicKeyFingerprint"] = "0".repeat(64);
+      writeFileSync(path, `${JSON.stringify(store)}\n`, "utf8");
+      const reloaded = new ElectronExportSigner(storage, path);
+      expect(() => reloaded.listKeyMetadata()).toThrow(
+        "ELITE_EXPORT_SIGNING_KEY_INVALID",
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a stored private key that does not match its public metadata", () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "elite-signer-private-mismatch-"),
+    );
+    const storage = new SyntheticSafeStorage();
+    try {
+      const path = join(directory, "signer.json");
+      const signer = new ElectronExportSigner(storage, path);
+      signer.getActiveKeyMetadata();
+      const store = JSON.parse(readFileSync(path, "utf8")) as {
+        keys: Array<Record<string, unknown>>;
+      };
+      store.keys[0]!["privateKeyCiphertextBase64"] = storage
+        .encryptString("not a private key")
+        .toString("base64");
+      writeFileSync(path, `${JSON.stringify(store)}\n`, "utf8");
+      const reloaded = new ElectronExportSigner(storage, path);
+      expect(() => reloaded.sign(Buffer.from("payload", "utf8"))).toThrow(
+        "ELITE_EXPORT_SIGNING_KEY_PRIVATE_KEY_INVALID",
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("requires an explicit workflow before a retired key can be reactivated", () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "elite-signer-retired-restore-"),
+    );
+    const storage = new SyntheticSafeStorage();
+    try {
+      const path = join(directory, "signer.json");
+      const signer = new ElectronExportSigner(storage, path);
+      const originalBundle = signer.exportRecoveryBundle(
+        "synthetic recovery passphrase",
+      );
+      signer.rotate();
+      expect(() =>
+        signer.restoreRecoveryBundle(
+          originalBundle,
+          "synthetic recovery passphrase",
+        ),
+      ).toThrow(
+        "ELITE_EXPORT_SIGNING_KEY_RECOVERY_REACTIVATION_REQUIRES_APPROVAL",
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});

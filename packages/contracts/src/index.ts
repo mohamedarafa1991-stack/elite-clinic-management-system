@@ -670,18 +670,37 @@ export type ExportSigningKeyPassphrase = z.infer<
   typeof exportSigningKeyPassphraseSchema
 >;
 
+const exportSigningKeyRecoveryKdfSchema = z.object({
+  cost: z
+    .number()
+    .int()
+    .min(32_768)
+    .max(262_144)
+    .refine((value) => (value & (value - 1)) === 0, {
+      message: "scrypt cost must be a power of two",
+    }),
+  blockSize: z.number().int().min(8).max(32),
+  parallelization: z.number().int().min(1).max(16),
+  maxMemoryBytes: z
+    .number()
+    .int()
+    .min(64 * 1024 * 1024)
+    .max(512 * 1024 * 1024),
+});
+
 export const exportSigningKeyRecoveryBundleSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   keyId: opaqueIdSchema,
   keyVersion: z.number().int().positive(),
   algorithm: z.literal("ed25519"),
-  publicKeyPem: z.string().min(64),
+  publicKeyPem: z.string().min(64).max(4096),
   publicKeyFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   kdf: z.literal("scrypt"),
-  saltBase64: z.string().min(16),
-  ivBase64: z.string().min(16),
-  authTagBase64: z.string().min(16),
-  ciphertextBase64: z.string().min(16),
+  kdfParameters: exportSigningKeyRecoveryKdfSchema,
+  saltBase64: z.string().min(16).max(128),
+  ivBase64: z.string().min(16).max(64),
+  authTagBase64: z.string().min(16).max(64),
+  ciphertextBase64: z.string().min(16).max(8192),
   createdAt: isoDateTimeSchema,
 });
 export type ExportSigningKeyRecoveryBundle = z.infer<

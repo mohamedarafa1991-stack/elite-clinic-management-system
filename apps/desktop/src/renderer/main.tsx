@@ -2606,6 +2606,7 @@ function ClinicalWorkflowWorkspace({
           : "Unable to export signing-key recovery bundle",
       );
     } finally {
+      setRecoveryPassphrase("");
       setIsBusy(false);
     }
   };
@@ -2622,6 +2623,7 @@ function ClinicalWorkflowWorkspace({
         recoveryPassphrase,
       );
       setSigningKeys(await window.elite.export.listSigningKeys(token));
+      setRecoveryBundleJson("");
       setError(null);
     } catch (reason: unknown) {
       setError(
@@ -2630,6 +2632,7 @@ function ClinicalWorkflowWorkspace({
           : "Unable to restore signing-key recovery bundle",
       );
     } finally {
+      setRecoveryPassphrase("");
       setIsBusy(false);
     }
   };
