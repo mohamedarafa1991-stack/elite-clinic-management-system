@@ -41,6 +41,16 @@ describe("canonical JSON v1", () => {
     }
   });
 
+  it("distinguishes explicit nulls from sparse arrays", () => {
+    expect(canonicalJson([null, "value"])).toBe('[null,"value"]');
+
+    const sparse: string[] = [];
+    sparse[1] = "value";
+    expect(() => canonicalJson(sparse)).toThrow(
+      "ELITE_CANONICAL_JSON_SPARSE_ARRAY",
+    );
+  });
+
   it("omits undefined object properties but rejects undefined array values", () => {
     expect(canonicalJson({ keep: "value", omit: undefined })).toBe(
       '{"keep":"value"}',
@@ -50,12 +60,32 @@ describe("canonical JSON v1", () => {
     );
   });
 
+  it("preserves exact safe-integer boundaries", () => {
+    expect(canonicalJson(Number.MAX_SAFE_INTEGER)).toBe("9007199254740991");
+    expect(canonicalJson(Number.MIN_SAFE_INTEGER)).toBe("-9007199254740991");
+
+    const precisionLost = JSON.parse("9007199254740993") as number;
+    expect(precisionLost).toBe(9007199254740992);
+    expect(() => canonicalJson(precisionLost)).toThrow(
+      "ELITE_CANONICAL_JSON_NUMBER",
+    );
+  });
+
   it("rejects non-finite, fractional, and unsafe numeric values", () => {
     expect(() => canonicalJson(Number.NaN)).toThrow(
       "ELITE_CANONICAL_JSON_NUMBER",
     );
+    expect(() => canonicalJson(Number.POSITIVE_INFINITY)).toThrow(
+      "ELITE_CANONICAL_JSON_NUMBER",
+    );
     expect(() => canonicalJson(1.5)).toThrow("ELITE_CANONICAL_JSON_NUMBER");
+    expect(() => canonicalJson(0.1 + 0.2)).toThrow(
+      "ELITE_CANONICAL_JSON_NUMBER",
+    );
     expect(() => canonicalJson(Number.MAX_SAFE_INTEGER + 1)).toThrow(
+      "ELITE_CANONICAL_JSON_NUMBER",
+    );
+    expect(() => canonicalJson(JSON.parse("9007199254740993"))).toThrow(
       "ELITE_CANONICAL_JSON_NUMBER",
     );
   });

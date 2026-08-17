@@ -25,6 +25,13 @@ export function canonicalJson(value: unknown): string {
     throw new Error("ELITE_CANONICAL_JSON_UNDEFINED: undefined is not a value");
   }
   if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new Error(
+          "ELITE_CANONICAL_JSON_SPARSE_ARRAY: array holes are not supported",
+        );
+      }
+    }
     return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
   }
   if (typeof value === "object") {

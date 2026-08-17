@@ -60,7 +60,10 @@ object CanonicalJson {
         append('[')
         for (index in 0 until json.length()) {
             if (index > 0) append(',')
-            append(encode(json.opt(index)))
+            val item = json.opt(index) ?: throw IllegalArgumentException(
+                "ELITE_CANONICAL_JSON_SPARSE_ARRAY: array holes are not supported",
+            )
+            append(encode(item))
         }
         append(']')
     }

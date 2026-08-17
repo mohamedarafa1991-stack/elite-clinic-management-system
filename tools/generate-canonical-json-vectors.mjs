@@ -52,6 +52,17 @@ const vectors = [
     },
   },
   {
+    id: "numeric-safe-integer-boundaries",
+    purpose:
+      "Keep exact integers at the JavaScript safe-integer boundary consistent with Kotlin Long parsing.",
+    input: {
+      maxSafeInteger: 9007199254740991,
+      minSafeInteger: -9007199254740991,
+      zero: 0,
+      negativeOne: -1,
+    },
+  },
+  {
     id: "appointment-payload",
     purpose: "Hash a minimum-necessary appointment synchronization payload.",
     input: {

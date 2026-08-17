@@ -44,6 +44,18 @@
       "sha256": "2b6527f19c0dca82d4c11250fe6e50b36184ee832d99d26cdc032864545cfa21"
     },
     {
+      "id": "numeric-safe-integer-boundaries",
+      "purpose": "Keep exact integers at the JavaScript safe-integer boundary consistent with Kotlin Long parsing.",
+      "input": {
+        "maxSafeInteger": 9007199254740991,
+        "minSafeInteger": -9007199254740991,
+        "zero": 0,
+        "negativeOne": -1
+      },
+      "canonical": "{\"maxSafeInteger\":9007199254740991,\"minSafeInteger\":-9007199254740991,\"negativeOne\":-1,\"zero\":0}",
+      "sha256": "e6a773410009b4e6499d1a18ced5191407016157f9b5873ea6264da558c1eb30"
+    },
+    {
       "id": "appointment-payload",
       "purpose": "Hash a minimum-necessary appointment synchronization payload.",
       "input": {

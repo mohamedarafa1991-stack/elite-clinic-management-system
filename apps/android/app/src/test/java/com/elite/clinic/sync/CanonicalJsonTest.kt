@@ -30,12 +30,33 @@ class CanonicalJsonTest {
     }
 
     @Test
-    fun rejectsFractionalAndUnsafeNumbers() {
+    fun distinguishesExplicitNullFromMissingArrayValue() {
+        assertEquals(
+            "[null,\"value\"]",
+            CanonicalJson.encode(JSONObject("{\"items\":[null,\"value\"]}").getJSONArray("items")),
+        )
+    }
+
+    @Test
+    fun preservesSafeIntegerBoundaries() {
+        assertEquals(
+            "{\"max\":9007199254740991,\"min\":-9007199254740991}",
+            CanonicalJson.encode(
+                JSONObject("{\"min\":-9007199254740991,\"max\":9007199254740991}"),
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsFractionalAndPrecisionUnsafeNumbers() {
         assertThrowsCanonicalNumber {
             CanonicalJson.encode(JSONObject("{\"value\":1.5}"))
         }
         assertThrowsCanonicalNumber {
             CanonicalJson.encode(JSONObject("{\"value\":9007199254740992}"))
+        }
+        assertThrowsCanonicalNumber {
+            CanonicalJson.encode(JSONObject("{\"value\":9007199254740993}"))
         }
     }
 
