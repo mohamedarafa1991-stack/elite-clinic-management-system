@@ -1658,6 +1658,10 @@ const step22Base64TextSchema = z
   .max(8192);
 const step22Sha256FingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const step22NonceSchema = z.string().trim().min(16).max(128);
+const step22NoncePrefixSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9+/]{6}==$|^[A-Za-z0-9+/]{7}=$|^[A-Za-z0-9+/]{8}$/)
+  .length(8);
 const step22PositiveIntSchema = z.number().int().positive();
 const step22HubSignatureSchema = z.object({
   signatureAlgorithm: z.literal("ed25519"),
@@ -1811,6 +1815,7 @@ export const sessionGrantDescriptorSchema = z.object({
   validUntil: isoDateTimeSchema,
   transcriptHash: step22Sha256FingerprintSchema,
   keyConfirmationMacBase64: step22Base64TextSchema,
+  noncePrefixBase64: step22NoncePrefixSchema,
 });
 export type SessionGrantDescriptor = z.infer<
   typeof sessionGrantDescriptorSchema

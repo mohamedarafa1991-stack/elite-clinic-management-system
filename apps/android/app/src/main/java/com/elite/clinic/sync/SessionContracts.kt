@@ -132,6 +132,7 @@ data class SessionGrantDescriptor(
     val validUntil: String,
     val transcriptHash: String,
     val keyConfirmationMacBase64: String,
+    val noncePrefixBase64: String,
 )
 
 data class SessionGrant(

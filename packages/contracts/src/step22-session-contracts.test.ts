@@ -126,6 +126,7 @@ describe("Step 22 enrollment and session contracts", () => {
         validUntil: "2026-08-17T09:05:00.000Z",
         transcriptHash: fingerprint,
         keyConfirmationMacBase64: base64,
+        noncePrefixBase64: "AQIDBA==",
         signatureAlgorithm: "ed25519",
         signatureBase64: base64,
         signerKeyId: "hub-signing-key",

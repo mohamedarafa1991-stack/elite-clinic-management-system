@@ -8,6 +8,7 @@ import {
   PatientIdentityService,
   SynchronizationService,
   AndroidEnrollmentService,
+  LanSessionService,
   LanSyncFrameRouter,
   exportSigningData,
   hashExportPayload,
@@ -51,6 +52,7 @@ let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
 let synchronizationService: SynchronizationService | undefined;
 let androidEnrollmentService: AndroidEnrollmentService | undefined;
+let lanSessionService: LanSessionService | undefined;
 let lanSyncServer: LanSyncHttpServer | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
@@ -94,6 +96,7 @@ function initializeServices(): void {
       database,
       exportSigner,
     );
+    lanSessionService = new LanSessionService(database, exportSigner);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -1396,6 +1399,7 @@ app.whenReady().then(async () => {
   if (synchronizationService) {
     lanSyncServer = new LanSyncHttpServer(
       new LanSyncFrameRouter(synchronizationService),
+      lanSessionService,
     );
     void lanSyncServer.start().catch(() => {
       lanSyncServer = undefined;
@@ -1433,5 +1437,6 @@ app.on("before-quit", () => {
   exportGovernanceService = undefined;
   synchronizationService = undefined;
   androidEnrollmentService = undefined;
+  lanSessionService = undefined;
   exportSigner = undefined;
 });

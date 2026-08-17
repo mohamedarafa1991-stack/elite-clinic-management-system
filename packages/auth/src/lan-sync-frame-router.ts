@@ -2,10 +2,12 @@ import {
   canonicalJson,
   syncDeltaRequestSchema,
   syncOutboxInputSchema,
+  type SessionGrant,
   type SyncOutboxAcknowledgment,
 } from "@elite/contracts";
 import type { SessionContext } from "./index.js";
 import type { SynchronizationService } from "./synchronization-service.js";
+import { verifySessionGrant } from "./session-protocol.js";
 import {
   SessionFrameChannel,
   type SessionFrameChannelOptions,
@@ -64,6 +66,14 @@ export interface LanSyncFrameRouterOptions {
   context: SessionContext;
 }
 
+export interface SignedLanSessionRegistration extends LanSyncFrameRouterOptions {
+  grant: SessionGrant;
+  trustedHubPublicKeyPem: string;
+  expectedOrganizationId: string;
+  expectedRequestNonce: string;
+  now: string;
+}
+
 export class LanSyncFrameRouter {
   private readonly sessions = new Map<string, RegisteredLanSession>();
 
@@ -76,6 +86,29 @@ export class LanSyncFrameRouter {
       context: options.context,
       channel: new SessionFrameChannel(options.sessionChannel),
     });
+  }
+
+  public registerSignedSession(options: SignedLanSessionRegistration): void {
+    const grant = verifySessionGrant(
+      options.grant,
+      options.trustedHubPublicKeyPem,
+      options.expectedOrganizationId,
+      options.context.deviceId,
+      options.grant.sessionId,
+      options.expectedRequestNonce,
+      options.now,
+    );
+    if (grant.userId !== options.context.userId) {
+      throw new Error(
+        "ELITE_LAN_SESSION_USER_MISMATCH: grant user is not bound to the context",
+      );
+    }
+    if (grant.sessionId !== options.sessionChannel.sessionId) {
+      throw new Error(
+        "ELITE_LAN_SESSION_ID_MISMATCH: grant is not bound to the channel",
+      );
+    }
+    this.registerSession(options);
   }
 
   public removeSession(sessionId: string): void {

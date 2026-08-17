@@ -4,8 +4,8 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import type { SessionFrame } from "@elite/contracts";
-import { LanSyncFrameRouter } from "@elite/auth";
+import type { SessionFrame, SessionInitRequest } from "@elite/contracts";
+import { LanSessionService, LanSyncFrameRouter } from "@elite/auth";
 
 const MAX_FRAME_BYTES = 1_048_576;
 
@@ -14,6 +14,7 @@ export class LanSyncHttpServer {
 
   public constructor(
     private readonly router: LanSyncFrameRouter,
+    private readonly sessionService?: LanSessionService,
     private readonly bindAddress = process.env["ELITE_SYNC_BIND_ADDRESS"] ??
       "0.0.0.0",
     private readonly port = Number(process.env["ELITE_SYNC_PORT"] ?? 8787),
@@ -53,29 +54,55 @@ export class LanSyncHttpServer {
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
-    if (request.method !== "POST" || request.url !== "/sync/lan") {
+    if (request.method !== "POST") {
       response.writeHead(404).end();
       return;
     }
     try {
       const body = await readBody(request);
+      if (request.url === "/sync/session-init") {
+        if (!this.sessionService) {
+          response.writeHead(503).end();
+          return;
+        }
+        const sessionInit = JSON.parse(body) as SessionInitRequest;
+        const established = this.sessionService.establishAndRegister(
+          this.router,
+          sessionInit,
+        );
+        writeJson(response, 200, established.grant);
+        return;
+      }
+      if (request.url !== "/sync/lan") {
+        response.writeHead(404).end();
+        return;
+      }
       const frame = JSON.parse(body) as SessionFrame;
       const result = this.router.route(frame);
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(result));
+      writeJson(response, 200, result);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "LAN_SYNC_REQUEST_FAILED";
       const status =
         message.includes("SESSION_NOT_FOUND") ||
         message.includes("AUTHENTICATION") ||
-        message.includes("SESSION_")
+        message.includes("SESSION_") ||
+        message.includes("SIGNATURE") ||
+        message.includes("ENROLLMENT")
           ? 401
           : 400;
-      response.writeHead(status, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ error: message }));
+      writeJson(response, status, { error: message });
     }
   }
+}
+
+function writeJson(
+  response: ServerResponse,
+  status: number,
+  value: unknown,
+): void {
+  response.writeHead(status, { "Content-Type": "application/json" });
+  response.end(JSON.stringify(value));
 }
 
 function readBody(request: IncomingMessage): Promise<string> {
