@@ -829,3 +829,5 @@ export {
   exportReceiptSigningData,
   verifyExportReceipt,
 } from "./export-governance-service.js";
+
+export * from "./session-protocol.js";

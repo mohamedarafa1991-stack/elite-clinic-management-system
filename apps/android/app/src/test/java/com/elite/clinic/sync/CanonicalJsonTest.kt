@@ -48,6 +48,17 @@ class CanonicalJsonTest {
     }
 
     @Test
+    fun hashesUnsignedDescriptorDeterministically() {
+        val descriptor = JSONObject(
+            "{\"b\":2,\"a\":1,\"responseHash\":\"${"a".repeat(64)}\",\"signatureBase64\":\"${"A".repeat(32)}\"}",
+        )
+        assertEquals(
+            "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777",
+            SessionProtocolCrypto.hashWithoutField(descriptor, "responseHash"),
+        )
+    }
+
+    @Test
     fun rejectsFractionalAndPrecisionUnsafeNumbers() {
         assertThrowsCanonicalNumber {
             CanonicalJson.encode(JSONObject("{\"value\":1.5}"))

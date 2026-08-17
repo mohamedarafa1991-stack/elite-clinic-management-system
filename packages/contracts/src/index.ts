@@ -1650,3 +1650,193 @@ export {
   type CanonicalJsonPrimitive,
   type CanonicalJsonValue,
 } from "./canonical-json.js";
+
+const step22Base64TextSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/)
+  .min(16)
+  .max(8192);
+const step22Sha256FingerprintSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const step22NonceSchema = z.string().trim().min(16).max(128);
+const step22PositiveIntSchema = z.number().int().positive();
+const step22HubSignatureSchema = z.object({
+  signatureAlgorithm: z.literal("ed25519"),
+  signatureBase64: step22Base64TextSchema,
+  signerKeyId: opaqueIdSchema,
+  signerKeyVersion: step22PositiveIntSchema,
+});
+
+export const enrollmentChallengeDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("enrollment-challenge"),
+  challengeId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  intendedUserId: opaqueIdSchema,
+  intendedRole: userRoleSchema,
+  requestedPolicyVersion: step22PositiveIntSchema,
+  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  issuedAt: isoDateTimeSchema,
+  expiresAt: isoDateTimeSchema,
+  responseNonce: step22NonceSchema,
+});
+export type EnrollmentChallengeDescriptor = z.infer<
+  typeof enrollmentChallengeDescriptorSchema
+>;
+
+export const enrollmentChallengeSchema = enrollmentChallengeDescriptorSchema
+  .extend({
+    responseHash: step22Sha256FingerprintSchema,
+  })
+  .extend(step22HubSignatureSchema.shape);
+export type EnrollmentChallenge = z.infer<typeof enrollmentChallengeSchema>;
+
+export const enrollmentDeviceRequestDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("enrollment-request"),
+  requestId: opaqueIdSchema,
+  challengeId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  deviceName: z.string().trim().min(1).max(120),
+  devicePublicKeySpkiBase64: step22Base64TextSchema,
+  devicePublicKeyFingerprint: step22Sha256FingerprintSchema,
+  appVersion: z.string().trim().min(1).max(64),
+  apiLevel: z.number().int().min(29).max(100).optional(),
+  requestedAt: isoDateTimeSchema,
+  requestNonce: step22NonceSchema,
+});
+export type EnrollmentDeviceRequestDescriptor = z.infer<
+  typeof enrollmentDeviceRequestDescriptorSchema
+>;
+
+export const enrollmentDeviceRequestSchema =
+  enrollmentDeviceRequestDescriptorSchema.extend({
+    deviceSignatureAlgorithm: z.literal("sha256with-ecdsa"),
+    deviceSignatureBase64: step22Base64TextSchema,
+  });
+export type EnrollmentDeviceRequest = z.infer<
+  typeof enrollmentDeviceRequestSchema
+>;
+
+export const enrollmentResponseDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("enrollment-response"),
+  enrollmentId: opaqueIdSchema,
+  challengeId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  role: userRoleSchema,
+  deviceName: z.string().trim().min(1).max(120),
+  devicePublicKeyFingerprint: step22Sha256FingerprintSchema,
+  policyVersion: step22PositiveIntSchema,
+  allowedScopes: z.array(syncScopeSchema).min(1).max(5),
+  patientScope: z.record(z.string(), z.unknown()).optional(),
+  responseNonce: step22NonceSchema,
+  issuedAt: isoDateTimeSchema,
+  expiresAt: isoDateTimeSchema,
+  offlineAccessUntil: isoDateTimeSchema,
+  hubTrustAnchorId: opaqueIdSchema,
+  hubTrustAnchorVersion: step22PositiveIntSchema,
+  responseHash: step22Sha256FingerprintSchema,
+});
+export type EnrollmentResponseDescriptor = z.infer<
+  typeof enrollmentResponseDescriptorSchema
+>;
+
+export const enrollmentResponseSchema =
+  enrollmentResponseDescriptorSchema.extend(step22HubSignatureSchema.shape);
+export type EnrollmentResponse = z.infer<typeof enrollmentResponseSchema>;
+
+export const enrollmentAcknowledgmentDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("enrollment-acknowledgment"),
+  enrollmentId: opaqueIdSchema,
+  responseHash: step22Sha256FingerprintSchema,
+  deviceId: opaqueIdSchema,
+  acceptedAt: isoDateTimeSchema,
+  acknowledgmentNonce: step22NonceSchema,
+});
+export type EnrollmentAcknowledgmentDescriptor = z.infer<
+  typeof enrollmentAcknowledgmentDescriptorSchema
+>;
+
+export const enrollmentAcknowledgmentSchema =
+  enrollmentAcknowledgmentDescriptorSchema.extend({
+    deviceSignatureAlgorithm: z.literal("sha256with-ecdsa"),
+    deviceSignatureBase64: step22Base64TextSchema,
+  });
+export type EnrollmentAcknowledgment = z.infer<
+  typeof enrollmentAcknowledgmentSchema
+>;
+
+export const sessionInitDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("session-init"),
+  organizationId: opaqueIdSchema,
+  enrollmentId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  sessionId: opaqueIdSchema,
+  requestNonce: step22NonceSchema,
+  clientCounter: z.number().int().nonnegative(),
+  deviceIdentityKeyFingerprint: step22Sha256FingerprintSchema,
+  deviceEphemeralPublicKeySpkiBase64: step22Base64TextSchema,
+  deviceEphemeralKeyFingerprint: step22Sha256FingerprintSchema,
+  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestedAt: isoDateTimeSchema,
+});
+export type SessionInitDescriptor = z.infer<typeof sessionInitDescriptorSchema>;
+
+export const sessionInitRequestSchema = sessionInitDescriptorSchema.extend({
+  deviceSignatureAlgorithm: z.literal("sha256with-ecdsa"),
+  deviceSignatureBase64: step22Base64TextSchema,
+});
+export type SessionInitRequest = z.infer<typeof sessionInitRequestSchema>;
+
+export const sessionGrantDescriptorSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.literal("session-grant"),
+  organizationId: opaqueIdSchema,
+  enrollmentId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  sessionId: opaqueIdSchema,
+  requestNonce: step22NonceSchema,
+  clientCounter: z.number().int().nonnegative(),
+  serverEphemeralPublicKeySpkiBase64: step22Base64TextSchema,
+  serverEphemeralKeyFingerprint: step22Sha256FingerprintSchema,
+  grantedScopes: z.array(syncScopeSchema).min(1).max(5),
+  issuedAt: isoDateTimeSchema,
+  validUntil: isoDateTimeSchema,
+  transcriptHash: step22Sha256FingerprintSchema,
+  keyConfirmationMacBase64: step22Base64TextSchema,
+});
+export type SessionGrantDescriptor = z.infer<
+  typeof sessionGrantDescriptorSchema
+>;
+
+export const sessionGrantSchema = sessionGrantDescriptorSchema.extend(
+  step22HubSignatureSchema.shape,
+);
+export type SessionGrant = z.infer<typeof sessionGrantSchema>;
+
+export const sessionFrameSchema = z.object({
+  protocolVersion: z.literal(1),
+  messageType: z.enum([
+    "sync-request",
+    "sync-response",
+    "outbox-request",
+    "outbox-response",
+  ]),
+  sessionId: opaqueIdSchema,
+  direction: z.enum(["client-to-hub", "hub-to-client"]),
+  counter: z.number().int().nonnegative(),
+  nonceBase64: step22Base64TextSchema,
+  aadHash: step22Sha256FingerprintSchema,
+  ciphertextBase64: step22Base64TextSchema,
+  tagBase64: step22Base64TextSchema,
+  deviceSignatureAlgorithm: z.literal("sha256with-ecdsa").optional(),
+  deviceSignatureBase64: step22Base64TextSchema.optional(),
+});
+export type SessionFrame = z.infer<typeof sessionFrameSchema>;
