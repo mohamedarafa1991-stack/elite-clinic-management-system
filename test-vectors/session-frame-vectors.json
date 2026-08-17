@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "vectors": [
+    {
+      "name": "sync-request-counter-0",
+      "sessionId": "session-frame-01",
+      "messageType": "sync-request",
+      "direction": "client-to-hub",
+      "counter": 0,
+      "keyHex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "noncePrefixHex": "01020304",
+      "plaintextBase64": "eyJzY29wZSI6ImFwcG9pbnRtZW50cyJ9",
+      "frame": {
+        "protocolVersion": 1,
+        "messageType": "sync-request",
+        "sessionId": "session-frame-01",
+        "direction": "client-to-hub",
+        "counter": 0,
+        "nonceBase64": "AQIDBAAAAAAAAAAA",
+        "aadHash": "eb3ffd8691cb149d42a1da4620e2eeecefd57568ccee53967f0754c74178129a",
+        "ciphertextBase64": "N4/sM6yd0PpyKAoIl/Xj1Z8/8cwO9wg0",
+        "tagBase64": "uhq8nyVd5fha1dXSQD2c1g=="
+      }
+    }
+  ]
+}

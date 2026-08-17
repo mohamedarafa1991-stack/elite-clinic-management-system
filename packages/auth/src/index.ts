@@ -833,3 +833,4 @@ export {
 export * from "./session-protocol.js";
 export * from "./android-enrollment-service.js";
 export * from "./session-key-derivation.js";
+export * from "./session-frame-codec.js";

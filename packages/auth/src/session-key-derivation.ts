@@ -2,17 +2,21 @@ import {
   createPublicKey,
   diffieHellman,
   createHmac,
+  timingSafeEqual,
   type KeyObject,
 } from "node:crypto";
+import { canonicalJson } from "@elite/contracts";
 
 const HASH_ALGORITHM = "sha256";
 const HASH_LENGTH = 32;
 const SESSION_INFO = "elite-clinic/session-key/v1";
+const KEY_CONFIRMATION_INFO = "key-confirmation";
 
 export interface DerivedSessionKeys {
   rootKey: Buffer;
   clientToHubKey: Buffer;
   hubToClientKey: Buffer;
+  keyConfirmationKey: Buffer;
 }
 
 export function deriveEcdhSharedSecret(
@@ -51,7 +55,41 @@ export function deriveSessionKeys(
       Buffer.from("hub-to-client", "utf8"),
       HASH_LENGTH,
     ),
+    keyConfirmationKey: hkdfSha256(
+      rootKey,
+      Buffer.alloc(0),
+      Buffer.from(KEY_CONFIRMATION_INFO, "utf8"),
+      HASH_LENGTH,
+    ),
   };
+}
+
+export function keyConfirmationMac(
+  key: Uint8Array,
+  sessionId: string,
+  transcriptHashHex: string,
+  role: "client" | "hub",
+): Buffer {
+  const confirmationDescriptor = canonicalJson({
+    protocolVersion: 1,
+    messageType: "session-key-confirmation",
+    sessionId,
+    transcriptHash: transcriptHashHex,
+    role,
+  });
+  return createHmac(HASH_ALGORITHM, key)
+    .update(confirmationDescriptor, "utf8")
+    .digest();
+}
+
+export function verifyKeyConfirmation(
+  expected: Uint8Array,
+  actual: Uint8Array,
+): boolean {
+  return (
+    expected.length === actual.length &&
+    timingSafeEqual(Buffer.from(expected), Buffer.from(actual))
+  );
 }
 
 export function hkdfSha256(

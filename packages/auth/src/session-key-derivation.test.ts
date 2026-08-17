@@ -4,6 +4,8 @@ import {
   deriveEcdhSharedSecret,
   deriveSessionKeys,
   hkdfSha256,
+  keyConfirmationMac,
+  verifyKeyConfirmation,
 } from "./session-key-derivation.js";
 
 function hex(value: Uint8Array): string {
@@ -47,6 +49,49 @@ describe("Step 22 ECDH and HKDF session derivation", () => {
     expect(keys.clientToHubKey).toHaveLength(32);
     expect(keys.hubToClientKey).toHaveLength(32);
     expect(hex(keys.clientToHubKey)).not.toBe(hex(keys.hubToClientKey));
+  });
+
+  it("binds key confirmation to transcript, session, and role", () => {
+    const keys = deriveSessionKeys(Buffer.alloc(32, 3), Buffer.alloc(32, 7));
+    const mac = keyConfirmationMac(
+      keys.keyConfirmationKey,
+      "session-01",
+      "a".repeat(64),
+      "client",
+    );
+    expect(
+      verifyKeyConfirmation(
+        mac,
+        keyConfirmationMac(
+          keys.keyConfirmationKey,
+          "session-01",
+          "a".repeat(64),
+          "client",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      verifyKeyConfirmation(
+        mac,
+        keyConfirmationMac(
+          keys.keyConfirmationKey,
+          "session-01",
+          "b".repeat(64),
+          "client",
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      verifyKeyConfirmation(
+        mac,
+        keyConfirmationMac(
+          keys.keyConfirmationKey,
+          "session-01",
+          "a".repeat(64),
+          "hub",
+        ),
+      ),
+    ).toBe(false);
   });
 
   it("rejects HKDF output lengths above the RFC limit", () => {

@@ -1,13 +1,18 @@
 package com.elite.clinic.sync
 
 import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import androidx.work.Constraints
-import androidx.work.BackoffPolicy
+import androidx.work.workDataOf
+import com.elite.clinic.EliteApplication
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(
@@ -15,21 +20,76 @@ class SyncWorker(
     workerParams: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
-        // The Hub protocol, device credential, cursor checkpoint, outbox drain,
-        // and conflict queue are implemented after encrypted storage setup.
-        return Result.success()
+        val coordinator = (applicationContext as EliteApplication).secureSyncCoordinator
+            ?: return Result.success()
+        return try {
+            val result = coordinator.runOnce()
+            if (result.retry) {
+                Result.retry()
+            } else {
+                Result.success(
+                    workDataOf(
+                        "submitted" to result.submitted,
+                        "acknowledged" to result.acknowledged,
+                        "conflicts" to result.conflicts,
+                        "rejected" to result.rejected,
+                    ),
+                )
+            }
+        } catch (_: SecurityException) {
+            Result.failure(workDataOf("reason" to "SECURE_SESSION_REJECTED"))
+        } catch (_: Exception) {
+            Result.retry()
+        }
     }
 
     companion object {
-        fun enqueue(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+        private const val PERIODIC_WORK_NAME = "elite-secure-sync-periodic"
+        private const val IMMEDIATE_WORK_NAME = "elite-secure-sync-immediate"
+        private const val PERIODIC_INTERVAL_HOURS = 3L
+
+        private fun constraints(): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        fun enqueuePeriodic(context: Context) {
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(
+                PERIODIC_INTERVAL_HOURS,
+                TimeUnit.HOURS,
+            )
+                .setConstraints(constraints())
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS,
+                )
                 .build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request,
+            )
+        }
+
+        fun enqueueNow(context: Context) {
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
-                .setConstraints(constraints)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .setConstraints(constraints())
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS,
+                )
                 .build()
-            WorkManager.getInstance(context).enqueue(request)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                IMMEDIATE_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request,
+            )
+        }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(IMMEDIATE_WORK_NAME)
         }
     }
 }

@@ -61,6 +61,13 @@ interface LocalFoundationDao {
 
     @Query("SELECT * FROM local_outbox WHERE state = 'pending' ORDER BY occurredAt LIMIT :limit")
     suspend fun pendingEvents(limit: Int): List<LocalOutboxEvent>
+
+    @Query("UPDATE local_outbox SET state = :state WHERE id = :id AND state = :expectedState")
+    suspend fun transitionEventState(
+        id: String,
+        expectedState: String,
+        state: String,
+    ): Int
 }
 
 @Database(
