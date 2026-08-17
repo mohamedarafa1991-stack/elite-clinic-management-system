@@ -3,8 +3,10 @@ package com.elite.clinic.security
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -35,19 +37,61 @@ class DeviceKeyStore(private val context: Context) {
         return generator.generateKey()
     }
 
-    fun encrypt(value: String): EncryptedValue {
+    fun encrypt(value: String): EncryptedValue = encryptBytes(
+        value.toByteArray(StandardCharsets.UTF_8),
+    )
+
+    fun decrypt(value: EncryptedValue): String = decryptBytes(value)
+        .toString(StandardCharsets.UTF_8)
+
+    fun databasePassphrase(): ByteArray {
+        val preferences = context.getSharedPreferences(
+            DATABASE_KEY_PREFERENCES,
+            Context.MODE_PRIVATE,
+        )
+        val storedIv = preferences.getString(DATABASE_KEY_IV, null)
+        val storedCiphertext = preferences.getString(DATABASE_KEY_CIPHERTEXT, null)
+        if (storedIv != null && storedCiphertext != null) {
+            return decryptBytes(
+                EncryptedValue(
+                    iv = Base64.decode(storedIv, Base64.NO_WRAP),
+                    ciphertext = Base64.decode(storedCiphertext, Base64.NO_WRAP),
+                ),
+            )
+        }
+        val passphrase = ByteArray(32).also(SecureRandom()::nextBytes)
+        val encrypted = encryptBytes(passphrase)
+        check(
+            preferences.edit()
+                .putString(DATABASE_KEY_IV, Base64.encodeToString(encrypted.iv, Base64.NO_WRAP))
+                .putString(
+                    DATABASE_KEY_CIPHERTEXT,
+                    Base64.encodeToString(encrypted.ciphertext, Base64.NO_WRAP),
+                )
+                .commit(),
+        ) { "ELITE_ANDROID_DATABASE_KEY_PERSIST_FAILED" }
+        return passphrase
+    }
+
+    private fun encryptBytes(value: ByteArray): EncryptedValue {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         return EncryptedValue(
             iv = cipher.iv,
-            ciphertext = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8)),
+            ciphertext = cipher.doFinal(value),
         )
     }
 
-    fun decrypt(value: EncryptedValue): String {
+    private fun decryptBytes(value: EncryptedValue): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value.iv))
-        return cipher.doFinal(value.ciphertext).toString(StandardCharsets.UTF_8)
+        return cipher.doFinal(value.ciphertext)
+    }
+
+    companion object {
+        private const val DATABASE_KEY_PREFERENCES = "elite.android.database-key.v1"
+        private const val DATABASE_KEY_IV = "iv"
+        private const val DATABASE_KEY_CIPHERTEXT = "ciphertext"
     }
 }
 

@@ -17,6 +17,18 @@ interface SyncDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImportEvent(event: SyncImportEventEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertConnectionProfile(profile: SyncConnectionProfileEntity)
+
+    @Query("SELECT * FROM sync_connection_profiles WHERE deviceId = :deviceId LIMIT 1")
+    suspend fun getConnectionProfile(deviceId: String): SyncConnectionProfileEntity?
+
+    @Query("UPDATE sync_connection_profiles SET state = :state, updatedAt = :updatedAt WHERE deviceId = :deviceId")
+    suspend fun updateConnectionProfileState(deviceId: String, state: String, updatedAt: String): Int
+
+    @Query("SELECT * FROM sync_cursors WHERE deviceId = :deviceId AND scope = :scope LIMIT 1")
+    suspend fun getCursor(deviceId: String, scope: String): SyncCursorEntity?
+
     @Query("SELECT * FROM sync_cursors WHERE deviceId = :deviceId ORDER BY scope")
     fun observeCursors(deviceId: String): Flow<List<SyncCursorEntity>>
 

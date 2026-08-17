@@ -9,9 +9,11 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 class LanSyncHttpSession(
     private val baseUrl: String,
+    private val hubTlsCertificatePem: String,
     private val frameCodec: SessionFrameCodec,
     override val sessionId: String,
     override val validUntil: Instant,
@@ -19,6 +21,8 @@ class LanSyncHttpSession(
     private val connectTimeoutMillis: Int = 10_000,
     private val readTimeoutMillis: Int = 20_000,
 ) : SecureSession {
+    private val closed = AtomicBoolean(false)
+
     override suspend fun submitOutbox(event: LocalOutboxEvent): SecureOperationResult =
         withContext(Dispatchers.IO) {
             val response = postEncrypted(
@@ -51,15 +55,28 @@ class LanSyncHttpSession(
     }
 
     override suspend fun close() {
-        // HTTP is request-scoped. Session keys are discarded by the owner after close.
+        closed.set(true)
+        frameCodec.close()
+    }
+
+    private fun ensureUsable() {
+        if (closed.get()) throw SecurityException("SECURE_SESSION_CLOSED")
+        if (!validUntil.isAfter(Instant.now())) {
+            closed.set(true)
+            frameCodec.close()
+            throw SecurityException("SECURE_SESSION_EXPIRED")
+        }
     }
 
     private fun postEncrypted(messageType: String, request: JSONObject): JSONObject {
+        ensureUsable()
         val frame = frameCodec.encrypt(
             messageType = messageType,
             plaintext = JSONObject().put("request", request).toString().toByteArray(),
         )
-        val connection = (URL("$baseUrl/sync/lan").openConnection() as HttpURLConnection).apply {
+        val endpoint = URL("$baseUrl/sync/lan")
+        LanTlsConnection.requireHttps(endpoint)
+        val connection = (endpoint.openConnection() as javax.net.ssl.HttpsURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = connectTimeoutMillis
@@ -68,10 +85,19 @@ class LanSyncHttpSession(
             setRequestProperty("Accept", "application/json")
         }
         try {
+            LanTlsConnection.configure(
+                connection = connection,
+                certificatePem = hubTlsCertificatePem,
+                expectedHost = endpoint.host,
+            )
+            connection.instanceFollowRedirects = false
             connection.outputStream.use { output ->
                 output.write(frame.toString().toByteArray())
             }
             val status = connection.responseCode
+            if (status in 300..399) {
+                throw SecurityException("SECURE_LAN_REDIRECT_REJECTED")
+            }
             if (status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                 status == HttpURLConnection.HTTP_FORBIDDEN
             ) {

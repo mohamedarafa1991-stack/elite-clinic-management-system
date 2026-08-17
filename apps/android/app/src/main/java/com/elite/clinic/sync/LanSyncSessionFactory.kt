@@ -21,6 +21,7 @@ import java.util.UUID
 class LanSyncSessionFactory(
     private val baseUrl: String,
     private val identityKeyStore: AndroidIdentityKeyStore,
+    private val hubTlsCertificatePem: String,
     private val trustedHubPublicKeyPem: String,
     private val policy: SyncDevicePolicy,
     private val outboxScopeResolver: (LocalOutboxEvent) -> String,
@@ -28,14 +29,32 @@ class LanSyncSessionFactory(
     private val connectTimeoutMillis: Int = 10_000,
     private val readTimeoutMillis: Int = 20_000,
 ) {
+    init {
+        require(baseUrl.startsWith("https://")) { "ELITE_LAN_HTTPS_REQUIRED" }
+        require(connectTimeoutMillis > 0 && readTimeoutMillis > 0) {
+            "ELITE_LAN_TIMEOUT_INVALID"
+        }
+    }
+
     fun createSession(
         requestedScopes: List<String> = policy.allowedScopes.toList(),
         sessionId: String = "lan-${UUID.randomUUID()}",
         requestNonce: String = LanSyncRequestFactory.newRequestNonce(),
         requestedAt: String = Instant.now().toString(),
     ): LanSyncHttpSession {
+        require(sessionId.isNotBlank()) { "ELITE_LAN_SESSION_ID_INVALID" }
+        require(requestNonce.length in 16..128) {
+            "ELITE_LAN_SESSION_NONCE_INVALID"
+        }
+        val requestedInstant = parseInstant(requestedAt)
+        require(!requestedInstant.isAfter(Instant.now().plusSeconds(30))) {
+            "ELITE_LAN_SESSION_REQUESTED_AT_IN_FUTURE"
+        }
         require(requestedScopes.isNotEmpty() && requestedScopes.size <= 5) {
             "ELITE_LAN_SESSION_SCOPES_INVALID"
+        }
+        require(requestedScopes.distinct().size == requestedScopes.size) {
+            "ELITE_LAN_SESSION_SCOPES_DUPLICATE"
         }
         require(requestedScopes.all { it in policy.allowedScopes }) {
             "ELITE_LAN_SESSION_SCOPE_DENIED"
@@ -79,6 +98,11 @@ class LanSyncSessionFactory(
         verifyHubSignature(grant)
 
         val serverEphemeralSpki = grant.getString("serverEphemeralPublicKeySpkiBase64")
+        val serverEphemeralBytes = Base64.decode(serverEphemeralSpki, Base64.DEFAULT)
+        require(
+            SessionProtocolCrypto.sha256Hex(serverEphemeralBytes) ==
+                grant.getString("serverEphemeralKeyFingerprint"),
+        ) { "ELITE_LAN_SESSION_SERVER_KEY_FINGERPRINT_INVALID" }
         val sharedSecret = SessionKeyDerivation.deriveSharedSecret(
             ephemeral.private,
             serverEphemeralSpki,
@@ -112,6 +136,24 @@ class LanSyncSessionFactory(
             Base64.DEFAULT,
         )
         require(noncePrefix.size == 4) { "ELITE_LAN_SESSION_NONCE_PREFIX_INVALID" }
+        val now = Instant.now()
+        val issuedAt = parseInstant(grant.getString("issuedAt"))
+        val validUntil = parseInstant(grant.getString("validUntil"))
+        val enrollmentExpiresAt = parseInstant(policy.expiresAt)
+        val offlineAccessUntil = parseInstant(policy.offlineAccessUntil)
+        require(!issuedAt.isAfter(now.plusSeconds(30))) {
+            "ELITE_LAN_SESSION_ISSUED_IN_FUTURE"
+        }
+        require(validUntil.isAfter(now)) { "ELITE_LAN_SESSION_EXPIRED" }
+        require(!validUntil.isAfter(issuedAt.plusSeconds(5 * 60))) {
+            "ELITE_LAN_SESSION_WINDOW_TOO_LONG"
+        }
+        require(!validUntil.isAfter(enrollmentExpiresAt)) {
+            "ELITE_LAN_SESSION_ENROLLMENT_WINDOW_INVALID"
+        }
+        require(!validUntil.isAfter(offlineAccessUntil)) {
+            "ELITE_LAN_SESSION_OFFLINE_WINDOW_INVALID"
+        }
         val frameCodec = SessionFrameCodec(
             sessionId = sessionId,
             noncePrefix = noncePrefix,
@@ -120,12 +162,9 @@ class LanSyncSessionFactory(
             sendDirection = "client-to-hub",
             receiveDirection = "hub-to-client",
         )
-        val validUntil = Instant.parse(grant.getString("validUntil"))
-        if (!validUntil.isAfter(Instant.parse(requestedAt))) {
-            throw SecurityException("ELITE_LAN_SESSION_EXPIRED")
-        }
         return LanSyncHttpSession(
             baseUrl = baseUrl.trimEnd('/'),
+            hubTlsCertificatePem = hubTlsCertificatePem,
             frameCodec = frameCodec,
             sessionId = sessionId,
             validUntil = validUntil,
@@ -143,8 +182,9 @@ class LanSyncSessionFactory(
     }
 
     private fun postSessionInit(request: JSONObject): JSONObject {
-        val connection = (URL("${baseUrl.trimEnd('/')}/sync/session-init")
-            .openConnection() as HttpURLConnection).apply {
+        val endpoint = URL("${baseUrl.trimEnd('/')}/sync/session-init")
+        LanTlsConnection.requireHttps(endpoint)
+        val connection = (endpoint.openConnection() as javax.net.ssl.HttpsURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = connectTimeoutMillis
@@ -153,10 +193,19 @@ class LanSyncSessionFactory(
             setRequestProperty("Accept", "application/json")
         }
         try {
+            LanTlsConnection.configure(
+                connection = connection,
+                certificatePem = hubTlsCertificatePem,
+                expectedHost = endpoint.host,
+            )
+            connection.instanceFollowRedirects = false
             connection.outputStream.use { output ->
                 output.write(request.toString().toByteArray(StandardCharsets.UTF_8))
             }
             val status = connection.responseCode
+            if (status in 300..399) {
+                throw SecurityException("ELITE_LAN_SESSION_REDIRECT_REJECTED")
+            }
             if (status !in 200..299) {
                 throw SecurityException("ELITE_LAN_SESSION_INIT_REJECTED_$status")
             }
@@ -224,6 +273,12 @@ class LanSyncSessionFactory(
             put("noncePrefixBase64", grant.getString("noncePrefixBase64"))
         }
         return SessionProtocolCrypto.sha256Hex(CanonicalJson.encode(transcript))
+    }
+
+    private fun parseInstant(value: String): Instant = try {
+        Instant.parse(value)
+    } catch (_: Exception) {
+        throw SecurityException("ELITE_LAN_SESSION_TIMESTAMP_INVALID")
     }
 
     private fun generateEphemeralKeyPair(): KeyPair =

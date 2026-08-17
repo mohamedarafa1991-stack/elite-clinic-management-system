@@ -1,16 +1,23 @@
 import {
-  createServer,
+  createServer as createHttpServer,
   type IncomingMessage,
-  type Server,
+  type Server as HttpServer,
   type ServerResponse,
 } from "node:http";
+import {
+  createServer as createHttpsServer,
+  type Server as HttpsServer,
+} from "node:https";
+import { readFileSync } from "node:fs";
 import type { SessionFrame, SessionInitRequest } from "@elite/contracts";
 import { LanSessionService, LanSyncFrameRouter } from "@elite/auth";
 
 const MAX_FRAME_BYTES = 1_048_576;
 
+type LanServer = HttpServer | HttpsServer;
+
 export class LanSyncHttpServer {
-  private server: Server | undefined;
+  private server: LanServer | undefined;
 
   public constructor(
     private readonly router: LanSyncFrameRouter,
@@ -22,9 +29,34 @@ export class LanSyncHttpServer {
 
   public start(): Promise<void> {
     if (this.server) return Promise.resolve();
-    this.server = createServer((request, response) => {
+    const handler = (request: IncomingMessage, response: ServerResponse) => {
       void this.handle(request, response);
-    });
+    };
+    const certificatePath = process.env["ELITE_SYNC_TLS_CERT_PATH"];
+    const privateKeyPath = process.env["ELITE_SYNC_TLS_KEY_PATH"];
+    const requireTls = process.env["ELITE_SYNC_TLS_REQUIRED"] === "true";
+    if (Boolean(certificatePath) !== Boolean(privateKeyPath)) {
+      return Promise.reject(
+        new Error("ELITE_LAN_TLS_CERTIFICATE_CONFIGURATION_INCOMPLETE"),
+      );
+    }
+    if (certificatePath && privateKeyPath) {
+      try {
+        this.server = createHttpsServer(
+          {
+            cert: readFileSync(certificatePath),
+            key: readFileSync(privateKeyPath),
+          },
+          handler,
+        );
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    } else {
+      if (requireTls)
+        return Promise.reject(new Error("ELITE_LAN_TLS_REQUIRED"));
+      this.server = createHttpServer(handler);
+    }
     return new Promise((resolve, reject) => {
       const server = this.server!;
       const onError = (error: Error) => {

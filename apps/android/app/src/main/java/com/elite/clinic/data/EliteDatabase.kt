@@ -14,6 +14,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import com.elite.clinic.security.DeviceKeyStore
+import com.elite.clinic.sync.SyncConnectionProfileEntity
 import com.elite.clinic.sync.SyncCursorEntity
 import com.elite.clinic.sync.SyncDao
 import com.elite.clinic.sync.SyncImportEventEntity
@@ -74,11 +75,12 @@ interface LocalFoundationDao {
     entities = [
         LocalPatient::class,
         LocalOutboxEvent::class,
+        SyncConnectionProfileEntity::class,
         SyncCursorEntity::class,
         SyncResourceMetadataEntity::class,
         SyncImportEventEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class EliteDatabase : RoomDatabase() {
@@ -132,6 +134,33 @@ abstract class EliteDatabase : RoomDatabase() {
                 )
             }
         }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_connection_profiles (
+                        deviceId TEXT NOT NULL PRIMARY KEY,
+                        organizationId TEXT NOT NULL,
+                        enrollmentId TEXT NOT NULL,
+                        userId TEXT NOT NULL,
+                        hubBaseUrl TEXT NOT NULL,
+                        hubTlsCertificatePem TEXT NOT NULL,
+                        hubTrustAnchorPem TEXT NOT NULL,
+                        hubTrustAnchorId TEXT NOT NULL,
+                        hubTrustAnchorVersion INTEGER NOT NULL,
+                        policyVersion INTEGER NOT NULL,
+                        allowedScopesJson TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        expiresAt TEXT NOT NULL,
+                        offlineAccessUntil TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun create(
             context: Context,
             deviceKeyStore: DeviceKeyStore,
@@ -146,7 +175,7 @@ abstract class EliteDatabase : RoomDatabase() {
             check(deviceKeyStore != null) { "Device key store is required" }
             return Room.databaseBuilder(context, EliteDatabase::class.java, "elite-local.db")
                 .openHelperFactory(encryptedFactory)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigrationOnDowngrade(false)
                 .build()
         }

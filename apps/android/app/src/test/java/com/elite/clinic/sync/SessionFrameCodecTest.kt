@@ -57,6 +57,18 @@ class SessionFrameCodecTest {
     }
 
     @Test
+    fun closesAndRejectsFurtherUse() {
+        val client = clientCodec()
+        client.close()
+        try {
+            client.encrypt("sync-request", "closed".toByteArray())
+            throw AssertionError("expected ELITE_SESSION_CLOSED")
+        } catch (error: SecurityException) {
+            assertTrue(error.message?.contains("ELITE_SESSION_CLOSED") == true)
+        }
+    }
+
+    @Test
     fun derivesAndVerifiesKeyConfirmationMac() {
         val keys = SessionKeyDerivation.deriveSessionKeys(ByteArray(32) { 3 }, ByteArray(32) { 7 })
         val mac = SessionKeyDerivation.keyConfirmationMac(
@@ -81,8 +93,8 @@ class SessionFrameCodecTest {
     private fun clientCodec() = SessionFrameCodec(
         sessionId = sessionId,
         noncePrefix = noncePrefix,
-        sendKey = clientKey,
-        receiveKey = hubKey,
+        sendKey = clientKey.copyOf(),
+        receiveKey = hubKey.copyOf(),
         sendDirection = "client-to-hub",
         receiveDirection = "hub-to-client",
     )
@@ -90,8 +102,8 @@ class SessionFrameCodecTest {
     private fun hubCodec() = SessionFrameCodec(
         sessionId = sessionId,
         noncePrefix = noncePrefix,
-        sendKey = hubKey,
-        receiveKey = clientKey,
+        sendKey = hubKey.copyOf(),
+        receiveKey = clientKey.copyOf(),
         sendDirection = "hub-to-client",
         receiveDirection = "client-to-hub",
     )

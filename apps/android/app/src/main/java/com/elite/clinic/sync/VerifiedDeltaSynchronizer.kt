@@ -8,7 +8,6 @@ class VerifiedDeltaSynchronizer(
     database: EliteDatabase,
     private val expectedOrganizationId: String,
     private val expectedDeviceId: String,
-    private val expectedNonce: String,
     private val trustedPublicKeyPem: String,
 ) {
     private val repository = SyncRepository(database)
@@ -16,6 +15,7 @@ class VerifiedDeltaSynchronizer(
     suspend fun requestAndApply(
         session: SecureSession,
         request: JSONObject,
+        expectedNonce: String,
         now: Instant = Instant.now(),
     ): SyncVerificationResult {
         val response = session.requestDelta(request)

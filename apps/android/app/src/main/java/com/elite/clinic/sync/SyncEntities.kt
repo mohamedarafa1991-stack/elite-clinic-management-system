@@ -41,3 +41,22 @@ data class SyncImportEventEntity(
     val changeCount: Int,
     val occurredAt: String,
 )
+
+@Entity(tableName = "sync_connection_profiles")
+data class SyncConnectionProfileEntity(
+    @androidx.room.PrimaryKey val deviceId: String,
+    val organizationId: String,
+    val enrollmentId: String,
+    val userId: String,
+    val hubBaseUrl: String,
+    val hubTlsCertificatePem: String,
+    val hubTrustAnchorPem: String,
+    val hubTrustAnchorId: String,
+    val hubTrustAnchorVersion: Long,
+    val policyVersion: Long,
+    val allowedScopesJson: String,
+    val state: String,
+    val expiresAt: String,
+    val offlineAccessUntil: String,
+    val updatedAt: String,
+)

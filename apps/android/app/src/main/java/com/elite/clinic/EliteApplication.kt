@@ -4,8 +4,14 @@ import android.app.Application
 import com.elite.clinic.data.EliteDatabase
 import com.elite.clinic.security.AndroidIdentityKeyStore
 import com.elite.clinic.security.DeviceKeyStore
+import com.elite.clinic.security.EncryptedRoomFactory
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import com.elite.clinic.data.LocalOutboxEvent
+import com.elite.clinic.sync.LanSyncRequestFactory
+import com.elite.clinic.sync.LanSyncSessionFactory
 import com.elite.clinic.sync.SecureSessionTransport
 import com.elite.clinic.sync.SecureSyncCoordinator
+import com.elite.clinic.sync.SyncConnectionProfileRepository
 import com.elite.clinic.sync.SyncRepository
 import com.elite.clinic.sync.SyncWorker
 
@@ -25,9 +31,18 @@ class EliteApplication : Application() {
     var secureSyncCoordinator: SecureSyncCoordinator? = null
         private set
 
+    fun initializeEncryptedDatabase(encryptedFactory: SupportSQLiteOpenHelper.Factory) {
+        if (database == null) {
+            database = EliteDatabase.create(this, deviceKeyStore, encryptedFactory)
+        }
+    }
+
     fun configureSecureSyncCoordinator(
         deviceId: String,
         transportFactory: suspend () -> SecureSessionTransport?,
+        profileRepository: SyncConnectionProfileRepository? = database?.let {
+            SyncConnectionProfileRepository(it.syncDao())
+        },
     ) {
         val encryptedDatabase = requireNotNull(database) {
             "ELITE_ANDROID_SYNC_DATABASE_REQUIRED: encrypted local database is required"
@@ -36,9 +51,45 @@ class EliteApplication : Application() {
             database = encryptedDatabase,
             deviceId = deviceId,
             transportFactory = transportFactory,
+            profileProvider = {
+                profileRepository?.getActive(deviceId)
+            },
         )
         SyncWorker.enqueuePeriodic(this)
         SyncWorker.enqueueNow(this)
+    }
+
+    fun configureLanSecureSyncCoordinator(
+        deviceId: String,
+        outboxScopeResolver: (LocalOutboxEvent) -> String = LanSyncRequestFactory::scopeForEvent,
+        outboxReason: String = "offline-local-operation",
+    ) {
+        val encryptedDatabase = requireNotNull(database) {
+            "ELITE_ANDROID_SYNC_DATABASE_REQUIRED: encrypted local database is required"
+        }
+        val profileRepository = SyncConnectionProfileRepository(encryptedDatabase.syncDao())
+        configureSecureSyncCoordinator(
+            deviceId = deviceId,
+            transportFactory = {
+                val active = profileRepository.getActive(deviceId)
+                if (active == null) {
+                    null
+                } else {
+                    object : SecureSessionTransport {
+                        override suspend fun openSession() = LanSyncSessionFactory(
+                            baseUrl = active.entity.hubBaseUrl,
+                            identityKeyStore = identityKeyStore,
+                            hubTlsCertificatePem = active.entity.hubTlsCertificatePem,
+                            trustedHubPublicKeyPem = active.entity.hubTrustAnchorPem,
+                            policy = active.policy,
+                            outboxScopeResolver = outboxScopeResolver,
+                            outboxReason = outboxReason,
+                        ).createSession()
+                    }
+                }
+            },
+            profileRepository = profileRepository,
+        )
     }
 
     fun clearSecureSyncCoordinator() {
@@ -50,7 +101,6 @@ class EliteApplication : Application() {
         super.onCreate()
         deviceKeyStore = DeviceKeyStore(this)
         identityKeyStore = AndroidIdentityKeyStore()
-        // Intentionally do not open local patient storage until the Android
-        // Keystore-backed encrypted Room boundary is configured in its own phase.
+        initializeEncryptedDatabase(EncryptedRoomFactory.create(deviceKeyStore))
     }
 }

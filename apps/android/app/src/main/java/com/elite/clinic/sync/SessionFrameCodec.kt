@@ -19,6 +19,7 @@ class SessionFrameCodec(
 ) {
     private var sendCounter = 0L
     private var receiveCounter = 0L
+    private var closed = false
 
     init {
         require(noncePrefix.size == NONCE_PREFIX_BYTES) {
@@ -33,6 +34,7 @@ class SessionFrameCodec(
     }
 
     fun encrypt(messageType: String, plaintext: ByteArray): JSONObject {
+        ensureOpen()
         if (sendCounter == Long.MAX_VALUE) throw IllegalStateException(
             "ELITE_SESSION_COUNTER_EXHAUSTED: session send counter is exhausted",
         )
@@ -67,6 +69,7 @@ class SessionFrameCodec(
     }
 
     fun decrypt(frame: JSONObject): ByteArray {
+        ensureOpen()
         val version = frame.getInt("protocolVersion")
         if (version != 1) throw IllegalArgumentException(
             "ELITE_SESSION_PROTOCOL_UNSUPPORTED: unsupported frame version",
@@ -135,6 +138,18 @@ class SessionFrameCodec(
     fun nextSendCounter(): Long = sendCounter
 
     fun nextReceiveCounter(): Long = receiveCounter
+
+    fun close() {
+        if (closed) return
+        closed = true
+        noncePrefix.fill(0)
+        sendKey.fill(0)
+        receiveKey.fill(0)
+    }
+
+    private fun ensureOpen() {
+        if (closed) throw SecurityException("ELITE_SESSION_CLOSED")
+    }
 
     private fun canonicalAad(frame: JSONObject): ByteArray = CanonicalJson.encode(frame)
         .toByteArray(Charsets.UTF_8)

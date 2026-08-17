@@ -13,6 +13,8 @@ data class SyncDevicePolicy(
     val userId: String,
     val policyVersion: Long,
     val allowedScopes: Set<String>,
+    val expiresAt: String,
+    val offlineAccessUntil: String,
     val state: String = "active",
 )
 
@@ -71,6 +73,14 @@ object LanSyncRequestFactory {
             put("requestedAt", requestedAt)
             put("maxChanges", maxChanges)
         }
+    }
+
+    fun scopeForEvent(event: LocalOutboxEvent): String = when (event.entityType) {
+        "Appointment" -> "appointments"
+        "Patient" -> "patient-summary"
+        "Encounter", "Composition", "Condition" -> "clinical-notes"
+        "ExportPackage" -> "export-governance"
+        else -> throw IllegalArgumentException("SYNC_OUTBOX_SCOPE_UNSUPPORTED")
     }
 
     fun buildOutboxRequest(
