@@ -10,8 +10,14 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import com.elite.clinic.security.DeviceKeyStore
+import com.elite.clinic.sync.SyncCursorEntity
+import com.elite.clinic.sync.SyncDao
+import com.elite.clinic.sync.SyncImportEventEntity
+import com.elite.clinic.sync.SyncResourceMetadataEntity
 
 @Entity(tableName = "local_patients")
 data class LocalPatient(
@@ -58,14 +64,67 @@ interface LocalFoundationDao {
 }
 
 @Database(
-    entities = [LocalPatient::class, LocalOutboxEvent::class],
-    version = 1,
+    entities = [
+        LocalPatient::class,
+        LocalOutboxEvent::class,
+        SyncCursorEntity::class,
+        SyncResourceMetadataEntity::class,
+        SyncImportEventEntity::class,
+    ],
+    version = 2,
     exportSchema = true,
 )
 abstract class EliteDatabase : RoomDatabase() {
     abstract fun foundationDao(): LocalFoundationDao
+    abstract fun syncDao(): SyncDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_cursors (
+                        deviceId TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        cursor TEXT NOT NULL,
+                        serverSequence INTEGER NOT NULL,
+                        acceptedAt TEXT NOT NULL,
+                        PRIMARY KEY(deviceId, scope)
+                    )
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_resource_metadata (
+                        deviceId TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        resourceType TEXT NOT NULL,
+                        resourceId TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        updatedAt TEXT NOT NULL,
+                        payloadHash TEXT NOT NULL,
+                        operation TEXT NOT NULL,
+                        redacted INTEGER NOT NULL,
+                        PRIMARY KEY(deviceId, scope, resourceType, resourceId)
+                    )
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_import_events (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        deviceId TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        result TEXT NOT NULL,
+                        reasonCode TEXT NOT NULL,
+                        serverSequence INTEGER NOT NULL,
+                        changeCount INTEGER NOT NULL,
+                        occurredAt TEXT NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
         fun create(
             context: Context,
             deviceKeyStore: DeviceKeyStore,
@@ -80,6 +139,7 @@ abstract class EliteDatabase : RoomDatabase() {
             check(deviceKeyStore != null) { "Device key store is required" }
             return Room.databaseBuilder(context, EliteDatabase::class.java, "elite-local.db")
                 .openHelperFactory(encryptedFactory)
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigrationOnDowngrade(false)
                 .build()
         }

@@ -39,6 +39,9 @@ export const capabilitySchema = z.enum([
   "export.governance.send",
   "export.governance.audit",
   "export.receipt.manage",
+  "sync.read",
+  "sync.write",
+  "sync.manage",
   "audit.read",
   "module.manage",
 ]);
@@ -70,6 +73,9 @@ export const roleCapabilities = {
     "export.governance.send",
     "export.governance.audit",
     "export.receipt.manage",
+    "sync.read",
+    "sync.write",
+    "sync.manage",
     "audit.read",
     "module.manage",
   ],
@@ -86,6 +92,8 @@ export const roleCapabilities = {
     "billing.write",
     "export.manage",
     "export.governance.request",
+    "sync.read",
+    "sync.write",
   ],
   nurse: [
     "patient.read",
@@ -94,6 +102,8 @@ export const roleCapabilities = {
     "clinical.write",
     "appointment.read",
     "appointment.write",
+    "sync.read",
+    "sync.write",
   ],
   receptionist: [
     "patient.read",
@@ -103,6 +113,8 @@ export const roleCapabilities = {
     "billing.read",
     "billing.write",
     "billing.refund",
+    "sync.read",
+    "sync.write",
   ],
 } as const satisfies Record<UserRole, readonly Capability[]>;
 
@@ -156,6 +168,217 @@ export const deviceSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 export type Device = z.infer<typeof deviceSchema>;
+
+export const syncScopeSchema = z.enum([
+  "appointments",
+  "patient-summary",
+  "encounter-summary",
+  "clinical-notes",
+  "export-governance",
+]);
+export type SyncScope = z.infer<typeof syncScopeSchema>;
+
+export const syncResourceTypeSchema = z.enum([
+  "Appointment",
+  "Patient",
+  "Encounter",
+  "Composition",
+  "Condition",
+  "ExportPackage",
+]);
+export type SyncResourceType = z.infer<typeof syncResourceTypeSchema>;
+
+export const syncChangeOperationSchema = z.enum(["upsert", "delete", "redact"]);
+export type SyncChangeOperation = z.infer<typeof syncChangeOperationSchema>;
+
+export const syncChangeSchema = z.object({
+  resourceType: syncResourceTypeSchema,
+  resourceId: opaqueIdSchema,
+  version: z.number().int().positive(),
+  updatedAt: isoDateTimeSchema,
+  operation: syncChangeOperationSchema,
+  payload: z.record(z.string(), z.unknown()).optional(),
+  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceSnapshotHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  redactionReason: z.string().trim().max(240).optional(),
+});
+export type SyncChange = z.infer<typeof syncChangeSchema>;
+
+export const syncCapabilityRequestSchema = z.object({
+  protocolVersion: z.literal(1),
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  enrollmentId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  clientVersion: z.string().trim().min(1).max(64),
+  lastAcceptedStatusSequence: z.number().int().nonnegative().optional(),
+  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestNonce: z.string().trim().min(16).max(128),
+  requestedAt: isoDateTimeSchema,
+});
+export type SyncCapabilityRequest = z.infer<typeof syncCapabilityRequestSchema>;
+
+export const syncCapabilityResponseSchema = z.object({
+  protocolVersion: z.literal(1),
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  supportedScopes: z.array(syncScopeSchema),
+  policyVersion: z.number().int().positive(),
+  serverTime: isoDateTimeSchema,
+  minimumClientVersion: z.string().trim().min(1).max(64),
+  statusSequence: z.number().int().nonnegative(),
+  responseNonce: z.string().trim().min(16).max(128),
+  responseHash: z.string().regex(/^[a-f0-9]{64}$/),
+  signatureAlgorithm: z.literal("ed25519"),
+  signatureBase64: z.string().trim().min(80).max(256),
+  signerKeyId: opaqueIdSchema,
+  signerKeyVersion: z.number().int().positive(),
+});
+export type SyncCapabilityResponse = z.infer<
+  typeof syncCapabilityResponseSchema
+>;
+
+export const syncDeviceRegistrationInputSchema = z.object({
+  deviceId: opaqueIdSchema,
+  enrollmentId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  ownerUserId: opaqueIdSchema,
+  policyVersion: z.number().int().positive(),
+  allowedScopes: z.array(syncScopeSchema).min(1).max(5),
+  patientScope: z.record(z.string(), z.unknown()).optional(),
+});
+export type SyncDeviceRegistrationInput = z.infer<
+  typeof syncDeviceRegistrationInputSchema
+>;
+
+export const syncDevicePolicySchema = z.object({
+  deviceId: opaqueIdSchema,
+  enrollmentId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  ownerUserId: opaqueIdSchema,
+  policyVersion: z.number().int().positive(),
+  allowedScopes: z.array(syncScopeSchema).max(5),
+  patientScope: z.record(z.string(), z.unknown()).optional(),
+  state: z.enum(["active", "suspended", "revoked"]),
+});
+export type SyncDevicePolicy = z.infer<typeof syncDevicePolicySchema>;
+
+export const syncDeltaRequestSchema = z.object({
+  protocolVersion: z.literal(1),
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  syncSessionId: opaqueIdSchema,
+  scope: syncScopeSchema,
+  cursor: z.string().trim().max(256).optional(),
+  clientBaseVersion: z.number().int().nonnegative(),
+  knownPolicyVersion: z.number().int().positive(),
+  requestNonce: z.string().trim().min(16).max(128),
+  requestedAt: isoDateTimeSchema,
+  maxChanges: z.number().int().positive().max(5000).default(500),
+});
+export type SyncDeltaRequest = z.input<typeof syncDeltaRequestSchema>;
+
+export const syncResourceConflictSchema = z.object({
+  resourceType: syncResourceTypeSchema,
+  resourceId: opaqueIdSchema,
+  operationId: opaqueIdSchema.optional(),
+  clientBaseVersion: z.number().int().positive(),
+  serverVersion: z.number().int().positive(),
+  conflictType: z.enum([
+    "version-mismatch",
+    "requires-amendment",
+    "redacted",
+    "policy-denied",
+  ]),
+  resolution: z.enum(["refresh", "amend", "rejected", "none"]),
+});
+export type SyncResourceConflict = z.infer<typeof syncResourceConflictSchema>;
+
+export const syncDeltaResponseSchema = z.object({
+  protocolVersion: z.literal(1),
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  syncSessionId: opaqueIdSchema,
+  scope: syncScopeSchema,
+  serverCursor: z.string().trim().min(1).max(256),
+  serverSequence: z.number().int().nonnegative(),
+  generatedAt: isoDateTimeSchema,
+  validUntil: isoDateTimeSchema,
+  fullSyncRequired: z.boolean(),
+  changes: z.array(syncChangeSchema).max(5000),
+  conflicts: z.array(syncResourceConflictSchema).max(5000),
+  redactions: z.array(opaqueIdSchema).max(5000),
+  nextCursor: z.string().trim().min(1).max(256),
+  responseNonce: z.string().trim().min(16).max(128),
+  responseIntegrity: z.string().regex(/^[a-f0-9]{64}$/),
+  signatureAlgorithm: z.literal("ed25519"),
+  signatureBase64: z.string().trim().min(80).max(256),
+  signerKeyId: opaqueIdSchema,
+  signerKeyVersion: z.number().int().positive(),
+});
+export type SyncDeltaResponse = z.infer<typeof syncDeltaResponseSchema>;
+
+export const syncOutboxOperationSchema = z.enum([
+  "appointment-acknowledge",
+  "appointment-arrival",
+  "queue-note",
+]);
+export type SyncOutboxOperation = z.infer<typeof syncOutboxOperationSchema>;
+
+export const syncOutboxStateSchema = z.enum([
+  "pending",
+  "sending",
+  "accepted",
+  "already-applied",
+  "conflict",
+  "rejected",
+  "requires-amendment",
+]);
+export type SyncOutboxState = z.infer<typeof syncOutboxStateSchema>;
+
+export const syncOutboxInputSchema = z.object({
+  operationId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  userId: opaqueIdSchema,
+  scope: syncScopeSchema,
+  operation: syncOutboxOperationSchema,
+  resourceType: syncResourceTypeSchema,
+  resourceId: opaqueIdSchema,
+  baseVersion: z.number().int().positive(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  reason: z.string().trim().min(3).max(500),
+  createdAt: isoDateTimeSchema,
+});
+export type SyncOutboxInput = z.infer<typeof syncOutboxInputSchema>;
+
+export const syncOutboxAcknowledgmentSchema = z.object({
+  operationId: opaqueIdSchema,
+  state: syncOutboxStateSchema,
+  resourceType: syncResourceTypeSchema,
+  resourceId: opaqueIdSchema,
+  serverVersion: z.number().int().positive().optional(),
+  conflict: syncResourceConflictSchema.optional(),
+  acknowledgmentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  acknowledgedAt: isoDateTimeSchema,
+});
+export type SyncOutboxAcknowledgment = z.infer<
+  typeof syncOutboxAcknowledgmentSchema
+>;
+
+export const syncAuditResultSchema = z.enum([
+  "success",
+  "partial",
+  "rejected",
+  "conflict",
+  "error",
+]);
+export type SyncAuditResult = z.infer<typeof syncAuditResultSchema>;
 
 export const consentRecordSchema = z.object({
   id: opaqueIdSchema,

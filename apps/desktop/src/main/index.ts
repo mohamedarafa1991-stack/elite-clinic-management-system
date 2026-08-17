@@ -6,6 +6,7 @@ import {
   MedicalHistoryService,
   PatientExportService,
   PatientIdentityService,
+  SynchronizationService,
   exportSigningData,
   hashExportPayload,
   verifyExportPackage,
@@ -45,6 +46,7 @@ let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
+let synchronizationService: SynchronizationService | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
 
@@ -82,6 +84,7 @@ function initializeServices(): void {
       database,
       exportSigner,
     );
+    synchronizationService = new SynchronizationService(database, exportSigner);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -195,6 +198,14 @@ function requireExportGovernanceService(): ExportGovernanceService {
   }
   return exportGovernanceService;
 }
+function requireSynchronizationService(): SynchronizationService {
+  if (!synchronizationService) {
+    throw new Error(
+      "ELITE_SYNC_STORAGE_UNAVAILABLE: synchronization services are unavailable",
+    );
+  }
+  return synchronizationService;
+}
 function requireExportSigner(): ElectronExportSigner {
   if (!exportSigner) {
     throw new Error(
@@ -205,6 +216,55 @@ function requireExportSigner(): ElectronExportSigner {
 }
 
 function registerIpc(): void {
+  ipcMain.handle(
+    "sync:device-register",
+    (_event, token: string, input: unknown) =>
+      requireSynchronizationService().registerDevice(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "sync:device-policy",
+    (_event, token: string, deviceId: string) =>
+      requireSynchronizationService().getDevicePolicy(
+        serviceContext(token),
+        deviceId,
+      ),
+  );
+  ipcMain.handle("sync:capabilities", (_event, token: string, input: unknown) =>
+    requireSynchronizationService().getCapabilities(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle("sync:delta", (_event, token: string, input: unknown) =>
+    requireSynchronizationService().getDelta(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle("sync:outbox-queue", (_event, token: string, input: unknown) =>
+    requireSynchronizationService().queueOutbox(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle("sync:outbox-ack", (_event, token: string, input: unknown) =>
+    requireSynchronizationService().recordOutboxAcknowledgment(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle(
+    "sync:outbox-list",
+    (_event, token: string, deviceId: string) =>
+      requireSynchronizationService().listPendingOutbox(
+        serviceContext(token),
+        deviceId,
+      ),
+  );
+
   ipcMain.handle("app:security-status", () => ({
     electronVersion: process.versions.electron,
     chromiumVersion: process.versions.chrome,
@@ -1297,5 +1357,6 @@ app.on("before-quit", () => {
   clinicalService = undefined;
   patientExportService = undefined;
   exportGovernanceService = undefined;
+  synchronizationService = undefined;
   exportSigner = undefined;
 });

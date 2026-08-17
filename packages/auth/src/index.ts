@@ -811,6 +811,7 @@ export {
 } from "./fhir-profile-bundles.js";
 export type { MedicalHistoryServiceOptions } from "./medical-history-service.js";
 export { ExportGovernanceService } from "./export-governance-service.js";
+export { SynchronizationService } from "./synchronization-service.js";
 export { EncounterService } from "./encounter-service.js";
 export type { EncounterServiceOptions } from "./encounter-service.js";
 

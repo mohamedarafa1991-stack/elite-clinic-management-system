@@ -57,6 +57,14 @@ import type {
   ExportDisclosureDecision,
   ExportDisclosureRequest,
   ExportReceipt,
+  SyncCapabilityRequest,
+  SyncCapabilityResponse,
+  SyncDeltaRequest,
+  SyncDeltaResponse,
+  SyncDevicePolicy,
+  SyncDeviceRegistrationInput,
+  SyncOutboxAcknowledgment,
+  SyncOutboxInput,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -546,6 +554,69 @@ const eliteApi = {
         id,
         input,
       ) as Promise<Appointment>,
+  },
+  sync: {
+    registerDevice: (
+      token: string,
+      input: SyncDeviceRegistrationInput,
+    ): Promise<SyncDevicePolicy> =>
+      ipcRenderer.invoke(
+        "sync:device-register",
+        token,
+        input,
+      ) as Promise<SyncDevicePolicy>,
+    getDevicePolicy: (
+      token: string,
+      deviceId: string,
+    ): Promise<SyncDevicePolicy> =>
+      ipcRenderer.invoke(
+        "sync:device-policy",
+        token,
+        deviceId,
+      ) as Promise<SyncDevicePolicy>,
+    getCapabilities: (
+      token: string,
+      input: SyncCapabilityRequest,
+    ): Promise<SyncCapabilityResponse> =>
+      ipcRenderer.invoke(
+        "sync:capabilities",
+        token,
+        input,
+      ) as Promise<SyncCapabilityResponse>,
+    getDelta: (
+      token: string,
+      input: SyncDeltaRequest,
+    ): Promise<SyncDeltaResponse> =>
+      ipcRenderer.invoke(
+        "sync:delta",
+        token,
+        input,
+      ) as Promise<SyncDeltaResponse>,
+    queueOutbox: (
+      token: string,
+      input: SyncOutboxInput,
+    ): Promise<SyncOutboxInput> =>
+      ipcRenderer.invoke(
+        "sync:outbox-queue",
+        token,
+        input,
+      ) as Promise<SyncOutboxInput>,
+    acknowledgeOutbox: (
+      token: string,
+      input: SyncOutboxAcknowledgment,
+    ): Promise<SyncOutboxAcknowledgment> =>
+      ipcRenderer.invoke(
+        "sync:outbox-ack",
+        token,
+        input,
+      ) as Promise<SyncOutboxAcknowledgment>,
+    listOutbox: (
+      token: string,
+      deviceId: string,
+    ): Promise<readonly Record<string, unknown>[]> =>
+      ipcRenderer.invoke("sync:outbox-list", token, deviceId) as Promise<
+        readonly Record<string, unknown>[]
+      >,
   },
   export: {
     createExport: (token: string, input: PatientExportInput) =>

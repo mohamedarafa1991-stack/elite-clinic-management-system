@@ -827,6 +827,204 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_export_governance_events_evidence ON export_governance_events(evidence_id, occurred_at DESC);
     `,
   },
+  {
+    version: 16,
+    name: "export-status-packages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS export_status_packages (
+        id TEXT PRIMARY KEY NOT NULL,
+        organization_id TEXT NOT NULL,
+        package_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        issuer_key_id TEXT NOT NULL,
+        issuer_key_version INTEGER NOT NULL CHECK (issuer_key_version > 0),
+        generated_at TEXT NOT NULL,
+        valid_until TEXT NOT NULL,
+        previous_status_hash TEXT CHECK (previous_status_hash IS NULL OR length(previous_status_hash) = 64),
+        entries_hash TEXT NOT NULL CHECK (length(entries_hash) = 64),
+        package_hash TEXT NOT NULL CHECK (length(package_hash) = 64),
+        source TEXT NOT NULL CHECK (source IN ('hub-created', 'usb-import', 'lan-import', 'android-import', 'external-import')),
+        acceptance_state TEXT NOT NULL CHECK (acceptance_state IN ('pending', 'accepted', 'rejected', 'superseded', 'quarantined')),
+        source_reference TEXT,
+        accepted_at TEXT,
+        accepted_by_user_id TEXT REFERENCES users(id),
+        rejection_reason TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (organization_id, package_hash)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_export_status_one_accepted
+        ON export_status_packages(organization_id) WHERE acceptance_state = 'accepted';
+      CREATE INDEX IF NOT EXISTS idx_export_status_sequence
+        ON export_status_packages(organization_id, sequence DESC);
+      CREATE INDEX IF NOT EXISTS idx_export_status_state
+        ON export_status_packages(organization_id, acceptance_state);
+      CREATE INDEX IF NOT EXISTS idx_export_status_package
+        ON export_status_packages(organization_id, package_id);
+      CREATE TABLE IF NOT EXISTS export_status_entries (
+        id TEXT PRIMARY KEY NOT NULL,
+        status_package_id TEXT NOT NULL REFERENCES export_status_packages(id),
+        export_package_id TEXT REFERENCES export_packages(package_id),
+        package_id TEXT NOT NULL,
+        manifest_hash TEXT NOT NULL CHECK (length(manifest_hash) = 64),
+        status TEXT NOT NULL CHECK (status IN ('issued', 'stored', 'downloaded', 'expired', 'revoked', 'superseded', 'archived', 'destroyed')),
+        status_changed_at TEXT NOT NULL,
+        lifecycle_event_id TEXT,
+        reason_code TEXT,
+        disclosure_state TEXT CHECK (disclosure_state IS NULL OR disclosure_state IN ('none', 'requested', 'approved', 'sent', 'acknowledged', 'rejected', 'cancelled')),
+        receipt_state TEXT CHECK (receipt_state IS NULL OR receipt_state IN ('none', 'issued', 'acknowledged')),
+        UNIQUE (status_package_id, package_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_status_entries_package
+        ON export_status_entries(package_id, status_changed_at DESC);
+      CREATE TABLE IF NOT EXISTS export_status_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        status_package_id TEXT NOT NULL REFERENCES export_status_packages(id),
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'imported', 'verified', 'accepted', 'rejected', 'superseded', 'quarantined')),
+        reason TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        occurred_by_user_id TEXT REFERENCES users(id),
+        occurred_by_device_id TEXT,
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_status_events_package
+        ON export_status_events(status_package_id, occurred_at DESC);
+      CREATE TABLE IF NOT EXISTS export_trust_anchors (
+        id TEXT PRIMARY KEY NOT NULL,
+        organization_id TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        key_version INTEGER NOT NULL CHECK (key_version > 0),
+        public_key_pem TEXT NOT NULL,
+        fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+        state TEXT NOT NULL CHECK (state IN ('pending', 'accepted', 'retired', 'revoked')),
+        source TEXT NOT NULL CHECK (source IN ('local-signer', 'admin-import', 'signed-trust-bundle')),
+        accepted_by_user_id TEXT REFERENCES users(id),
+        accepted_at TEXT,
+        retired_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (organization_id, key_id, key_version),
+        UNIQUE (organization_id, fingerprint)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_trust_anchors_state
+        ON export_trust_anchors(organization_id, state);
+      CREATE TABLE IF NOT EXISTS export_status_import_queue (
+        id TEXT PRIMARY KEY NOT NULL,
+        organization_id TEXT,
+        candidate_package_hash TEXT NOT NULL UNIQUE CHECK (length(candidate_package_hash) = 64),
+        source TEXT NOT NULL CHECK (source IN ('usb-import', 'lan-import', 'android-import', 'external-import')),
+        source_reference TEXT,
+        received_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('received', 'verifying', 'accepted', 'rejected', 'quarantined')),
+        attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+        last_error_code TEXT,
+        last_error_detail TEXT,
+        processed_status_package_id TEXT REFERENCES export_status_packages(id),
+        quarantined_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_status_import_queue_state
+        ON export_status_import_queue(state, received_at DESC);
+    `,
+  },
+  {
+    version: 17,
+    name: "clinical-synchronization",
+    sql: `
+      CREATE TABLE IF NOT EXISTS sync_devices (
+        id TEXT PRIMARY KEY NOT NULL,
+        device_id TEXT NOT NULL UNIQUE REFERENCES devices(id),
+        enrollment_id TEXT NOT NULL,
+        organization_id TEXT NOT NULL,
+        owner_user_id TEXT NOT NULL REFERENCES users(id),
+        policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+        state TEXT NOT NULL CHECK (state IN ('active', 'suspended', 'revoked')),
+        allowed_scopes_json TEXT NOT NULL,
+        patient_scope_json TEXT,
+        last_seen_at TEXT,
+        last_sync_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_devices_owner
+        ON sync_devices(owner_user_id, state);
+      CREATE TABLE IF NOT EXISTS sync_cursors (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance')),
+        cursor TEXT NOT NULL,
+        server_sequence INTEGER NOT NULL CHECK (server_sequence >= 0),
+        accepted_at TEXT NOT NULL,
+        UNIQUE (sync_device_id, scope)
+      );
+      CREATE TABLE IF NOT EXISTS sync_resource_versions (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance')),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        last_updated_at TEXT NOT NULL,
+        redacted INTEGER NOT NULL DEFAULT 0 CHECK (redacted IN (0, 1)),
+        UNIQUE (sync_device_id, scope, resource_type, resource_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_resource_versions_resource
+        ON sync_resource_versions(resource_type, resource_id, version DESC);
+      CREATE TABLE IF NOT EXISTS sync_audit_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        sync_session_id TEXT,
+        user_id TEXT REFERENCES users(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance')),
+        result TEXT NOT NULL CHECK (result IN ('success', 'partial', 'rejected', 'conflict', 'error')),
+        change_count INTEGER NOT NULL CHECK (change_count >= 0),
+        conflict_count INTEGER NOT NULL CHECK (conflict_count >= 0),
+        redaction_count INTEGER NOT NULL CHECK (redaction_count >= 0),
+        reason_code TEXT,
+        occurred_at TEXT NOT NULL,
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_audit_events_device
+        ON sync_audit_events(sync_device_id, occurred_at DESC);
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        id TEXT PRIMARY KEY NOT NULL,
+        operation_id TEXT NOT NULL UNIQUE,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        user_id TEXT NOT NULL REFERENCES users(id),
+        organization_id TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance')),
+        operation TEXT NOT NULL CHECK (operation IN ('appointment-acknowledge', 'appointment-arrival', 'queue-note')),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        base_version INTEGER NOT NULL CHECK (base_version > 0),
+        payload_json TEXT NOT NULL,
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        reason TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sending', 'accepted', 'already-applied', 'conflict', 'rejected', 'requires-amendment')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        last_error_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_state
+        ON sync_outbox(sync_device_id, state, created_at ASC);
+      CREATE TABLE IF NOT EXISTS clinical_sync_conflicts (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        operation_id TEXT REFERENCES sync_outbox(operation_id),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        client_base_version INTEGER NOT NULL CHECK (client_base_version > 0),
+        server_version INTEGER NOT NULL CHECK (server_version > 0),
+        conflict_type TEXT NOT NULL CHECK (conflict_type IN ('version-mismatch', 'requires-amendment', 'redacted', 'policy-denied')),
+        resolution TEXT NOT NULL CHECK (resolution IN ('refresh', 'amend', 'rejected', 'none')),
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_by_user_id TEXT REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_clinical_sync_conflicts_open
+        ON clinical_sync_conflicts(sync_device_id, resolved_at, created_at DESC);
+    `,
+  },
 ];
 
 function now(): string {

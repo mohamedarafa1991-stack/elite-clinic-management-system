@@ -3,6 +3,7 @@ package com.elite.clinic
 import android.app.Application
 import com.elite.clinic.data.EliteDatabase
 import com.elite.clinic.security.DeviceKeyStore
+import com.elite.clinic.sync.SyncRepository
 
 class EliteApplication : Application() {
     lateinit var deviceKeyStore: DeviceKeyStore
@@ -10,6 +11,9 @@ class EliteApplication : Application() {
 
     var database: EliteDatabase? = null
         private set
+
+    val syncRepository: SyncRepository?
+        get() = database?.let(::SyncRepository)
 
     override fun onCreate() {
         super.onCreate()
