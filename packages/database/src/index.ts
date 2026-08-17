@@ -634,6 +634,28 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_encounter_projection_snapshots_hash ON encounter_projection_snapshots(encounter_id, payload_hash);
     `,
   },
+  {
+    version: 12,
+    name: "export-revocations-and-organization-settings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS export_revocations (
+        id TEXT PRIMARY KEY NOT NULL,
+        package_id TEXT NOT NULL UNIQUE,
+        reason TEXT NOT NULL,
+        revoked_at TEXT NOT NULL,
+        revoked_by_user_id TEXT NOT NULL REFERENCES users(id),
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_revocations_revoked_at ON export_revocations(revoked_at);
+      CREATE TABLE IF NOT EXISTS org_settings (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_org_settings_updated_at ON org_settings(updated_at);
+    `,
+  },
 ];
 
 function now(): string {

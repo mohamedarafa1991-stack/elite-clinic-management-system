@@ -199,6 +199,69 @@ describe("PatientExportService", () => {
         ),
       });
       expect(tampered.verified).toBe(false);
+
+      const validation = exporter.validateFhirBundle(
+        JSON.parse(fhir.toString("utf8")),
+      );
+      expect(validation.valid).toBe(true);
+      expect(validation.fhirVersion).toBe("R4");
+      expect(validation.profileIds).toContain(
+        "urn:elite-clinic:fhir-profile:patient-record-document-r4",
+      );
+
+      const updatedSettings = exporter.updateOrgSettings(admin, {
+        clinicNameEn: "Elite Clinic Synthetic Branch",
+        countryCode: "EG",
+        oid: "1.3.6.1.4.1.99999.42",
+        fhirSystemUrl: "https://synthetic.elite-clinic.local/fhir",
+        exportExpirationDays: 7,
+      });
+      expect(updatedSettings.exportExpirationDays).toBe(7);
+      expect(exporter.getOrgSettings(admin).oid).toBe("1.3.6.1.4.1.99999.42");
+
+      exporter.setSignaturePort({
+        sign(data) {
+          return {
+            publicKeyPem: publicKey,
+            signature: sign(null, data, privateKey),
+          };
+        },
+      });
+      const zip = exporter.buildZipPackage(
+        admin,
+        {
+          snapshotId: snapshot.id,
+          format: "fhir",
+          redactionPolicy: "clinical",
+          exportReason: "Synthetic signed ZIP export",
+        },
+        fhir,
+      );
+      expect(zip.package.manifest.packageType).toBe("zip");
+      expect(zip.package.manifest.expiresAt).toBe("2030-02-08T10:00:00.000Z");
+      expect(zip.package.manifest.orgIdentifier?.clinicNameEn).toBe(
+        "Elite Clinic Synthetic Branch",
+      );
+      expect(exporter.verifyZipPackage(zip.archive).verified).toBe(true);
+
+      const revocation = exporter.revokeExport(
+        admin,
+        zip.package.packageId,
+        "Synthetic test revocation",
+      );
+      expect(revocation.packageId).toBe(zip.package.packageId);
+      expect(exporter.isRevoked(zip.package.packageId)).toBe(true);
+      const revokedVerification = exporter.verifyZipPackage(zip.archive);
+      expect(revokedVerification.verified).toBe(false);
+      expect(revokedVerification.revoked).toBe(true);
+      expect(exporter.listRevocations(admin)).toHaveLength(1);
+      expect(() =>
+        exporter.revokeExport(
+          admin,
+          zip.package.packageId,
+          "Duplicate synthetic revocation",
+        ),
+      ).toThrow(/ALREADY_REVOKED/);
     } finally {
       database.close();
     }

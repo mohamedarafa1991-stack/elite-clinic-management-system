@@ -24,6 +24,11 @@ import type {
   EncounterAmendmentInput,
   EffectiveEncounter,
   ExportResult,
+  ExportZipPackage,
+  ExportRevocation,
+  FhirValidationResult,
+  OrgSettings,
+  OrgSettingsInput,
   PatientExportInput,
   ExportVerificationInput,
   ExportVerificationResult,
@@ -538,6 +543,45 @@ const eliteApi = {
         "export:verify",
         input,
       ) as Promise<ExportVerificationResult>,
+    createZipExport: (token: string, input: PatientExportInput) =>
+      ipcRenderer.invoke("export:create-zip", token, input) as Promise<{
+        package: ExportZipPackage;
+        savedArchivePath: string;
+        fhirValidation?: FhirValidationResult;
+        verification: ExportVerificationResult;
+      }>,
+    verifyZipExport: (archiveBase64: string) =>
+      ipcRenderer.invoke(
+        "export:verify-zip",
+        archiveBase64,
+      ) as Promise<ExportVerificationResult>,
+    validateFhir: (token: string, input: PatientExportInput) =>
+      ipcRenderer.invoke(
+        "export:fhir-validate",
+        token,
+        input,
+      ) as Promise<FhirValidationResult>,
+    revokeExport: (token: string, packageId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "export:revoke",
+        token,
+        packageId,
+        reason,
+      ) as Promise<ExportRevocation>,
+    listRevocations: (token: string) =>
+      ipcRenderer.invoke("export:revocations", token) as Promise<
+        readonly ExportRevocation[]
+      >,
+  },
+  settings: {
+    getOrgSettings: (token: string) =>
+      ipcRenderer.invoke("settings:org-get", token) as Promise<OrgSettings>,
+    updateOrgSettings: (token: string, input: OrgSettingsInput) =>
+      ipcRenderer.invoke(
+        "settings:org-update",
+        token,
+        input,
+      ) as Promise<OrgSettings>,
   },
   relatedPersons: {
     create: (token: string, input: RelatedPersonInput) =>

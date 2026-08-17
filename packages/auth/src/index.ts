@@ -813,4 +813,5 @@ export {
   hashExportPayload,
   verifyExportPackage,
   type ExportSignaturePort,
+  type ZipExportBuildResult,
 } from "./patient-export-service.js";

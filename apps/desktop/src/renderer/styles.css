@@ -1111,3 +1111,34 @@ select {
   overflow-wrap: anywhere;
   color: #1e3a8a;
 }
+
+.export-validation,
+.org-settings-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+.export-validation small {
+  color: #334155;
+}
+.org-settings-panel h4 {
+  margin: 0;
+}
+.org-settings-panel .section-heading {
+  align-items: center;
+}
+.export-result .button-row {
+  align-items: center;
+}
+.export-result input {
+  min-width: 220px;
+}
+.status.ok {
+  color: #166534;
+}
+.status.error {
+  color: #b91c1c;
+}

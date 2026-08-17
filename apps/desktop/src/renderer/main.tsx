@@ -34,6 +34,10 @@ import type {
   EffectiveEncounter,
   ExportResult,
   ExportVerificationResult,
+  ExportRevocation,
+  FhirValidationResult,
+  OrgSettings,
+  OrgSettingsInput,
   Encounter,
   EncounterInput,
   Icd10Code,
@@ -2014,6 +2018,7 @@ function ClinicalWorkflowWorkspace({
   canRecordDiagnosis,
   canExport,
   canSensitiveExport,
+  canRevoke,
 }: {
   token: string;
   canManage: boolean;
@@ -2023,6 +2028,7 @@ function ClinicalWorkflowWorkspace({
   canRecordDiagnosis: boolean;
   canExport: boolean;
   canSensitiveExport: boolean;
+  canRevoke: boolean;
 }): ReactElement {
   const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
@@ -2058,6 +2064,33 @@ function ClinicalWorkflowWorkspace({
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportVerification, setExportVerification] =
     useState<ExportVerificationResult | null>(null);
+  const [zipExportResult, setZipExportResult] = useState<{
+    package: {
+      packageId: string;
+      archivePath: string;
+      manifest: {
+        expiresAt?: string | null | undefined;
+        fhirValidation?: FhirValidationResult | undefined;
+      };
+    };
+    savedArchivePath: string;
+    fhirValidation?: FhirValidationResult;
+    verification: ExportVerificationResult;
+  } | null>(null);
+  const [fhirValidation, setFhirValidation] =
+    useState<FhirValidationResult | null>(null);
+  const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
+  const [orgSettingsForm, setOrgSettingsForm] = useState<OrgSettingsInput>({
+    clinicNameEn: "Elite Clinic Management System",
+    countryCode: "EG",
+    oid: "1.3.6.1.4.1.99999.1",
+    fhirSystemUrl: "https://fhir.elite-clinic.local",
+    exportExpirationDays: 30,
+  });
+  const [revocations, setRevocations] = useState<readonly ExportRevocation[]>(
+    [],
+  );
+  const [revocationReason, setRevocationReason] = useState("");
   const [amendmentForm, setAmendmentForm] = useState<AmendmentFormState | null>(
     null,
   );
@@ -2371,6 +2404,151 @@ function ClinicalWorkflowWorkspace({
         reason instanceof Error
           ? reason.message
           : "Unable to create signed export",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const validateFhirExport = async (): Promise<void> => {
+    const latestSnapshot = projectionSnapshots[0];
+    if (!latestSnapshot || exportReason.trim().length < 3) {
+      setError(
+        "Create a projection snapshot and enter an export reason before FHIR validation",
+      );
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const result = await window.elite.export.validateFhir(token, {
+        snapshotId: latestSnapshot.id,
+        format: "fhir",
+        redactionPolicy: exportRedactionPolicy,
+        exportReason,
+      });
+      setFhirValidation(result);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to validate FHIR export",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createZipPatientRecord = async (): Promise<void> => {
+    if (!canExport) {
+      setError("Your role is not authorized to export patient records");
+      return;
+    }
+    const latestSnapshot = projectionSnapshots[0];
+    if (!latestSnapshot || exportReason.trim().length < 3) {
+      setError(
+        "Create a projection snapshot and enter an export reason before creating a ZIP export",
+      );
+      return;
+    }
+    if (exportRedactionPolicy === "full" && !canSensitiveExport) {
+      setError("Full export requires the sensitive-export permission");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    setFhirValidation(null);
+    try {
+      const created = await window.elite.export.createZipExport(token, {
+        snapshotId: latestSnapshot.id,
+        format: exportFormat,
+        redactionPolicy: exportRedactionPolicy,
+        exportReason,
+      });
+      setZipExportResult(created);
+      setFhirValidation(created.fhirValidation ?? null);
+      setExportReason("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to create signed ZIP export",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const loadOrganizationSettings = async (): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const settings = await window.elite.settings.getOrgSettings(token);
+      setOrgSettings(settings);
+      setOrgSettingsForm({
+        clinicNameEn: settings.clinicNameEn,
+        countryCode: settings.countryCode,
+        oid: settings.oid,
+        fhirSystemUrl: settings.fhirSystemUrl,
+        exportExpirationDays: settings.exportExpirationDays,
+      });
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load organization settings",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const saveOrganizationSettings = async (): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const settings = await window.elite.settings.updateOrgSettings(
+        token,
+        orgSettingsForm,
+      );
+      setOrgSettings(settings);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update organization settings",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const revokeLatestZipExport = async (): Promise<void> => {
+    if (!zipExportResult || revocationReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const revocation = await window.elite.export.revokeExport(
+        token,
+        zipExportResult.package.packageId,
+        revocationReason,
+      );
+      setRevocations([revocation, ...revocations]);
+      setZipExportResult({
+        ...zipExportResult,
+        verification: {
+          ...zipExportResult.verification,
+          verified: false,
+          revoked: true,
+          reason: "ZIP package has been revoked.",
+        },
+      });
+      setRevocationReason("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to revoke export package",
       );
     } finally {
       setIsBusy(false);
@@ -3770,6 +3948,47 @@ function ClinicalWorkflowWorkspace({
                   >
                     Create and save signed export
                   </button>
+                  <div className="button-row">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={
+                        isBusy ||
+                        exportReason.trim().length < 3 ||
+                        exportFormat !== "fhir"
+                      }
+                      onClick={() => void validateFhirExport()}
+                    >
+                      Validate FHIR R4
+                    </button>
+                    <button
+                      className="button primary"
+                      type="button"
+                      disabled={isBusy || exportReason.trim().length < 3}
+                      onClick={() => void createZipPatientRecord()}
+                    >
+                      Create signed ZIP export
+                    </button>
+                  </div>
+                  {fhirValidation ? (
+                    <div className="export-validation">
+                      <strong
+                        className={
+                          fhirValidation.valid ? "status ok" : "status error"
+                        }
+                      >
+                        {fhirValidation.valid
+                          ? "FHIR R4 validation passed"
+                          : "FHIR R4 validation failed"}
+                      </strong>
+                      {fhirValidation.issues.map((issue) => (
+                        <small key={`${issue.path}-${issue.code}`}>
+                          {issue.severity.toUpperCase()} · {issue.path} ·{" "}
+                          {issue.message}
+                        </small>
+                      ))}
+                    </div>
+                  ) : null}
                   {exportResult ? (
                     <div className="export-result">
                       <small>
@@ -3795,6 +4014,148 @@ function ClinicalWorkflowWorkspace({
                         </strong>
                       ) : null}
                     </div>
+                  ) : null}
+                  {zipExportResult ? (
+                    <div className="export-result">
+                      <small>
+                        ZIP archive: {zipExportResult.savedArchivePath}
+                      </small>
+                      <small>
+                        Package ID: {zipExportResult.package.packageId}
+                      </small>
+                      <small>
+                        Expires:{" "}
+                        {zipExportResult.package.manifest.expiresAt ?? "Never"}
+                      </small>
+                      <strong
+                        className={
+                          zipExportResult.verification.verified
+                            ? "status ok"
+                            : "status error"
+                        }
+                      >
+                        {zipExportResult.verification.verified
+                          ? "ZIP verified and currently valid"
+                          : zipExportResult.verification.reason}
+                      </strong>
+                      {canRevoke && !zipExportResult.verification.revoked ? (
+                        <div className="button-row">
+                          <input
+                            value={revocationReason}
+                            onChange={(event) =>
+                              setRevocationReason(event.target.value)
+                            }
+                            placeholder="Reason to revoke this package"
+                          />
+                          <button
+                            className="button danger"
+                            type="button"
+                            disabled={
+                              isBusy || revocationReason.trim().length < 3
+                            }
+                            onClick={() => void revokeLatestZipExport()}
+                          >
+                            Revoke package
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {canManage ? (
+                <div className="org-settings-panel">
+                  <div className="section-heading">
+                    <h4>Organization identifiers and export expiration</h4>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void loadOrganizationSettings()}
+                    >
+                      Load settings
+                    </button>
+                  </div>
+                  <div className="inline-fields">
+                    <label>
+                      Clinic name
+                      <input
+                        value={orgSettingsForm.clinicNameEn}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            clinicNameEn: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Country code
+                      <input
+                        value={orgSettingsForm.countryCode}
+                        maxLength={2}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            countryCode: event.target.value.toUpperCase(),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      OID
+                      <input
+                        value={orgSettingsForm.oid}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            oid: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      FHIR system URL
+                      <input
+                        value={orgSettingsForm.fhirSystemUrl}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            fhirSystemUrl: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Expiration days
+                      <input
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={orgSettingsForm.exportExpirationDays}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            exportExpirationDays: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void saveOrganizationSettings()}
+                  >
+                    Save organization settings
+                  </button>
+                  {orgSettings ? (
+                    <small className="muted">
+                      Last updated{" "}
+                      {new Date(orgSettings.updatedAt).toLocaleString()} by{" "}
+                      {orgSettings.updatedByUserId}
+                    </small>
                   ) : null}
                 </div>
               ) : null}
@@ -4668,6 +5029,7 @@ function AuthenticatedView({
           }
           canExport={session.capabilities.includes("export.manage")}
           canSensitiveExport={session.capabilities.includes("export.sensitive")}
+          canRevoke={session.capabilities.includes("export.revoke")}
         />
       ) : null}
       {session.role === "admin" &&

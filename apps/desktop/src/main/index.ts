@@ -75,6 +75,7 @@ function initializeServices(): void {
       safeStorage,
       join(app.getPath("userData"), "elite-export-signing-key.json"),
     );
+    patientExportService.setSignaturePort(exportSigner);
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -699,6 +700,110 @@ function registerIpc(): void {
   ipcMain.handle("export:verify", (_event, input: unknown) =>
     verifyExportPackage(input as never),
   );
+  ipcMain.handle(
+    "export:create-zip",
+    async (_event, token: string, input: unknown) => {
+      const parsed = patientExportInputSchema.parse(
+        input,
+      ) as PatientExportInput;
+      const context = serviceContext(token);
+      const service = requirePatientExportService();
+      const payload = service.buildPayload(context, parsed);
+      const payloadBuffer =
+        parsed.format === "fhir"
+          ? service.buildFhirBundle(context, parsed)
+          : await renderPatientExportPdf(payload);
+      const built = service.buildZipPackage(context, parsed, payloadBuffer);
+      if (!mainWindow)
+        throw new Error(
+          "ELITE_EXPORT_WINDOW_UNAVAILABLE: export window is unavailable",
+        );
+      const selected = await dialog.showSaveDialog(mainWindow, {
+        title: "Save signed ZIP patient record export",
+        defaultPath: join(
+          app.getPath("documents"),
+          built.package.archiveFileName,
+        ),
+        buttonLabel: "Save ZIP export",
+        filters: [{ name: "Signed ZIP export", extensions: ["zip"] }],
+      });
+      if (selected.canceled || !selected.filePath)
+        throw new Error("ELITE_EXPORT_CANCELLED: export save was cancelled");
+      writeFileSync(selected.filePath, built.archive, { mode: 0o600 });
+      return {
+        package: { ...built.package, archivePath: selected.filePath },
+        savedArchivePath: selected.filePath,
+        fhirValidation: built.package.manifest.fhirValidation,
+        verification: service.verifyZipPackage(built.archive),
+      };
+    },
+  );
+  ipcMain.handle("export:verify-zip", (_event, archiveBase64: string) =>
+    requirePatientExportService().verifyZipPackage(
+      Buffer.from(archiveBase64, "base64"),
+    ),
+  );
+  ipcMain.handle(
+    "export:fhir-validate",
+    (_event, token: string, input: unknown) => {
+      try {
+        const parsed = patientExportInputSchema.parse({
+          ...(input as Record<string, unknown>),
+          format: "fhir",
+        }) as PatientExportInput;
+        const context = serviceContext(token);
+        const payload = requirePatientExportService().buildFhirBundle(
+          context,
+          parsed,
+        );
+        return requirePatientExportService().validateFhirBundle(
+          JSON.parse(payload.toString("utf8")),
+        );
+      } catch (error) {
+        return {
+          valid: false,
+          fhirVersion: "R4",
+          validatorVersion: "elite-fhir-r4-1",
+          profileIds: [],
+          issues: [
+            {
+              severity: "error",
+              path: "$",
+              code: "validation-failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "FHIR validation failed",
+            },
+          ],
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    "export:revoke",
+    (_event, token: string, packageId: string, reason: string) =>
+      requirePatientExportService().revokeExport(
+        serviceContext(token),
+        packageId,
+        reason,
+      ),
+  );
+  ipcMain.handle("export:revocations", (_event, token: string) =>
+    requirePatientExportService().listRevocations(serviceContext(token)),
+  );
+  ipcMain.handle("settings:org-get", (_event, token: string) =>
+    requirePatientExportService().getOrgSettings(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "settings:org-update",
+    (_event, token: string, input: unknown) =>
+      requirePatientExportService().updateOrgSettings(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+
   ipcMain.handle(
     "clinical:amendments",
     (_event, token: string, encounterId: string) =>

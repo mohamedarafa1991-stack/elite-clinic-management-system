@@ -32,6 +32,7 @@ export const capabilitySchema = z.enum([
   "backup.manage",
   "export.manage",
   "export.sensitive",
+  "export.revoke",
   "audit.read",
   "module.manage",
 ]);
@@ -56,6 +57,7 @@ export const roleCapabilities = {
     "backup.manage",
     "export.manage",
     "export.sensitive",
+    "export.revoke",
     "audit.read",
     "module.manage",
   ],
@@ -425,6 +427,70 @@ export type ExportRedactionPolicy = z.infer<typeof exportRedactionPolicySchema>;
 export const exportFormatSchema = z.enum(["pdf", "fhir"]);
 export type ExportFormat = z.infer<typeof exportFormatSchema>;
 
+export const orgIdentifierSchema = z.object({
+  clinicNameEn: z.string().trim().min(1).max(160),
+  countryCode: z.string().regex(/^[A-Z]{2}$/),
+  oid: z
+    .string()
+    .regex(/^\d+(\.\d+)+$/)
+    .max(128),
+  fhirSystemUrl: z.string().url().max(500),
+});
+export type OrgIdentifier = z.infer<typeof orgIdentifierSchema>;
+
+export const orgSettingsInputSchema = orgIdentifierSchema.extend({
+  exportExpirationDays: z.number().int().min(1).max(3650).default(30),
+});
+export type OrgSettingsInput = z.infer<typeof orgSettingsInputSchema>;
+
+export const orgSettingsSchema = orgSettingsInputSchema.extend({
+  updatedAt: isoDateTimeSchema,
+  updatedByUserId: opaqueIdSchema,
+});
+export type OrgSettings = z.infer<typeof orgSettingsSchema>;
+
+export const exportExpirationPolicySchema = z.enum([
+  "30-days",
+  "custom-days",
+  "never",
+]);
+export type ExportExpirationPolicy = z.infer<
+  typeof exportExpirationPolicySchema
+>;
+
+export const exportExpirationSchema = z.object({
+  expiresAt: isoDateTimeSchema.nullable(),
+  expirationPolicy: exportExpirationPolicySchema,
+});
+export type ExportExpiration = z.infer<typeof exportExpirationSchema>;
+
+export const fhirValidationIssueSchema = z.object({
+  severity: z.enum(["error", "warning"]),
+  path: z.string().min(1),
+  code: z.string().min(1).max(80),
+  message: z.string().min(1).max(1000),
+});
+export type FhirValidationIssue = z.infer<typeof fhirValidationIssueSchema>;
+
+export const fhirValidationResultSchema = z.object({
+  valid: z.boolean(),
+  fhirVersion: z.literal("R4"),
+  validatorVersion: z.string().min(1).max(40),
+  profileIds: z.array(z.string().url().or(z.string().startsWith("urn:"))),
+  issues: z.array(fhirValidationIssueSchema),
+});
+export type FhirValidationResult = z.infer<typeof fhirValidationResultSchema>;
+
+export const exportRevocationSchema = z.object({
+  id: opaqueIdSchema,
+  packageId: opaqueIdSchema,
+  reason: z.string().trim().min(3).max(1000),
+  revokedByUserId: opaqueIdSchema,
+  revokedAt: isoDateTimeSchema,
+  auditEventId: opaqueIdSchema,
+});
+export type ExportRevocation = z.infer<typeof exportRevocationSchema>;
+
 export const patientExportInputSchema = z.object({
   snapshotId: opaqueIdSchema,
   format: exportFormatSchema,
@@ -466,7 +532,8 @@ export const patientExportPayloadSchema = z.object({
 export type PatientExportPayload = z.infer<typeof patientExportPayloadSchema>;
 
 export const signedExportManifestSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  packageType: z.enum(["detached", "zip"]).optional(),
   packageId: opaqueIdSchema,
   snapshotId: opaqueIdSchema,
   snapshotPayloadHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -479,6 +546,19 @@ export const signedExportManifestSchema = z.object({
   exportReason: z.string().trim().min(3).max(500),
   createdAt: isoDateTimeSchema,
   createdByUserId: opaqueIdSchema,
+  orgIdentifier: orgIdentifierSchema.optional(),
+  expiresAt: isoDateTimeSchema.nullable().optional(),
+  expirationPolicy: exportExpirationPolicySchema.optional(),
+  fhirValidation: fhirValidationResultSchema.optional(),
+  memberHashes: z
+    .record(z.string(), z.string().regex(/^[a-f0-9]{64}$/))
+    .optional(),
+  packageContentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  revokedAt: isoDateTimeSchema.optional(),
+  revokedReason: z.string().max(1000).optional(),
 });
 export type SignedExportManifest = z.infer<typeof signedExportManifestSchema>;
 
@@ -490,6 +570,18 @@ export const exportPackageSchema = z.object({
   signatureFileName: z.string().regex(/^[a-zA-Z0-9._-]+$/),
 });
 export type ExportPackage = z.infer<typeof exportPackageSchema>;
+
+export const exportZipPackageSchema = z.object({
+  packageId: opaqueIdSchema,
+  archiveFileName: z.string().regex(/^[a-zA-Z0-9._-]+\.zip$/),
+  manifest: signedExportManifestSchema.refine(
+    (manifest) => manifest.packageType === "zip",
+    "ZIP package manifest must declare packageType=zip",
+  ),
+  memberNames: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/)).min(4),
+  archivePath: z.string().min(1),
+});
+export type ExportZipPackage = z.infer<typeof exportZipPackageSchema>;
 
 export const exportResultSchema = z.object({
   package: exportPackageSchema,
@@ -515,6 +607,10 @@ export const exportVerificationResultSchema = z.object({
   payloadHashValid: z.boolean(),
   snapshotHashPresent: z.boolean(),
   reason: z.string(),
+  archiveIntegrityValid: z.boolean().default(false),
+  expired: z.boolean().default(false),
+  revoked: z.boolean().default(false),
+  revocation: exportRevocationSchema.optional(),
   manifest: signedExportManifestSchema.optional(),
 });
 export type ExportVerificationResult = z.infer<
