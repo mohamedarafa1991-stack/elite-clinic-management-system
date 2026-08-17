@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import type {
   AuthStatus,
   EliteSecurityStatus,
+  LanSyncStatus,
   SessionSummary,
 } from "../preload/index.js";
 import type {
@@ -5835,6 +5836,94 @@ function AuthenticatedView({
   );
 }
 
+function LanSyncRecoveryNotice({
+  status,
+  token,
+  session,
+  onStatusChange,
+}: {
+  status: LanSyncStatus;
+  token: string | null;
+  session: SessionSummary | null;
+  onStatusChange: (status: LanSyncStatus) => void;
+}): ReactElement | null {
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canRecover =
+    session?.role === "admin" &&
+    session.capabilities.includes("device.manage") &&
+    Boolean(token);
+
+  if (status.state === "ready") return null;
+
+  const retry = async (): Promise<void> => {
+    if (!token || !canRecover) return;
+    setIsRetrying(true);
+    setError(null);
+    try {
+      onStatusChange(await window.elite.app.restartLanSync(token));
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to retry secure LAN synchronization",
+      );
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  return (
+    <section
+      className="card tls-recovery-card"
+      aria-labelledby="lan-sync-title"
+    >
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Administrator attention</p>
+          <h2 id="lan-sync-title">LAN synchronization unavailable</h2>
+        </div>
+        <span
+          className={`status ${status.state === "starting" ? "warn" : "error"}`}
+        >
+          {status.state === "starting" ? "Starting" : "Action required"}
+        </span>
+      </div>
+      <p className="form-help">
+        Android devices cannot synchronize until the Hub’s secure TLS transport
+        is available. Patient data remains local and protected while this is
+        unresolved.
+      </p>
+      <p className="error" role="alert">
+        {status.message}
+      </p>
+      {status.lastAttemptAt ? (
+        <p className="muted">
+          Last attempt: {new Date(status.lastAttemptAt).toLocaleString()}
+        </p>
+      ) : null}
+      {canRecover ? (
+        <button
+          className="button primary"
+          type="button"
+          onClick={() => void retry()}
+          disabled={isRetrying}
+        >
+          {isRetrying
+            ? "Retrying secure LAN startup…"
+            : "Retry secure LAN startup"}
+        </button>
+      ) : (
+        <p className="form-help">
+          Sign in with an Admin account that has device-management permission to
+          retry after correcting the Hub TLS configuration.
+        </p>
+      )}
+      <ErrorMessage message={error} />
+    </section>
+  );
+}
+
 function FoundationStatus(): ReactElement {
   const [security, setSecurity] = useState<EliteSecurityStatus | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -5930,6 +6019,19 @@ function FoundationStatus(): ReactElement {
           <p className="muted">Checking the secure main-process boundary…</p>
         )}
       </section>
+
+      {security ? (
+        <LanSyncRecoveryNotice
+          status={security.lanSync}
+          token={token}
+          session={session}
+          onStatusChange={(nextStatus) =>
+            setSecurity((current) =>
+              current ? { ...current, lanSync: nextStatus } : current,
+            )
+          }
+        />
+      ) : null}
 
       {authStatus?.bootstrapRequired ? (
         <BootstrapForm onComplete={setAuthStatus} />

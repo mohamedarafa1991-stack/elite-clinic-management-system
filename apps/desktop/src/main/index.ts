@@ -13,6 +13,7 @@ import {
   exportSigningData,
   hashExportPayload,
   verifyExportPackage,
+  requireCapability,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import {
@@ -29,6 +30,11 @@ import { fileURLToPath } from "node:url";
 import { writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { LanSyncHttpServer } from "./lan-sync-server.js";
+import {
+  lanSyncStartingStatus,
+  sanitizeLanSyncStartupError,
+} from "./lan-sync-status.js";
+import type { LanSyncStatus } from "../preload/index.js";
 import {
   exportPackageSchema,
   patientExportInputSchema,
@@ -56,6 +62,10 @@ let lanSessionService: LanSessionService | undefined;
 let lanSyncServer: LanSyncHttpServer | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
+let lanSyncStatus: LanSyncStatus = {
+  state: "starting",
+  message: "LAN synchronization is starting securely.",
+};
 
 function initializeServices(): void {
   try {
@@ -103,6 +113,59 @@ function initializeServices(): void {
       ? "Secure encrypted storage could not be initialized for this production build."
       : "Secure local services could not be initialized.";
   }
+}
+
+async function startLanSyncServer(): Promise<void> {
+  const attemptAt = new Date().toISOString();
+  if (!synchronizationService) {
+    lanSyncStatus = {
+      state: "unavailable",
+      message:
+        "LAN synchronization is unavailable because secure local services are not ready.",
+      lastAttemptAt: attemptAt,
+    };
+    return;
+  }
+  lanSyncStatus = lanSyncStartingStatus(attemptAt);
+  const server = new LanSyncHttpServer(
+    new LanSyncFrameRouter(synchronizationService),
+    lanSessionService,
+  );
+  lanSyncServer = server;
+  try {
+    await server.start();
+    lanSyncStatus = {
+      state: "ready",
+      message: "LAN synchronization is ready over the configured transport.",
+      lastAttemptAt: attemptAt,
+    };
+  } catch (error: unknown) {
+    lanSyncServer = undefined;
+    lanSyncStatus = {
+      state: "failed",
+      message: sanitizeLanSyncStartupError(error),
+      lastAttemptAt: attemptAt,
+    };
+    try {
+      await server.stop();
+    } catch {
+      // Do not replace the sanitized startup diagnosis with cleanup noise.
+    }
+  }
+}
+
+async function restartLanSyncServer(): Promise<LanSyncStatus> {
+  const previousServer = lanSyncServer;
+  lanSyncServer = undefined;
+  if (previousServer) {
+    try {
+      await previousServer.stop();
+    } catch {
+      // The next start attempt will create a fresh listener.
+    }
+  }
+  await startLanSyncServer();
+  return lanSyncStatus;
 }
 
 function registerContentSecurityPolicy(): void {
@@ -345,7 +408,13 @@ function registerIpc(): void {
     isPackaged: app.isPackaged,
     secureServicesReady: !serviceError,
     serviceError,
+    lanSync: lanSyncStatus,
   }));
+
+  ipcMain.handle("app:lan-sync-restart", async (_event, token: string) => {
+    requireCapability(serviceContext(token), "device.manage");
+    return restartLanSyncServer();
+  });
 
   ipcMain.handle("auth:status", () => {
     const service = requireAuthService();
@@ -1396,15 +1465,7 @@ function serviceContext(token: string) {
 app.whenReady().then(async () => {
   registerContentSecurityPolicy();
   initializeServices();
-  if (synchronizationService) {
-    lanSyncServer = new LanSyncHttpServer(
-      new LanSyncFrameRouter(synchronizationService),
-      lanSessionService,
-    );
-    void lanSyncServer.start().catch(() => {
-      lanSyncServer = undefined;
-    });
-  }
+  await startLanSyncServer();
   registerIpc();
   mainWindow = createWindow();
   await loadRenderer(mainWindow);

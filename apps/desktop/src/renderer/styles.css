@@ -159,6 +159,13 @@ dd {
   color: #991b1b;
   background: #fee2e2;
 }
+.tls-recovery-card {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+.tls-recovery-card .card-heading {
+  margin-bottom: 12px;
+}
 
 @media (max-width: 900px) {
   .shell {

@@ -80,6 +80,12 @@ import type {
   RelatedPersonSummary,
 } from "@elite/auth";
 
+export interface LanSyncStatus {
+  state: "starting" | "ready" | "failed" | "unavailable";
+  message: string;
+  lastAttemptAt?: string;
+}
+
 export interface EliteSecurityStatus {
   electronVersion: string;
   chromiumVersion: string;
@@ -90,6 +96,7 @@ export interface EliteSecurityStatus {
   isPackaged: boolean;
   secureServicesReady: boolean;
   serviceError?: string;
+  lanSync: LanSyncStatus;
 }
 
 export interface AuthStatus {
@@ -180,6 +187,11 @@ const eliteApi = {
   app: {
     getSecurityStatus: (): Promise<EliteSecurityStatus> =>
       ipcRenderer.invoke("app:security-status") as Promise<EliteSecurityStatus>,
+    restartLanSync: (token: string): Promise<LanSyncStatus> =>
+      ipcRenderer.invoke(
+        "app:lan-sync-restart",
+        token,
+      ) as Promise<LanSyncStatus>,
   },
   patients: {
     search: (token: string, filters?: PatientSearchFilters) =>
