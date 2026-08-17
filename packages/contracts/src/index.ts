@@ -1840,3 +1840,48 @@ export const sessionFrameSchema = z.object({
   deviceSignatureBase64: step22Base64TextSchema.optional(),
 });
 export type SessionFrame = z.infer<typeof sessionFrameSchema>;
+
+export const enrollmentStateSchema = z.enum([
+  "pending",
+  "approved",
+  "active",
+  "suspended",
+  "revoked",
+  "rejected",
+  "expired",
+]);
+export type EnrollmentState = z.infer<typeof enrollmentStateSchema>;
+
+export const enrollmentChallengeCreateInputSchema = z.object({
+  organizationId: opaqueIdSchema,
+  intendedUserId: opaqueIdSchema,
+  intendedRole: userRoleSchema,
+  requestedPolicyVersion: step22PositiveIntSchema,
+  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  validitySeconds: z.number().int().min(60).max(86_400).default(86_400),
+});
+export type EnrollmentChallengeCreateInput = z.input<
+  typeof enrollmentChallengeCreateInputSchema
+>;
+
+export const enrollmentStateSummarySchema = z.object({
+  enrollmentId: opaqueIdSchema.optional(),
+  challengeId: opaqueIdSchema,
+  requestId: opaqueIdSchema,
+  deviceId: opaqueIdSchema,
+  organizationId: opaqueIdSchema,
+  ownerUserId: opaqueIdSchema,
+  role: userRoleSchema,
+  deviceName: z.string().trim().min(1).max(120),
+  state: enrollmentStateSchema,
+  policyVersion: step22PositiveIntSchema,
+  allowedScopes: z.array(syncScopeSchema).max(5),
+  issuedAt: isoDateTimeSchema.optional(),
+  expiresAt: isoDateTimeSchema.optional(),
+  offlineAccessUntil: isoDateTimeSchema.optional(),
+  acknowledgedAt: isoDateTimeSchema.optional(),
+  revokedAt: isoDateTimeSchema.optional(),
+});
+export type EnrollmentStateSummary = z.infer<
+  typeof enrollmentStateSummarySchema
+>;

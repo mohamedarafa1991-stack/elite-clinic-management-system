@@ -26,7 +26,7 @@ describe("Elite database foundation", () => {
         .map((row) => (row as { name: string }).name);
 
       expect(migrationVersions()).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
       ]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
@@ -73,6 +73,10 @@ describe("Elite database foundation", () => {
       expect(tables).toContain("sync_outbox");
       expect(tables).toContain("sync_conflicts");
       expect(tables).toContain("clinical_sync_conflicts");
+      expect(tables).toContain("android_enrollment_challenges");
+      expect(tables).toContain("android_enrollment_requests");
+      expect(tables).toContain("android_enrollment_records");
+      expect(tables).toContain("android_enrollment_events");
       const amendmentColumns = database.raw
         .prepare("PRAGMA table_info(encounter_amendments)")
         .all() as Array<{ name: string }>;

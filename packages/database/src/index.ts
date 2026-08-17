@@ -1025,6 +1025,99 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         ON clinical_sync_conflicts(sync_device_id, resolved_at, created_at DESC);
     `,
   },
+  {
+    version: 18,
+    name: "android-enrollment-state",
+    sql: `
+      CREATE TABLE IF NOT EXISTS android_enrollment_challenges (
+        id TEXT PRIMARY KEY NOT NULL,
+        organization_id TEXT NOT NULL,
+        intended_user_id TEXT NOT NULL REFERENCES users(id),
+        intended_role TEXT NOT NULL CHECK (intended_role IN ('admin', 'doctor', 'nurse', 'receptionist')),
+        requested_policy_version INTEGER NOT NULL CHECK (requested_policy_version > 0),
+        requested_scopes_json TEXT NOT NULL,
+        response_nonce TEXT NOT NULL UNIQUE,
+        issued_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'expired', 'revoked', 'rejected')),
+        response_hash TEXT,
+        signer_key_id TEXT,
+        signer_key_version INTEGER,
+        descriptor_json TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        accepted_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_android_enrollment_challenges_state
+        ON android_enrollment_challenges(status, expires_at, created_at DESC);
+      CREATE TABLE IF NOT EXISTS android_enrollment_requests (
+        id TEXT PRIMARY KEY NOT NULL,
+        challenge_id TEXT NOT NULL REFERENCES android_enrollment_challenges(id),
+        organization_id TEXT NOT NULL,
+        device_id TEXT NOT NULL UNIQUE REFERENCES devices(id),
+        device_name TEXT NOT NULL,
+        app_version TEXT NOT NULL,
+        api_level INTEGER,
+        device_public_key_spki_base64 TEXT NOT NULL,
+        device_public_key_fingerprint TEXT NOT NULL CHECK (length(device_public_key_fingerprint) = 64),
+        request_nonce TEXT NOT NULL UNIQUE,
+        request_hash TEXT NOT NULL CHECK (length(request_hash) = 64),
+        descriptor_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+        requested_at TEXT NOT NULL,
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        rejection_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_android_enrollment_requests_state
+        ON android_enrollment_requests(status, requested_at DESC);
+      CREATE TABLE IF NOT EXISTS android_enrollment_records (
+        id TEXT PRIMARY KEY NOT NULL,
+        request_id TEXT NOT NULL UNIQUE REFERENCES android_enrollment_requests(id),
+        challenge_id TEXT NOT NULL REFERENCES android_enrollment_challenges(id),
+        device_id TEXT NOT NULL UNIQUE REFERENCES devices(id),
+        organization_id TEXT NOT NULL,
+        owner_user_id TEXT NOT NULL REFERENCES users(id),
+        role TEXT NOT NULL CHECK (role IN ('admin', 'doctor', 'nurse', 'receptionist')),
+        device_name TEXT NOT NULL,
+        device_public_key_fingerprint TEXT NOT NULL CHECK (length(device_public_key_fingerprint) = 64),
+        policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+        allowed_scopes_json TEXT NOT NULL,
+        patient_scope_json TEXT,
+        response_hash TEXT NOT NULL UNIQUE CHECK (length(response_hash) = 64),
+        response_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('approved', 'active', 'suspended', 'revoked')),
+        issued_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        offline_access_until TEXT NOT NULL,
+        acknowledged_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_android_enrollment_records_state
+        ON android_enrollment_records(status, expires_at, created_at DESC);
+      CREATE TABLE IF NOT EXISTS android_enrollment_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        enrollment_id TEXT REFERENCES android_enrollment_records(id),
+        challenge_id TEXT REFERENCES android_enrollment_challenges(id),
+        request_id TEXT REFERENCES android_enrollment_requests(id),
+        action TEXT NOT NULL,
+        from_state TEXT,
+        to_state TEXT NOT NULL,
+        actor_user_id TEXT REFERENCES users(id),
+        reason_code TEXT,
+        metadata_json TEXT NOT NULL,
+        occurred_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_android_enrollment_events_entity
+        ON android_enrollment_events(enrollment_id, occurred_at DESC);
+    `,
+  },
 ];
 
 function now(): string {

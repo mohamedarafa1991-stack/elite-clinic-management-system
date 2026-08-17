@@ -65,6 +65,12 @@ import type {
   SyncDeviceRegistrationInput,
   SyncOutboxAcknowledgment,
   SyncOutboxInput,
+  EnrollmentAcknowledgment,
+  EnrollmentChallenge,
+  EnrollmentChallengeCreateInput,
+  EnrollmentDeviceRequest,
+  EnrollmentResponse,
+  EnrollmentStateSummary,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -617,6 +623,62 @@ const eliteApi = {
       ipcRenderer.invoke("sync:outbox-list", token, deviceId) as Promise<
         readonly Record<string, unknown>[]
       >,
+  },
+  enrollment: {
+    createChallenge: (
+      token: string,
+      input: EnrollmentChallengeCreateInput,
+    ): Promise<EnrollmentChallenge> =>
+      ipcRenderer.invoke(
+        "enrollment:challenge-create",
+        token,
+        input,
+      ) as Promise<EnrollmentChallenge>,
+    submitDeviceRequest: (
+      input: EnrollmentDeviceRequest,
+    ): Promise<EnrollmentStateSummary> =>
+      ipcRenderer.invoke(
+        "enrollment:request-submit",
+        input,
+      ) as Promise<EnrollmentStateSummary>,
+    approveDeviceRequest: (
+      token: string,
+      requestId: string,
+      offlineAccessDays?: number,
+    ): Promise<EnrollmentResponse> =>
+      ipcRenderer.invoke(
+        "enrollment:request-approve",
+        token,
+        requestId,
+        offlineAccessDays,
+      ) as Promise<EnrollmentResponse>,
+    acknowledge: (
+      input: EnrollmentAcknowledgment,
+    ): Promise<EnrollmentStateSummary> =>
+      ipcRenderer.invoke(
+        "enrollment:acknowledge",
+        input,
+      ) as Promise<EnrollmentStateSummary>,
+    revoke: (
+      token: string,
+      enrollmentId: string,
+      reason: string,
+    ): Promise<EnrollmentStateSummary> =>
+      ipcRenderer.invoke(
+        "enrollment:revoke",
+        token,
+        enrollmentId,
+        reason,
+      ) as Promise<EnrollmentStateSummary>,
+    getSummary: (
+      token: string,
+      enrollmentId: string,
+    ): Promise<EnrollmentStateSummary> =>
+      ipcRenderer.invoke(
+        "enrollment:summary",
+        token,
+        enrollmentId,
+      ) as Promise<EnrollmentStateSummary>,
   },
   export: {
     createExport: (token: string, input: PatientExportInput) =>

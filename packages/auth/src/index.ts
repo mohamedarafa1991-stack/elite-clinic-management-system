@@ -831,3 +831,5 @@ export {
 } from "./export-governance-service.js";
 
 export * from "./session-protocol.js";
+export * from "./android-enrollment-service.js";
+export * from "./session-key-derivation.js";

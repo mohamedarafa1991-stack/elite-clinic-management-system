@@ -7,6 +7,7 @@ import {
   PatientExportService,
   PatientIdentityService,
   SynchronizationService,
+  AndroidEnrollmentService,
   exportSigningData,
   hashExportPayload,
   verifyExportPackage,
@@ -47,6 +48,7 @@ let clinicalService: ClinicalWorkflowService | undefined;
 let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
 let synchronizationService: SynchronizationService | undefined;
+let androidEnrollmentService: AndroidEnrollmentService | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
 
@@ -85,6 +87,10 @@ function initializeServices(): void {
       exportSigner,
     );
     synchronizationService = new SynchronizationService(database, exportSigner);
+    androidEnrollmentService = new AndroidEnrollmentService(
+      database,
+      exportSigner,
+    );
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -206,6 +212,14 @@ function requireSynchronizationService(): SynchronizationService {
   }
   return synchronizationService;
 }
+function requireAndroidEnrollmentService(): AndroidEnrollmentService {
+  if (!androidEnrollmentService) {
+    throw new Error(
+      "ELITE_ENROLLMENT_STORAGE_UNAVAILABLE: Android enrollment services are unavailable",
+    );
+  }
+  return androidEnrollmentService;
+}
 function requireExportSigner(): ElectronExportSigner {
   if (!exportSigner) {
     throw new Error(
@@ -216,6 +230,53 @@ function requireExportSigner(): ElectronExportSigner {
 }
 
 function registerIpc(): void {
+  ipcMain.handle(
+    "enrollment:challenge-create",
+    (_event, token: string, input: unknown) =>
+      requireAndroidEnrollmentService().createChallenge(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle("enrollment:request-submit", (_event, input: unknown) =>
+    requireAndroidEnrollmentService().submitDeviceRequest(input as never),
+  );
+  ipcMain.handle(
+    "enrollment:request-approve",
+    (_event, token: string, requestId: string, offlineAccessDays?: number) =>
+      requireAndroidEnrollmentService().approveDeviceRequest(
+        serviceContext(token),
+        requestId,
+        offlineAccessDays,
+      ),
+  );
+  ipcMain.handle("enrollment:acknowledge", (_event, input: unknown) =>
+    requireAndroidEnrollmentService().acknowledgeEnrollment(input as never),
+  );
+  ipcMain.handle(
+    "enrollment:revoke",
+    (_event, token: string, enrollmentId: string, reason: string) =>
+      requireAndroidEnrollmentService().revokeEnrollment(
+        serviceContext(token),
+        enrollmentId,
+        reason,
+      ),
+  );
+  ipcMain.handle(
+    "enrollment:summary",
+    (_event, token: string, enrollmentId: string) => {
+      const context = serviceContext(token);
+      if (context.role !== "admin") {
+        throw new Error(
+          "ELITE_ENROLLMENT_ADMIN_REQUIRED: administrator privileges are required",
+        );
+      }
+      return requireAndroidEnrollmentService().getEnrollmentSummary(
+        enrollmentId,
+      );
+    },
+  );
+
   ipcMain.handle(
     "sync:device-register",
     (_event, token: string, input: unknown) =>
@@ -1358,5 +1419,6 @@ app.on("before-quit", () => {
   patientExportService = undefined;
   exportGovernanceService = undefined;
   synchronizationService = undefined;
+  androidEnrollmentService = undefined;
   exportSigner = undefined;
 });
