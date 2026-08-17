@@ -803,6 +803,12 @@ export type {
 
 export { ClinicalWorkflowService } from "./clinical-service.js";
 export { MedicalHistoryService } from "./medical-history-service.js";
+export {
+  BUILTIN_FHIR_PROFILE_BUNDLES,
+  canonicalizeProfileBundle,
+  getBuiltinFhirProfileBundle,
+  hashFhirProfileBundle,
+} from "./fhir-profile-bundles.js";
 export type { MedicalHistoryServiceOptions } from "./medical-history-service.js";
 export { EncounterService } from "./encounter-service.js";
 export type { EncounterServiceOptions } from "./encounter-service.js";

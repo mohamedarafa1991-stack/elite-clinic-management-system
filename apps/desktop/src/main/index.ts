@@ -804,6 +804,17 @@ function registerIpc(): void {
       ),
   );
 
+  ipcMain.handle("settings:fhir-profiles", (_event, token: string) =>
+    requirePatientExportService().listFhirProfileBundles(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "settings:fhir-profile-install",
+    (_event, token: string, input: unknown) =>
+      requirePatientExportService().installFhirProfileBundle(
+        serviceContext(token),
+        input as never,
+      ),
+  );
   ipcMain.handle(
     "clinical:amendments",
     (_event, token: string, encounterId: string) =>

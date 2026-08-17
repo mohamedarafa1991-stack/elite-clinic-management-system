@@ -656,6 +656,23 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_org_settings_updated_at ON org_settings(updated_at);
     `,
   },
+  {
+    version: 13,
+    name: "offline-fhir-profile-bundles",
+    sql: `
+      CREATE TABLE IF NOT EXISTS fhir_profile_bundles (
+        id TEXT PRIMARY KEY NOT NULL,
+        bundle_json TEXT NOT NULL,
+        bundle_hash TEXT NOT NULL CHECK (length(bundle_hash) = 64),
+        status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
+        installed_at TEXT NOT NULL,
+        installed_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_fhir_profile_bundles_status ON fhir_profile_bundles(status, updated_at);
+    `,
+  },
 ];
 
 function now(): string {

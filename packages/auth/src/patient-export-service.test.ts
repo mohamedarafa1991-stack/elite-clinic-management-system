@@ -1,4 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDatabase } from "@elite/database";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,6 +16,7 @@ import {
 } from "./index.js";
 import { ClinicalWorkflowService } from "./clinical-service.js";
 import { EncounterService } from "./encounter-service.js";
+import { createDeterministicZip, readDeterministicZip } from "./zip-utils.js";
 import { PatientIdentityService } from "./patient-service.js";
 
 const bootstrapInput = {
@@ -209,15 +215,68 @@ describe("PatientExportService", () => {
         "urn:elite-clinic:fhir-profile:patient-record-document-r4",
       );
 
+      const installedProfile = exporter.installFhirProfileBundle(admin, {
+        id: "national-eg-demo-r4",
+        displayName: "Synthetic National EG Patient Document R4",
+        jurisdiction: "EG",
+        version: "2026.1.0",
+        fhirVersion: "R4",
+        publisher: "Synthetic National Standards Authority",
+        sourceUri: "urn:synthetic:national-eg-r4",
+        profiles: [
+          {
+            resourceType: "Bundle",
+            canonicalUrl:
+              "urn:synthetic:national-eg-r4:StructureDefinition:document-bundle",
+            requiredPaths: ["type", "timestamp", "identifier", "entry"],
+            fixedValues: { type: "document" },
+          },
+          {
+            resourceType: "Patient",
+            canonicalUrl:
+              "urn:synthetic:national-eg-r4:StructureDefinition:patient",
+            requiredPaths: ["id", "name"],
+            fixedValues: {},
+          },
+        ],
+      });
+      expect(installedProfile.bundleHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(
+        exporter
+          .listFhirProfileBundles(admin)
+          .some((profile) => profile.id === installedProfile.id),
+      ).toBe(true);
+
       const updatedSettings = exporter.updateOrgSettings(admin, {
         clinicNameEn: "Elite Clinic Synthetic Branch",
         countryCode: "EG",
         oid: "1.3.6.1.4.1.99999.42",
         fhirSystemUrl: "https://synthetic.elite-clinic.local/fhir",
         exportExpirationDays: 7,
+        fhirProfileBundleId: "national-eg-demo-r4",
       });
       expect(updatedSettings.exportExpirationDays).toBe(7);
       expect(exporter.getOrgSettings(admin).oid).toBe("1.3.6.1.4.1.99999.42");
+      expect(exporter.getOrgSettings(admin).fhirProfileBundleId).toBe(
+        "national-eg-demo-r4",
+      );
+      const customFhir = exporter.buildFhirBundle(admin, {
+        snapshotId: snapshot.id,
+        format: "fhir",
+        redactionPolicy: "clinical",
+        exportReason: "Synthetic national profile export",
+      });
+      expect(JSON.parse(customFhir.toString("utf8")).resourceType).toBe(
+        "Bundle",
+      );
+      const minimalProfileFailure = () =>
+        exporter.buildFhirBundle(admin, {
+          snapshotId: snapshot.id,
+          format: "fhir",
+          redactionPolicy: "minimal",
+          exportReason: "Synthetic national profile minimal export",
+        });
+      expect(minimalProfileFailure).toThrow(/requires name/);
 
       exporter.setSignaturePort({
         sign(data) {
@@ -238,11 +297,79 @@ describe("PatientExportService", () => {
         fhir,
       );
       expect(zip.package.manifest.packageType).toBe("zip");
+      expect(zip.package.manifest.fhirProfileBundleId).toBe(
+        "national-eg-demo-r4",
+      );
+      expect(zip.package.manifest.fhirProfileBundleHash).toBe(
+        installedProfile.bundleHash,
+      );
       expect(zip.package.manifest.expiresAt).toBe("2030-02-08T10:00:00.000Z");
       expect(zip.package.manifest.orgIdentifier?.clinicNameEn).toBe(
         "Elite Clinic Synthetic Branch",
       );
       expect(exporter.verifyZipPackage(zip.archive).verified).toBe(true);
+
+      const tempDirectory = mkdtempSync(
+        join(tmpdir(), "elite-export-integration-"),
+      );
+      try {
+        const archivePath = join(tempDirectory, "synthetic-export.zip");
+        writeFileSync(archivePath, zip.archive);
+        const verifierPath = fileURLToPath(
+          new URL("../../../tools/verify-export.mjs", import.meta.url),
+        );
+        const validOutput = execFileSync(
+          process.execPath,
+          [verifierPath, archivePath],
+          { encoding: "utf8" },
+        );
+        expect(JSON.parse(validOutput).verified).toBe(true);
+
+        const members = readDeterministicZip(zip.archive);
+        const tamperedMembers = members.map((member) =>
+          member.name.endsWith(".fhir.json")
+            ? {
+                ...member,
+                data: Buffer.from(
+                  `${member.data.toString("utf8")}tampered`,
+                  "utf8",
+                ),
+              }
+            : member,
+        );
+        const tamperedPath = join(
+          tempDirectory,
+          "synthetic-export-tampered.zip",
+        );
+        writeFileSync(tamperedPath, createDeterministicZip(tamperedMembers));
+        expect(() =>
+          execFileSync(process.execPath, [verifierPath, tamperedPath], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          }),
+        ).toThrow();
+
+        const ledgerPath = join(tempDirectory, "revocations.json");
+        writeFileSync(
+          ledgerPath,
+          JSON.stringify([
+            {
+              packageId: zip.package.packageId,
+              reason: "Synthetic trusted-ledger revocation",
+            },
+          ]),
+        );
+        expect(() =>
+          execFileSync(
+            process.execPath,
+            [verifierPath, archivePath, ledgerPath],
+            { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+          ),
+        ).toThrow();
+        expect(readFileSync(archivePath).equals(zip.archive)).toBe(true);
+      } finally {
+        rmSync(tempDirectory, { recursive: true, force: true });
+      }
 
       const revocation = exporter.revokeExport(
         admin,

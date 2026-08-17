@@ -27,6 +27,8 @@ import type {
   ExportZipPackage,
   ExportRevocation,
   FhirValidationResult,
+  FhirProfileBundle,
+  FhirProfileBundleRecord,
   OrgSettings,
   OrgSettingsInput,
   PatientExportInput,
@@ -582,6 +584,16 @@ const eliteApi = {
         token,
         input,
       ) as Promise<OrgSettings>,
+    listFhirProfileBundles: (token: string) =>
+      ipcRenderer.invoke("settings:fhir-profiles", token) as Promise<
+        readonly FhirProfileBundleRecord[]
+      >,
+    installFhirProfileBundle: (token: string, input: FhirProfileBundle) =>
+      ipcRenderer.invoke(
+        "settings:fhir-profile-install",
+        token,
+        input,
+      ) as Promise<FhirProfileBundleRecord>,
   },
   relatedPersons: {
     create: (token: string, input: RelatedPersonInput) =>

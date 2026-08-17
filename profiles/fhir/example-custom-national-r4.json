@@ -1,0 +1,25 @@
+{
+  "id": "example-custom-national-r4",
+  "displayName": "Example Custom National Patient Document R4",
+  "jurisdiction": "EG",
+  "version": "2026.1.0-example",
+  "fhirVersion": "R4",
+  "publisher": "Elite Clinic Synthetic Interoperability Test",
+  "sourceUri": "urn:elite-clinic:example-profile-bundle:example-custom-national-r4",
+  "profiles": [
+    {
+      "resourceType": "Bundle",
+      "canonicalUrl": "urn:elite-clinic:example-custom-national-r4:StructureDefinition:document-bundle",
+      "requiredPaths": ["type", "timestamp", "identifier", "entry"],
+      "fixedValues": {
+        "type": "document"
+      }
+    },
+    {
+      "resourceType": "Patient",
+      "canonicalUrl": "urn:elite-clinic:example-custom-national-r4:StructureDefinition:patient",
+      "requiredPaths": ["id", "name"],
+      "fixedValues": {}
+    }
+  ]
+}

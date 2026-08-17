@@ -440,6 +440,7 @@ export type OrgIdentifier = z.infer<typeof orgIdentifierSchema>;
 
 export const orgSettingsInputSchema = orgIdentifierSchema.extend({
   exportExpirationDays: z.number().int().min(1).max(3650).default(30),
+  fhirProfileBundleId: z.string().trim().min(3).max(128).optional(),
 });
 export type OrgSettingsInput = z.infer<typeof orgSettingsInputSchema>;
 
@@ -464,6 +465,48 @@ export const exportExpirationSchema = z.object({
 });
 export type ExportExpiration = z.infer<typeof exportExpirationSchema>;
 
+export const fhirProfileConstraintSchema = z.object({
+  resourceType: z.string().regex(/^[A-Z][A-Za-z0-9]+$/),
+  canonicalUrl: z.string().url().or(z.string().startsWith("urn:")),
+  requiredPaths: z
+    .array(z.string().regex(/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$/))
+    .max(100)
+    .default([]),
+  fixedValues: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .default({}),
+});
+export type FhirProfileConstraint = z.infer<typeof fhirProfileConstraintSchema>;
+
+export const fhirProfileBundleSchema = z.object({
+  id: z
+    .string()
+    .trim()
+    .min(3)
+    .max(128)
+    .regex(/^[a-z0-9][a-z0-9.-]*$/),
+  displayName: z.string().trim().min(1).max(240),
+  jurisdiction: z.string().trim().min(2).max(120),
+  version: z.string().trim().min(1).max(80),
+  fhirVersion: z.literal("R4"),
+  publisher: z.string().trim().min(1).max(240),
+  sourceUri: z.string().url().or(z.string().startsWith("urn:")).optional(),
+  profiles: z.array(fhirProfileConstraintSchema).min(1).max(100),
+});
+export type FhirProfileBundle = z.infer<typeof fhirProfileBundleSchema>;
+
+export const fhirProfileBundleRecordSchema = fhirProfileBundleSchema.extend({
+  bundleHash: z.string().regex(/^[a-f0-9]{64}$/),
+  status: z.enum(["active", "disabled"]),
+  installedAt: isoDateTimeSchema,
+  installedByUserId: opaqueIdSchema,
+  updatedAt: isoDateTimeSchema,
+  updatedByUserId: opaqueIdSchema,
+});
+export type FhirProfileBundleRecord = z.infer<
+  typeof fhirProfileBundleRecordSchema
+>;
+
 export const fhirValidationIssueSchema = z.object({
   severity: z.enum(["error", "warning"]),
   path: z.string().min(1),
@@ -476,6 +519,8 @@ export const fhirValidationResultSchema = z.object({
   valid: z.boolean(),
   fhirVersion: z.literal("R4"),
   validatorVersion: z.string().min(1).max(40),
+  profileBundleId: z.string().min(3).max(128),
+  profileBundleHash: z.string().regex(/^[a-f0-9]{64}$/),
   profileIds: z.array(z.string().url().or(z.string().startsWith("urn:"))),
   issues: z.array(fhirValidationIssueSchema),
 });
@@ -494,6 +539,7 @@ export type ExportRevocation = z.infer<typeof exportRevocationSchema>;
 export const patientExportInputSchema = z.object({
   snapshotId: opaqueIdSchema,
   format: exportFormatSchema,
+  fhirProfileBundleId: z.string().trim().min(3).max(128).optional(),
   redactionPolicy: exportRedactionPolicySchema,
   exportReason: z.string().trim().min(3).max(500),
 });
@@ -550,6 +596,11 @@ export const signedExportManifestSchema = z.object({
   expiresAt: isoDateTimeSchema.nullable().optional(),
   expirationPolicy: exportExpirationPolicySchema.optional(),
   fhirValidation: fhirValidationResultSchema.optional(),
+  fhirProfileBundleId: z.string().min(3).max(128).optional(),
+  fhirProfileBundleHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   memberHashes: z
     .record(z.string(), z.string().regex(/^[a-f0-9]{64}$/))
     .optional(),

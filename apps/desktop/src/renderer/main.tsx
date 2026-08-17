@@ -36,6 +36,8 @@ import type {
   ExportVerificationResult,
   ExportRevocation,
   FhirValidationResult,
+  FhirProfileBundle,
+  FhirProfileBundleRecord,
   OrgSettings,
   OrgSettingsInput,
   Encounter,
@@ -2086,11 +2088,16 @@ function ClinicalWorkflowWorkspace({
     oid: "1.3.6.1.4.1.99999.1",
     fhirSystemUrl: "https://fhir.elite-clinic.local",
     exportExpirationDays: 30,
+    fhirProfileBundleId: "elite-clinic-r4",
   });
   const [revocations, setRevocations] = useState<readonly ExportRevocation[]>(
     [],
   );
   const [revocationReason, setRevocationReason] = useState("");
+  const [fhirProfiles, setFhirProfiles] = useState<
+    readonly FhirProfileBundleRecord[]
+  >([]);
+  const [fhirProfileBundleJson, setFhirProfileBundleJson] = useState("");
   const [amendmentForm, setAmendmentForm] = useState<AmendmentFormState | null>(
     null,
   );
@@ -2491,12 +2498,49 @@ function ClinicalWorkflowWorkspace({
         oid: settings.oid,
         fhirSystemUrl: settings.fhirSystemUrl,
         exportExpirationDays: settings.exportExpirationDays,
+        fhirProfileBundleId: settings.fhirProfileBundleId,
       });
+      setFhirProfiles(
+        await window.elite.settings.listFhirProfileBundles(token),
+      );
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
           ? reason.message
           : "Unable to load organization settings",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const installFhirProfileBundle = async (): Promise<void> => {
+    if (fhirProfileBundleJson.trim().length < 2) {
+      setError("Paste a FHIR profile bundle JSON document before installing");
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const bundle = JSON.parse(fhirProfileBundleJson) as FhirProfileBundle;
+      const installed = await window.elite.settings.installFhirProfileBundle(
+        token,
+        bundle,
+      );
+      setFhirProfiles([
+        installed,
+        ...fhirProfiles.filter((profile) => profile.id !== installed.id),
+      ]);
+      setOrgSettingsForm({
+        ...orgSettingsForm,
+        fhirProfileBundleId: installed.id,
+      });
+      setFhirProfileBundleJson("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to install FHIR profile bundle",
       );
     } finally {
       setIsBusy(false);

@@ -31,6 +31,8 @@ function signingData(manifest) {
       fhirValidation: manifest.fhirValidation,
       memberHashes: manifest.memberHashes,
       packageContentHash: manifest.packageContentHash,
+      fhirProfileBundleId: manifest.fhirProfileBundleId,
+      fhirProfileBundleHash: manifest.fhirProfileBundleHash,
     }),
     "utf8",
   );
@@ -193,6 +195,15 @@ function verifyZip(zipPath, revocationPath) {
   if (members.get(signatureName).toString("utf8") !== manifest.signatureBase64)
     throw new Error("Signature member does not match manifest");
   const memberHashes = manifest.memberHashes ?? {};
+  const profileBundleName = [...members.keys()].find((name) =>
+    name.endsWith(".fhir-profile.json"),
+  );
+  const profileBundleMemberValid =
+    manifest.format !== "fhir"
+      ? true
+      : Boolean(profileBundleName) &&
+        sha256(members.get(profileBundleName)) ===
+          manifest.fhirProfileBundleHash;
   const memberHashesValid = Object.entries(memberHashes).every(
     ([name, expected]) =>
       members.has(name) && sha256(members.get(name)) === expected,
@@ -210,7 +221,8 @@ function verifyZip(zipPath, revocationPath) {
   const ledger = loadRevocations(revocationPath);
   const revoked =
     Boolean(manifest.revokedAt) || ledger.has(String(manifest.packageId));
-  const archiveIntegrityValid = memberHashesValid && packageContentHashValid;
+  const archiveIntegrityValid =
+    memberHashesValid && packageContentHashValid && profileBundleMemberValid;
   const verified =
     archiveIntegrityValid &&
     payloadResult.payloadHashValid &&

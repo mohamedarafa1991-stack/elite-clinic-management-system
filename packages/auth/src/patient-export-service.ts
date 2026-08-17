@@ -8,6 +8,8 @@ import {
   exportVerificationInputSchema,
   exportVerificationResultSchema,
   exportZipPackageSchema,
+  fhirProfileBundleRecordSchema,
+  fhirProfileBundleSchema,
   fhirValidationResultSchema,
   isoDateTimeSchema,
   orgIdentifierSchema,
@@ -23,6 +25,8 @@ import {
   type ExportVerificationInput,
   type ExportVerificationResult,
   type ExportZipPackage,
+  type FhirProfileBundle,
+  type FhirProfileBundleRecord,
   type FhirValidationResult,
   type OrgIdentifier,
   type OrgSettings,
@@ -34,6 +38,12 @@ import {
 } from "@elite/contracts";
 import type { EliteDatabase } from "@elite/database";
 import { requireCapability, type SessionContext } from "./index.js";
+import {
+  BUILTIN_FHIR_PROFILE_BUNDLES,
+  canonicalizeProfileBundle,
+  getBuiltinFhirProfileBundle,
+  hashFhirProfileBundle,
+} from "./fhir-profile-bundles.js";
 import {
   createDeterministicZip,
   readDeterministicZip,
@@ -79,7 +89,7 @@ const FIELD_POLICIES = {
   },
 } as const;
 
-const FHIR_VALIDATOR_VERSION = "elite-fhir-r4-1";
+const FHIR_VALIDATOR_VERSION = "elite-fhir-r4-2";
 const FHIR_PROFILE_IDS = [
   "http://hl7.org/fhir/StructureDefinition/Bundle",
   "http://hl7.org/fhir/StructureDefinition/Patient",
@@ -124,6 +134,8 @@ export function exportSigningData(manifest: SignedExportManifest): Buffer {
       fhirValidation: manifest.fhirValidation,
       memberHashes: manifest.memberHashes,
       packageContentHash: manifest.packageContentHash,
+      fhirProfileBundleId: manifest.fhirProfileBundleId,
+      fhirProfileBundleHash: manifest.fhirProfileBundleHash,
     }),
     "utf8",
   );
@@ -256,7 +268,12 @@ export class PatientExportService {
     return patientExportPayloadSchema.parse(payload);
   }
 
-  public validateFhirBundle(bundle: unknown): FhirValidationResult {
+  public validateFhirBundle(
+    bundle: unknown,
+    profileBundleId = "elite-clinic-r4",
+  ): FhirValidationResult {
+    const profileBundle = this.resolveFhirProfileBundle(profileBundleId);
+    const profileBundleHash = hashFhirProfileBundle(profileBundle);
     const issues: FhirValidationResult["issues"] = [];
     const issue = (
       severity: "error" | "warning",
@@ -277,7 +294,12 @@ export class PatientExportService {
         valid: false,
         fhirVersion: "R4",
         validatorVersion: FHIR_VALIDATOR_VERSION,
-        profileIds: [...FHIR_PROFILE_IDS],
+        profileBundleId: profileBundle.id,
+        profileBundleHash,
+        profileIds: [
+          ...FHIR_PROFILE_IDS,
+          ...profileBundle.profiles.map((profile) => profile.canonicalUrl),
+        ],
         issues,
       });
     }
@@ -538,11 +560,76 @@ export class PatientExportService {
       });
     }
 
+    const profileResources: Array<{
+      path: string;
+      resource: Record<string, unknown>;
+    }> = [{ path: "$", resource: bundle }];
+    if (Array.isArray(entries)) {
+      entries.forEach((entry, index) => {
+        if (isObject(entry) && isObject(entry["resource"])) {
+          profileResources.push({
+            path: `$.entry[${index}].resource`,
+            resource: entry["resource"],
+          });
+        }
+      });
+    }
+    const readPath = (
+      resource: Record<string, unknown>,
+      path: string,
+    ): unknown => {
+      let current: unknown = resource;
+      for (const segment of path.split(".")) {
+        if (!isObject(current) || !(segment in current)) return undefined;
+        current = current[segment];
+      }
+      return current;
+    };
+    const hasValue = (value: unknown): boolean =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      (!Array.isArray(value) || value.length > 0);
+    for (const item of profileResources) {
+      const resourceType = String(item.resource["resourceType"] ?? "");
+      for (const profile of profileBundle.profiles.filter(
+        (candidate) => candidate.resourceType === resourceType,
+      )) {
+        for (const requiredPath of profile.requiredPaths) {
+          if (!hasValue(readPath(item.resource, requiredPath))) {
+            issue(
+              "error",
+              `${item.path}.${requiredPath}`,
+              "profile-required",
+              `${profile.canonicalUrl} requires ${requiredPath}.`,
+            );
+          }
+        }
+        for (const [fixedPath, expected] of Object.entries(
+          profile.fixedValues,
+        )) {
+          if (readPath(item.resource, fixedPath) !== expected) {
+            issue(
+              "error",
+              `${item.path}.${fixedPath}`,
+              "profile-fixed-value",
+              `${profile.canonicalUrl} requires ${fixedPath}=${String(expected)}.`,
+            );
+          }
+        }
+      }
+    }
+
     return fhirValidationResultSchema.parse({
       valid: !issues.some((entry) => entry.severity === "error"),
       fhirVersion: "R4",
       validatorVersion: FHIR_VALIDATOR_VERSION,
-      profileIds: [...FHIR_PROFILE_IDS],
+      profileBundleId: profileBundle.id,
+      profileBundleHash,
+      profileIds: [
+        ...FHIR_PROFILE_IDS,
+        ...profileBundle.profiles.map((profile) => profile.canonicalUrl),
+      ],
       issues,
     });
   }
@@ -559,8 +646,12 @@ export class PatientExportService {
     }
     const payload = this.buildPayload(context, parsed);
     const org = this.getOrgSettingsInternal(context.userId);
+    const profileBundleId =
+      parsed.fhirProfileBundleId ??
+      org.fhirProfileBundleId ??
+      "elite-clinic-r4";
     const fhir = this.buildFhirBundleObject(payload, org.fhirSystemUrl);
-    const validation = this.validateFhirBundle(fhir);
+    const validation = this.validateFhirBundle(fhir, profileBundleId);
     if (!validation.valid) {
       throw new Error(
         `ELITE_FHIR_VALIDATION_FAILED: ${validation.issues.map((entry) => `${entry.path} ${entry.message}`).join("; ")}`,
@@ -578,6 +669,11 @@ export class PatientExportService {
     const parsed = patientExportInputSchema.parse(input);
     const payload = this.buildPayload(context, parsed);
     const org = this.getOrgSettingsInternal(context.userId);
+    const profileBundleId =
+      parsed.fhirProfileBundleId ??
+      org.fhirProfileBundleId ??
+      "elite-clinic-r4";
+    const profileBundle = this.resolveFhirProfileBundle(profileBundleId);
     let fhirValidation: FhirValidationResult | undefined;
     if (parsed.format === "fhir") {
       let parsedFhir: unknown;
@@ -588,7 +684,7 @@ export class PatientExportService {
           "ELITE_FHIR_VALIDATION_FAILED: FHIR payload is not valid JSON",
         );
       }
-      fhirValidation = this.validateFhirBundle(parsedFhir);
+      fhirValidation = this.validateFhirBundle(parsedFhir, profileBundleId);
       if (!fhirValidation.valid) {
         throw new Error(
           `ELITE_FHIR_VALIDATION_FAILED: ${fhirValidation.issues.map((entry) => `${entry.path} ${entry.message}`).join("; ")}`,
@@ -618,9 +714,17 @@ export class PatientExportService {
       ].join("\n") + "\n",
       "utf8",
     );
+    const profileBundleFileName = `${profileBundle.id}.fhir-profile.json`;
+    const profileBundleBytes = Buffer.from(
+      canonicalizeProfileBundle(profileBundle),
+      "utf8",
+    );
     const memberHashes = {
       [payloadFileName]: hashExportPayload(payloadBytes),
       [readmeFileName]: hashExportPayload(readme),
+      ...(parsed.format === "fhir"
+        ? { [profileBundleFileName]: hashExportPayload(profileBundleBytes) }
+        : {}),
     };
     const packageContentHash = hashExportPayload(
       Buffer.from(stableJson(memberHashes), "utf8"),
@@ -645,6 +749,8 @@ export class PatientExportService {
       expirationPolicy:
         org.exportExpirationDays === 30 ? "30-days" : "custom-days",
       fhirValidation,
+      fhirProfileBundleId: profileBundleId,
+      fhirProfileBundleHash: fhirValidation?.profileBundleHash,
       memberHashes,
       packageContentHash,
     });
@@ -666,6 +772,9 @@ export class PatientExportService {
         data: Buffer.from(manifest.signatureBase64, "utf8"),
       },
       { name: readmeFileName, data: readme },
+      ...(parsed.format === "fhir"
+        ? [{ name: profileBundleFileName, data: profileBundleBytes }]
+        : []),
     ];
     const archive = createDeterministicZip(members);
     const archiveFileName = `${payload.patientId}.${packageId}.zip`;
@@ -722,6 +831,15 @@ export class PatientExportService {
         );
       }
       const memberHashes = manifest.memberHashes ?? {};
+      const profileBundleMember = members.find((member) =>
+        member.name.endsWith(".fhir-profile.json"),
+      );
+      const profileBundleMemberValid =
+        manifest.format !== "fhir"
+          ? true
+          : Boolean(profileBundleMember) &&
+            hashExportPayload(profileBundleMember!.data) ===
+              manifest.fhirProfileBundleHash;
       const memberHashesValid = Object.entries(memberHashes).every(
         ([name, expected]) => {
           const data = memberMap.get(name);
@@ -740,7 +858,8 @@ export class PatientExportService {
       );
       const revocation = this.findRevocation(manifest.packageId);
       const revoked = Boolean(revocation) || base.revoked;
-      const archiveIntegrityValid = memberHashesValid && contentHashValid;
+      const archiveIntegrityValid =
+        memberHashesValid && contentHashValid && profileBundleMemberValid;
       const verified = base.verified && archiveIntegrityValid && !revoked;
       return exportVerificationResultSchema.parse({
         ...base,
@@ -889,10 +1008,13 @@ export class PatientExportService {
     }
     requireCapability(context, "module.manage");
     const parsed = orgSettingsInputSchema.parse(input);
+    const fhirProfileBundleId = parsed.fhirProfileBundleId ?? "elite-clinic-r4";
+    this.resolveFhirProfileBundle(fhirProfileBundleId);
+    const normalized = { ...parsed, fhirProfileBundleId };
     const updatedAt = this.now();
     const auditEventId = nanoid(18);
     const transaction = this.database.raw.transaction(() => {
-      for (const [key, value] of Object.entries(parsed)) {
+      for (const [key, value] of Object.entries(normalized)) {
         this.database.raw
           .prepare(
             "INSERT INTO org_settings (key, value, updated_at, updated_by_user_id) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by_user_id = excluded.updated_by_user_id",
@@ -910,13 +1032,16 @@ export class PatientExportService {
           "organization-settings.updated",
           "org-settings",
           "organization",
-          JSON.stringify({ keys: Object.keys(parsed) }),
+          JSON.stringify({
+            keys: Object.keys(normalized),
+            fhirProfileBundleId,
+          }),
           updatedAt,
         );
     });
     transaction();
     return orgSettingsSchema.parse({
-      ...parsed,
+      ...normalized,
       updatedAt,
       updatedByUserId: context.userId,
     });
@@ -941,6 +1066,7 @@ export class PatientExportService {
     const values: Record<string, unknown> = {
       ...DEFAULT_ORG_IDENTIFIER,
       exportExpirationDays: 30,
+      fhirProfileBundleId: "elite-clinic-r4",
     };
     let updatedAt = this.now();
     let updatedByUserId = userId;
@@ -953,6 +1079,117 @@ export class PatientExportService {
       updatedByUserId = String(row["updated_by_user_id"]);
     }
     return orgSettingsSchema.parse({ ...values, updatedAt, updatedByUserId });
+  }
+
+  public listFhirProfileBundles(
+    context: SessionContext,
+  ): readonly FhirProfileBundleRecord[] {
+    requireCapability(context, "export.manage");
+    const timestamp = this.now();
+    const builtin = BUILTIN_FHIR_PROFILE_BUNDLES.map((bundle) =>
+      fhirProfileBundleRecordSchema.parse({
+        ...bundle,
+        bundleHash: hashFhirProfileBundle(bundle),
+        status: "active",
+        installedAt: timestamp,
+        installedByUserId: context.userId,
+        updatedAt: timestamp,
+        updatedByUserId: context.userId,
+      }),
+    );
+    const stored = this.database.raw
+      .prepare(
+        "SELECT id, bundle_json, bundle_hash, status, installed_at, installed_by_user_id, updated_at, updated_by_user_id FROM fhir_profile_bundles ORDER BY id",
+      )
+      .all() as Array<Record<string, unknown>>;
+    const records = stored.map((row) =>
+      fhirProfileBundleRecordSchema.parse({
+        ...fhirProfileBundleSchema.parse(
+          JSON.parse(String(row["bundle_json"])),
+        ),
+        bundleHash: String(row["bundle_hash"]),
+        status: String(row["status"]),
+        installedAt: String(row["installed_at"]),
+        installedByUserId: String(row["installed_by_user_id"]),
+        updatedAt: String(row["updated_at"]),
+        updatedByUserId: String(row["updated_by_user_id"]),
+      }),
+    );
+    return [
+      ...builtin,
+      ...records.filter(
+        (record) => !builtin.some((item) => item.id === record.id),
+      ),
+    ];
+  }
+
+  public installFhirProfileBundle(
+    context: SessionContext,
+    input: FhirProfileBundle,
+  ): FhirProfileBundleRecord {
+    requireCapability(context, "module.manage");
+    if (context.role !== "admin")
+      throw new Error(
+        "ELITE_FHIR_PROFILE_ADMIN_ONLY: only administrators can install profile bundles",
+      );
+    const bundle = fhirProfileBundleSchema.parse(input);
+    const timestamp = this.now();
+    const bundleHash = hashFhirProfileBundle(bundle);
+    this.database.raw
+      .prepare(
+        "INSERT INTO fhir_profile_bundles (id, bundle_json, bundle_hash, status, installed_at, installed_by_user_id, updated_at, updated_by_user_id) VALUES (?, ?, ?, 'active', ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET bundle_json = excluded.bundle_json, bundle_hash = excluded.bundle_hash, status = 'active', updated_at = excluded.updated_at, updated_by_user_id = excluded.updated_by_user_id",
+      )
+      .run(
+        bundle.id,
+        JSON.stringify(bundle),
+        bundleHash,
+        timestamp,
+        context.userId,
+        timestamp,
+        context.userId,
+      );
+    this.database.raw
+      .prepare(
+        "INSERT INTO audit_events (id, actor_user_id, device_id, action, entity_type, entity_id, result, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
+      )
+      .run(
+        nanoid(18),
+        context.userId,
+        context.deviceId,
+        "fhir-profile-bundle.installed",
+        "fhir-profile-bundle",
+        bundle.id,
+        JSON.stringify({
+          bundleHash,
+          jurisdiction: bundle.jurisdiction,
+          version: bundle.version,
+        }),
+        timestamp,
+      );
+    return fhirProfileBundleRecordSchema.parse({
+      ...bundle,
+      bundleHash,
+      status: "active",
+      installedAt: timestamp,
+      installedByUserId: context.userId,
+      updatedAt: timestamp,
+      updatedByUserId: context.userId,
+    });
+  }
+
+  private resolveFhirProfileBundle(id: string): FhirProfileBundle {
+    const builtin = getBuiltinFhirProfileBundle(id);
+    if (builtin) return builtin;
+    const row = this.database.raw
+      .prepare(
+        "SELECT bundle_json, status FROM fhir_profile_bundles WHERE id = ?",
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row || String(row["status"]) !== "active")
+      throw new Error(`ELITE_FHIR_PROFILE_BUNDLE_NOT_FOUND: ${id}`);
+    return fhirProfileBundleSchema.parse(
+      JSON.parse(String(row["bundle_json"])),
+    );
   }
 
   private buildFhirBundleObject(
