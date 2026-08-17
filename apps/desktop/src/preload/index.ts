@@ -26,6 +26,12 @@ import type {
   ExportResult,
   ExportZipPackage,
   ExportRevocation,
+  ExportPackageRegistryRecord,
+  ExportPackageLifecycleEvent,
+  ExportRegistryListInput,
+  ExportRegistryTransitionInput,
+  ExportSigningKeyMetadata,
+  ExportSigningKeyRecoveryBundle,
   FhirValidationResult,
   FhirProfileBundle,
   FhirProfileBundleRecord,
@@ -574,6 +580,51 @@ const eliteApi = {
       ipcRenderer.invoke("export:revocations", token) as Promise<
         readonly ExportRevocation[]
       >,
+    listRegistry: (token: string, input?: ExportRegistryListInput) =>
+      ipcRenderer.invoke(
+        "export:registry",
+        token,
+        input ?? { limit: 100 },
+      ) as Promise<readonly ExportPackageRegistryRecord[]>,
+    transitionRegistry: (token: string, input: ExportRegistryTransitionInput) =>
+      ipcRenderer.invoke(
+        "export:lifecycle",
+        token,
+        input,
+      ) as Promise<ExportPackageRegistryRecord>,
+    listLifecycle: (token: string, packageId: string) =>
+      ipcRenderer.invoke(
+        "export:lifecycle-events",
+        token,
+        packageId,
+      ) as Promise<readonly ExportPackageLifecycleEvent[]>,
+    listSigningKeys: (token: string) =>
+      ipcRenderer.invoke("export:key-list", token) as Promise<
+        readonly ExportSigningKeyMetadata[]
+      >,
+    rotateSigningKey: (token: string, reason: string) =>
+      ipcRenderer.invoke(
+        "export:key-rotate",
+        token,
+        reason,
+      ) as Promise<ExportSigningKeyMetadata>,
+    exportSigningKeyRecovery: (token: string, passphrase: string) =>
+      ipcRenderer.invoke(
+        "export:key-recovery-export",
+        token,
+        passphrase,
+      ) as Promise<ExportSigningKeyRecoveryBundle>,
+    restoreSigningKeyRecovery: (
+      token: string,
+      bundle: ExportSigningKeyRecoveryBundle,
+      passphrase: string,
+    ) =>
+      ipcRenderer.invoke(
+        "export:key-recovery-import",
+        token,
+        bundle,
+        passphrase,
+      ) as Promise<ExportSigningKeyMetadata>,
   },
   settings: {
     getOrgSettings: (token: string) =>

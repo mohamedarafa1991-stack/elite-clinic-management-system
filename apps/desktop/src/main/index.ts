@@ -632,6 +632,8 @@ function registerIpc(): void {
       const payloadHash = hashExportPayload(payloadBuffer);
       const packageId = randomUUID();
       const createdAt = new Date().toISOString();
+      const signer = requireExportSigner();
+      const activeSignerKey = signer.getActiveKeyMetadata?.();
       const unsignedManifest = signedExportManifestSchema.parse({
         schemaVersion: 1,
         packageId,
@@ -639,6 +641,8 @@ function registerIpc(): void {
         snapshotPayloadHash: payload.snapshotPayloadHash,
         payloadHash,
         signatureAlgorithm: "ed25519",
+        signerKeyId: activeSignerKey?.keyId,
+        signerKeyVersion: activeSignerKey?.keyVersion,
         publicKeyPem: "placeholder-public-key-".padEnd(64, "-"),
         signatureBase64: "placeholder-signature".padEnd(16, "-"),
         format: parsed.format,
@@ -647,11 +651,12 @@ function registerIpc(): void {
         createdAt,
         createdByUserId: serviceContext(token).userId,
       });
-      const signature = requireExportSigner().sign(
-        exportSigningData(unsignedManifest),
-      );
+      const signature = signer.sign(exportSigningData(unsignedManifest));
       const manifest = signedExportManifestSchema.parse({
         ...unsignedManifest,
+        signerKeyId: signature.keyId ?? unsignedManifest.signerKeyId,
+        signerKeyVersion:
+          signature.keyVersion ?? unsignedManifest.signerKeyVersion,
         publicKeyPem: signature.publicKeyPem,
         signatureBase64: signature.signature.toString("base64"),
       });
@@ -684,16 +689,48 @@ function registerIpc(): void {
       const payloadPath = `${basePath}.${parsed.format === "fhir" ? "fhir.json" : "pdf"}`;
       const manifestPath = `${basePath}.manifest.json`;
       const signaturePath = `${basePath}.sig`;
+      const manifestBytes = Buffer.from(
+        `${JSON.stringify(manifest, null, 2)}\n`,
+        "utf8",
+      );
+      const signatureBytes = Buffer.from(
+        `${manifest.signatureBase64}\n`,
+        "utf8",
+      );
       writeFileSync(payloadPath, payloadBuffer, { mode: 0o600 });
-      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
-        mode: 0o600,
-      });
-      writeFileSync(signaturePath, `${manifest.signatureBase64}\n`, {
-        mode: 0o600,
-      });
+      writeFileSync(manifestPath, manifestBytes, { mode: 0o600 });
+      writeFileSync(signaturePath, signatureBytes, { mode: 0o600 });
+      const registryRecord = service.registerExportPackage(
+        serviceContext(token),
+        {
+          packageId: manifest.packageId,
+          packageType: "detached",
+          snapshotId: manifest.snapshotId,
+          patientId: payload.patientId,
+          format: manifest.format,
+          redactionPolicy: manifest.redactionPolicy,
+          exportReason: manifest.exportReason,
+          createdAt: manifest.createdAt,
+          createdByUserId: manifest.createdByUserId,
+          expiresAt: manifest.expiresAt ?? null,
+          packageHash: hashExportPayload(
+            Buffer.concat([payloadBuffer, manifestBytes, signatureBytes]),
+          ),
+          payloadHash: manifest.payloadHash,
+          manifestHash: hashExportPayload(manifestBytes),
+          signerKeyId:
+            manifest.signerKeyId ??
+            `esk-${hashExportPayload(Buffer.from(manifest.publicKeyPem)).slice(0, 24)}`,
+          signerKeyVersion: manifest.signerKeyVersion ?? 1,
+          payloadPath,
+          manifestPath,
+          signaturePath,
+        },
+      );
       return {
         package: packageData,
         savedFiles: { payloadPath, manifestPath, signaturePath },
+        registryRecord,
       };
     },
   );
@@ -730,11 +767,39 @@ function registerIpc(): void {
       if (selected.canceled || !selected.filePath)
         throw new Error("ELITE_EXPORT_CANCELLED: export save was cancelled");
       writeFileSync(selected.filePath, built.archive, { mode: 0o600 });
+      const savedPackage = { ...built.package, archivePath: selected.filePath };
+      const manifestBytes = Buffer.from(
+        `${JSON.stringify(built.package.manifest, null, 2)}\n`,
+        "utf8",
+      );
+      const registryRecord = service.registerExportPackage(context, {
+        packageId: built.package.manifest.packageId,
+        packageType: "zip",
+        snapshotId: built.package.manifest.snapshotId,
+        patientId: payload.patientId,
+        format: built.package.manifest.format,
+        redactionPolicy: built.package.manifest.redactionPolicy,
+        exportReason: built.package.manifest.exportReason,
+        createdAt: built.package.manifest.createdAt,
+        createdByUserId: built.package.manifest.createdByUserId,
+        expiresAt: built.package.manifest.expiresAt ?? null,
+        packageHash: hashExportPayload(built.archive),
+        payloadHash: built.package.manifest.payloadHash,
+        manifestHash: hashExportPayload(manifestBytes),
+        signerKeyId:
+          built.package.manifest.signerKeyId ??
+          `esk-${hashExportPayload(Buffer.from(built.package.manifest.publicKeyPem)).slice(0, 24)}`,
+        signerKeyVersion: built.package.manifest.signerKeyVersion ?? 1,
+        archiveFileName: built.package.archiveFileName,
+        archivePath: selected.filePath,
+        fhirProfileBundleId: built.package.manifest.fhirProfileBundleId,
+      });
       return {
-        package: { ...built.package, archivePath: selected.filePath },
+        package: savedPackage,
         savedArchivePath: selected.filePath,
         fhirValidation: built.package.manifest.fhirValidation,
         verification: service.verifyZipPackage(built.archive),
+        registryRecord,
       };
     },
   );
@@ -791,6 +856,52 @@ function registerIpc(): void {
   );
   ipcMain.handle("export:revocations", (_event, token: string) =>
     requirePatientExportService().listRevocations(serviceContext(token)),
+  );
+  ipcMain.handle("export:registry", (_event, token: string, input: unknown) =>
+    requirePatientExportService().listExportPackages(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle("export:lifecycle", (_event, token: string, input: unknown) =>
+    requirePatientExportService().transitionExportPackage(
+      serviceContext(token),
+      input as never,
+    ),
+  );
+  ipcMain.handle(
+    "export:lifecycle-events",
+    (_event, token: string, packageId: string) =>
+      requirePatientExportService().listExportPackageLifecycle(
+        serviceContext(token),
+        packageId,
+      ),
+  );
+  ipcMain.handle("export:key-list", (_event, token: string) =>
+    requirePatientExportService().listSigningKeys(serviceContext(token)),
+  );
+  ipcMain.handle("export:key-rotate", (_event, token: string, reason: string) =>
+    requirePatientExportService().rotateSigningKey(
+      serviceContext(token),
+      reason,
+    ),
+  );
+  ipcMain.handle(
+    "export:key-recovery-export",
+    (_event, token: string, passphrase: string) =>
+      requirePatientExportService().exportSigningKeyRecoveryBundle(
+        serviceContext(token),
+        passphrase,
+      ),
+  );
+  ipcMain.handle(
+    "export:key-recovery-import",
+    (_event, token: string, bundle: unknown, passphrase: string) =>
+      requirePatientExportService().restoreSigningKeyRecoveryBundle(
+        serviceContext(token),
+        bundle as never,
+        passphrase,
+      ),
   );
   ipcMain.handle("settings:org-get", (_event, token: string) =>
     requirePatientExportService().getOrgSettings(serviceContext(token)),

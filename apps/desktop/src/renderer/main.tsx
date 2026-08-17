@@ -35,6 +35,9 @@ import type {
   ExportResult,
   ExportVerificationResult,
   ExportRevocation,
+  ExportPackageRegistryRecord,
+  ExportSigningKeyMetadata,
+  ExportSigningKeyRecoveryBundle,
   FhirValidationResult,
   FhirProfileBundle,
   FhirProfileBundleRecord,
@@ -2094,6 +2097,18 @@ function ClinicalWorkflowWorkspace({
     [],
   );
   const [revocationReason, setRevocationReason] = useState("");
+  const [exportRegistry, setExportRegistry] = useState<
+    readonly ExportPackageRegistryRecord[]
+  >([]);
+  const [selectedRegistryPackageId, setSelectedRegistryPackageId] =
+    useState("");
+  const [registryTransitionReason, setRegistryTransitionReason] = useState("");
+  const [signingKeys, setSigningKeys] = useState<
+    readonly ExportSigningKeyMetadata[]
+  >([]);
+  const [keyRotationReason, setKeyRotationReason] = useState("");
+  const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
+  const [recoveryBundleJson, setRecoveryBundleJson] = useState("");
   const [fhirProfiles, setFhirProfiles] = useState<
     readonly FhirProfileBundleRecord[]
   >([]);
@@ -2480,6 +2495,139 @@ function ClinicalWorkflowWorkspace({
         reason instanceof Error
           ? reason.message
           : "Unable to create signed ZIP export",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const loadExportRegistry = async (): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const records = await window.elite.export.listRegistry(token, {
+        limit: 100,
+      });
+      setExportRegistry(records);
+      if (!selectedRegistryPackageId && records[0])
+        setSelectedRegistryPackageId(records[0].packageId);
+      setSigningKeys(await window.elite.export.listSigningKeys(token));
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load export registry",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const transitionRegistryPackage = async (): Promise<void> => {
+    if (
+      !selectedRegistryPackageId ||
+      registryTransitionReason.trim().length < 3
+    )
+      return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const current = exportRegistry.find(
+        (record) => record.packageId === selectedRegistryPackageId,
+      );
+      if (!current) throw new Error("Export package is not selected");
+      const nextStatus =
+        current.status === "stored"
+          ? "downloaded"
+          : current.status === "downloaded"
+            ? "archived"
+            : "destroyed";
+      const updated = await window.elite.export.transitionRegistry(token, {
+        packageId: current.packageId,
+        toStatus: nextStatus,
+        reason: registryTransitionReason,
+      });
+      setExportRegistry(
+        exportRegistry.map((record) =>
+          record.packageId === updated.packageId ? updated : record,
+        ),
+      );
+      setRegistryTransitionReason("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to transition export package",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const rotateSigningKey = async (): Promise<void> => {
+    if (keyRotationReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const rotated = await window.elite.export.rotateSigningKey(
+        token,
+        keyRotationReason,
+      );
+      setSigningKeys([
+        rotated,
+        ...signingKeys.filter((key) => key.keyId !== rotated.keyId),
+      ]);
+      setKeyRotationReason("");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to rotate export signing key",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const exportSigningKeyRecovery = async (): Promise<void> => {
+    if (recoveryPassphrase.length < 12) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const bundle = await window.elite.export.exportSigningKeyRecovery(
+        token,
+        recoveryPassphrase,
+      );
+      setRecoveryBundleJson(JSON.stringify(bundle, null, 2));
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to export signing-key recovery bundle",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const restoreSigningKeyRecovery = async (): Promise<void> => {
+    if (recoveryPassphrase.length < 12 || recoveryBundleJson.trim().length < 2)
+      return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const restored = await window.elite.export.restoreSigningKeyRecovery(
+        token,
+        JSON.parse(recoveryBundleJson) as ExportSigningKeyRecoveryBundle,
+        recoveryPassphrase,
+      );
+      setSigningKeys(await window.elite.export.listSigningKeys(token));
+      setError(null);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to restore signing-key recovery bundle",
       );
     } finally {
       setIsBusy(false);
@@ -4105,6 +4253,133 @@ function ClinicalWorkflowWorkspace({
                       ) : null}
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+              {canManage ? (
+                <div className="org-settings-panel">
+                  <div className="section-heading">
+                    <h4>Export registry and signing-key security</h4>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void loadExportRegistry()}
+                    >
+                      Load export registry
+                    </button>
+                  </div>
+                  {exportRegistry.length > 0 ? (
+                    <div className="export-registry-list">
+                      <label>
+                        Package
+                        <select
+                          value={selectedRegistryPackageId}
+                          onChange={(event) =>
+                            setSelectedRegistryPackageId(event.target.value)
+                          }
+                        >
+                          {exportRegistry.map((record) => (
+                            <option
+                              key={record.packageId}
+                              value={record.packageId}
+                            >
+                              {record.packageId} · {record.status} ·{" "}
+                              {record.format.toUpperCase()}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <input
+                        value={registryTransitionReason}
+                        onChange={(event) =>
+                          setRegistryTransitionReason(event.target.value)
+                        }
+                        placeholder="Lifecycle transition reason"
+                      />
+                      <button
+                        className="button secondary"
+                        type="button"
+                        disabled={
+                          isBusy || registryTransitionReason.trim().length < 3
+                        }
+                        onClick={() => void transitionRegistryPackage()}
+                      >
+                        Advance lifecycle
+                      </button>
+                    </div>
+                  ) : (
+                    <small>No registered exports loaded.</small>
+                  )}
+                  {signingKeys.length > 0 ? (
+                    <div className="export-registry-list">
+                      <small>
+                        Active key:{" "}
+                        {signingKeys.find((key) => key.status === "active")
+                          ?.keyId ?? "none"}
+                      </small>
+                      <small>
+                        Known key versions:{" "}
+                        {signingKeys
+                          .map((key) => `${key.keyVersion}:${key.status}`)
+                          .join(", ")}
+                      </small>
+                    </div>
+                  ) : null}
+                  <div className="button-row">
+                    <input
+                      value={keyRotationReason}
+                      onChange={(event) =>
+                        setKeyRotationReason(event.target.value)
+                      }
+                      placeholder="Reason for key rotation"
+                    />
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || keyRotationReason.trim().length < 3}
+                      onClick={() => void rotateSigningKey()}
+                    >
+                      Rotate signing key
+                    </button>
+                  </div>
+                  <div className="button-row">
+                    <input
+                      type="password"
+                      value={recoveryPassphrase}
+                      onChange={(event) =>
+                        setRecoveryPassphrase(event.target.value)
+                      }
+                      placeholder="Recovery passphrase (12+ characters)"
+                    />
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || recoveryPassphrase.length < 12}
+                      onClick={() => void exportSigningKeyRecovery()}
+                    >
+                      Create recovery bundle
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={
+                        isBusy ||
+                        recoveryPassphrase.length < 12 ||
+                        recoveryBundleJson.trim().length < 2
+                      }
+                      onClick={() => void restoreSigningKeyRecovery()}
+                    >
+                      Restore recovery bundle
+                    </button>
+                  </div>
+                  <textarea
+                    value={recoveryBundleJson}
+                    onChange={(event) =>
+                      setRecoveryBundleJson(event.target.value)
+                    }
+                    placeholder="Encrypted signing-key recovery bundle JSON"
+                    rows={4}
+                  />
                 </div>
               ) : null}
               {canManage ? (

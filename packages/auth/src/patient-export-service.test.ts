@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -278,11 +278,35 @@ describe("PatientExportService", () => {
         });
       expect(minimalProfileFailure).toThrow(/requires name/);
 
+      const signerKeyId = "synthetic-export-key-v7";
+      const signerKeyVersion = 7;
+      const signerKeyFingerprint = createHash("sha256")
+        .update(publicKey)
+        .digest("hex");
+      const signerKeyMetadata = {
+        keyId: signerKeyId,
+        keyVersion: signerKeyVersion,
+        algorithm: "ed25519" as const,
+        publicKeyPem: publicKey,
+        publicKeyFingerprint: signerKeyFingerprint,
+        status: "active" as const,
+        createdAt: "2030-01-01T00:00:00.000Z",
+        retiredAt: null,
+        revokedAt: null,
+      };
       exporter.setSignaturePort({
+        getActiveKeyMetadata() {
+          return signerKeyMetadata;
+        },
+        listKeyMetadata() {
+          return [signerKeyMetadata];
+        },
         sign(data) {
           return {
             publicKeyPem: publicKey,
             signature: sign(null, data, privateKey),
+            keyId: signerKeyId,
+            keyVersion: signerKeyVersion,
           };
         },
       });
@@ -308,6 +332,59 @@ describe("PatientExportService", () => {
         "Elite Clinic Synthetic Branch",
       );
       expect(exporter.verifyZipPackage(zip.archive).verified).toBe(true);
+      expect(zip.package.manifest.signerKeyId).toBe(signerKeyId);
+      expect(zip.package.manifest.signerKeyVersion).toBe(signerKeyVersion);
+      expect(exporter.listSigningKeys(admin)).toEqual([signerKeyMetadata]);
+
+      const registryRecord = exporter.registerExportPackage(admin, {
+        packageId: zip.package.packageId,
+        packageType: "zip",
+        snapshotId: snapshot.id,
+        patientId: patient.patient.patientId,
+        format: "fhir",
+        redactionPolicy: "clinical",
+        exportReason: "Synthetic registry lifecycle export",
+        createdAt: zip.package.manifest.createdAt,
+        createdByUserId: admin.userId,
+        expiresAt: zip.package.manifest.expiresAt ?? null,
+        packageHash: createHash("sha256").update(zip.archive).digest("hex"),
+        payloadHash: zip.package.manifest.payloadHash,
+        manifestHash: createHash("sha256")
+          .update(JSON.stringify(zip.package.manifest))
+          .digest("hex"),
+        signerKeyId,
+        signerKeyVersion,
+        archiveFileName: zip.package.archiveFileName,
+        archivePath: "synthetic/exports/" + zip.package.archiveFileName,
+        fhirProfileBundleId: installedProfile.id,
+      });
+      expect(registryRecord.status).toBe("stored");
+      expect(exporter.listExportPackages(admin)).toHaveLength(1);
+      expect(
+        exporter
+          .listExportPackageLifecycle(admin, zip.package.packageId)
+          .map((event) => event.toStatus),
+      ).toEqual(["stored"]);
+
+      const downloaded = exporter.transitionExportPackage(admin, {
+        packageId: zip.package.packageId,
+        toStatus: "downloaded",
+        reason: "Synthetic registry download",
+      });
+      expect(downloaded.status).toBe("downloaded");
+      const archived = exporter.transitionExportPackage(admin, {
+        packageId: zip.package.packageId,
+        toStatus: "archived",
+        reason: "Synthetic registry archive",
+      });
+      expect(archived.status).toBe("archived");
+      const lifecycleStatuses = exporter
+        .listExportPackageLifecycle(admin, zip.package.packageId)
+        .map((event) => event.toStatus);
+      expect(lifecycleStatuses).toHaveLength(3);
+      expect(lifecycleStatuses).toEqual(
+        expect.arrayContaining(["stored", "downloaded", "archived"]),
+      );
 
       const tempDirectory = mkdtempSync(
         join(tmpdir(), "elite-export-integration-"),
@@ -382,6 +459,7 @@ describe("PatientExportService", () => {
       expect(revokedVerification.verified).toBe(false);
       expect(revokedVerification.revoked).toBe(true);
       expect(exporter.listRevocations(admin)).toHaveLength(1);
+      expect(exporter.listExportPackages(admin)[0]?.status).toBe("archived");
       expect(() =>
         exporter.revokeExport(
           admin,
@@ -389,6 +467,43 @@ describe("PatientExportService", () => {
           "Duplicate synthetic revocation",
         ),
       ).toThrow(/ALREADY_REVOKED/);
+
+      const recoverablePackageId = "synthetic-export-recoverable";
+      exporter.registerExportPackage(admin, {
+        packageId: recoverablePackageId,
+        packageType: "detached",
+        snapshotId: snapshot.id,
+        patientId: patient.patient.patientId,
+        format: "fhir",
+        redactionPolicy: "clinical",
+        exportReason: "Synthetic recoverable registry export",
+        createdAt: "2030-02-01T10:00:00.000Z",
+        createdByUserId: admin.userId,
+        expiresAt: null,
+        packageHash: createHash("sha256")
+          .update("recoverable-package")
+          .digest("hex"),
+        payloadHash: zip.package.manifest.payloadHash,
+        manifestHash: createHash("sha256")
+          .update("recoverable-manifest")
+          .digest("hex"),
+        signerKeyId,
+        signerKeyVersion,
+        payloadPath: "synthetic/recoverable.fhir.json",
+        manifestPath: "synthetic/recoverable.manifest.json",
+        signaturePath: "synthetic/recoverable.sig",
+      });
+      const recoverableRevocation = exporter.revokeExport(
+        admin,
+        recoverablePackageId,
+        "Synthetic registry revocation synchronization",
+      );
+      expect(recoverableRevocation.packageId).toBe(recoverablePackageId);
+      expect(
+        exporter
+          .listExportPackages(admin)
+          .find((record) => record.packageId === recoverablePackageId)?.status,
+      ).toBe("revoked");
     } finally {
       database.close();
     }

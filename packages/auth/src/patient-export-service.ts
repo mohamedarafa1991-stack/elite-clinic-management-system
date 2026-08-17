@@ -3,6 +3,15 @@ import { nanoid } from "nanoid";
 import {
   exportExpirationPolicySchema,
   exportFormatSchema,
+  exportPackageLifecycleEventSchema,
+  exportPackageLifecycleStatusSchema,
+  exportPackageRegistryRecordSchema,
+  exportRegistryCreateInputSchema,
+  exportRegistryListInputSchema,
+  exportRegistryTransitionInputSchema,
+  exportSigningKeyMetadataSchema,
+  exportSigningKeyPassphraseSchema,
+  exportSigningKeyRecoveryBundleSchema,
   exportRedactionPolicySchema,
   exportRevocationSchema,
   exportVerificationInputSchema,
@@ -20,6 +29,14 @@ import {
   projectionSnapshotSchema,
   signedExportManifestSchema,
   type ExportFormat,
+  type ExportPackageLifecycleEvent,
+  type ExportPackageLifecycleStatus,
+  type ExportPackageRegistryRecord,
+  type ExportRegistryCreateInput,
+  type ExportRegistryListInput,
+  type ExportRegistryTransitionInput,
+  type ExportSigningKeyMetadata,
+  type ExportSigningKeyRecoveryBundle,
   type ExportRedactionPolicy,
   type ExportRevocation,
   type ExportVerificationInput,
@@ -51,7 +68,20 @@ import {
 } from "./zip-utils.js";
 
 export interface ExportSignaturePort {
-  sign(data: Buffer): { publicKeyPem: string; signature: Buffer };
+  sign(data: Buffer): {
+    publicKeyPem: string;
+    signature: Buffer;
+    keyId?: string;
+    keyVersion?: number;
+  };
+  getActiveKeyMetadata?: () => ExportSigningKeyMetadata;
+  listKeyMetadata?: () => readonly ExportSigningKeyMetadata[];
+  rotate?: () => ExportSigningKeyMetadata;
+  exportRecoveryBundle?: (passphrase: string) => ExportSigningKeyRecoveryBundle;
+  restoreRecoveryBundle?: (
+    bundle: ExportSigningKeyRecoveryBundle,
+    passphrase: string,
+  ) => ExportSigningKeyMetadata;
 }
 
 export interface ZipExportBuildResult {
@@ -123,6 +153,8 @@ export function exportSigningData(manifest: SignedExportManifest): Buffer {
       snapshotPayloadHash: manifest.snapshotPayloadHash,
       payloadHash: manifest.payloadHash,
       signatureAlgorithm: manifest.signatureAlgorithm,
+      signerKeyId: manifest.signerKeyId,
+      signerKeyVersion: manifest.signerKeyVersion,
       format: manifest.format,
       redactionPolicy: manifest.redactionPolicy,
       exportReason: manifest.exportReason,
@@ -755,9 +787,24 @@ export class PatientExportService {
       packageContentHash,
     });
     const signer = this.signaturePort;
-    const signed = signer.sign(exportSigningData(signingManifest));
-    const manifest = signedExportManifestSchema.parse({
+    const activeSignerKey = signer.getActiveKeyMetadata?.();
+    const firstSignature = signer.sign(exportSigningData(signingManifest));
+    const signerKeyId =
+      activeSignerKey?.keyId ??
+      firstSignature.keyId ??
+      `esk-${hashExportPayload(Buffer.from(firstSignature.publicKeyPem)).slice(0, 24)}`;
+    const signerKeyVersion =
+      activeSignerKey?.keyVersion ?? firstSignature.keyVersion ?? 1;
+    const manifestToSign = signedExportManifestSchema.parse({
       ...signingManifest,
+      signerKeyId,
+      signerKeyVersion,
+    });
+    const signed = signer.sign(exportSigningData(manifestToSign));
+    const manifest = signedExportManifestSchema.parse({
+      ...manifestToSign,
+      signerKeyId: signed.keyId ?? signerKeyId,
+      signerKeyVersion: signed.keyVersion ?? signerKeyVersion,
       publicKeyPem: signed.publicKeyPem,
       signatureBase64: signed.signature.toString("base64"),
     });
@@ -941,6 +988,17 @@ export class PatientExportService {
         );
     });
     transaction();
+    const registered = this.findExportPackage(normalizedPackageId);
+    if (
+      registered &&
+      ["issued", "stored", "downloaded", "expired"].includes(registered.status)
+    ) {
+      this.transitionExportPackage(context, {
+        packageId: normalizedPackageId,
+        toStatus: "revoked",
+        reason: normalizedReason,
+      });
+    }
     return exportRevocationSchema.parse({
       id: revocationId,
       packageId: normalizedPackageId,
@@ -990,6 +1048,358 @@ export class PatientExportService {
       revokedAt: String(record["revoked_at"]),
       auditEventId: String(record["audit_event_id"]),
     });
+  }
+
+  public registerExportPackage(
+    context: SessionContext,
+    input: ExportRegistryCreateInput,
+  ): ExportPackageRegistryRecord {
+    requireCapability(context, "export.manage");
+    const parsed = exportRegistryCreateInputSchema.parse(input);
+    const existing = this.findExportPackage(parsed.packageId);
+    if (existing) {
+      if (
+        existing.packageHash !== parsed.packageHash ||
+        existing.manifestHash !== parsed.manifestHash
+      ) {
+        throw new Error(
+          "ELITE_EXPORT_REGISTRY_PACKAGE_CONFLICT: package ID already exists with different content",
+        );
+      }
+      return existing;
+    }
+    const patientRow = this.database.raw
+      .prepare("SELECT id FROM patients WHERE patient_id = ?")
+      .get(parsed.patientId) as { id: string } | undefined;
+    if (!patientRow) {
+      throw new Error(
+        "ELITE_EXPORT_REGISTRY_PATIENT_NOT_FOUND: patient was not found",
+      );
+    }
+    const now = this.now();
+    const auditEventId = nanoid(18);
+    const lifecycleId = nanoid(18);
+    const signerMetadata = this.ensureSignerKeyMetadata(
+      context,
+      parsed.signerKeyId,
+      parsed.signerKeyVersion,
+      undefined,
+      parsed.createdAt,
+    );
+    const record = exportPackageRegistryRecordSchema.parse({
+      ...parsed,
+      signerKeyId: signerMetadata.keyId,
+      signerKeyVersion: signerMetadata.keyVersion,
+      status: "stored",
+      statusChangedAt: now,
+      statusChangedByUserId: context.userId,
+    });
+    const transaction = this.database.raw.transaction(() => {
+      this.database.raw
+        .prepare(
+          "INSERT INTO audit_events (id, actor_user_id, device_id, action, entity_type, entity_id, result, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
+        )
+        .run(
+          auditEventId,
+          context.userId,
+          context.deviceId,
+          "export.registry.created",
+          "export-package",
+          record.packageId,
+          JSON.stringify({
+            packageType: record.packageType,
+            status: record.status,
+          }),
+          now,
+        );
+      this.database.raw
+        .prepare(
+          `INSERT INTO export_packages (
+            package_id, package_type, snapshot_id, patient_id, format, redaction_policy,
+            export_reason, created_at, created_by_user_id, expires_at, status,
+            status_changed_at, status_changed_by_user_id, package_hash, payload_hash,
+            manifest_hash, signer_key_id, signer_key_version, archive_file_name,
+            archive_path, payload_path, manifest_path, signature_path, fhir_profile_bundle_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          record.packageId,
+          record.packageType,
+          record.snapshotId,
+          patientRow.id,
+          record.format,
+          record.redactionPolicy,
+          record.exportReason,
+          record.createdAt,
+          record.createdByUserId,
+          record.expiresAt,
+          record.status,
+          record.statusChangedAt,
+          record.statusChangedByUserId,
+          record.packageHash,
+          record.payloadHash,
+          record.manifestHash,
+          record.signerKeyId,
+          record.signerKeyVersion,
+          record.archiveFileName ?? null,
+          record.archivePath ?? null,
+          record.payloadPath ?? null,
+          record.manifestPath ?? null,
+          record.signaturePath ?? null,
+          record.fhirProfileBundleId ?? null,
+        );
+      this.database.raw
+        .prepare(
+          "INSERT INTO export_package_lifecycle_events (id, package_id, from_status, to_status, reason, changed_at, changed_by_user_id, audit_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          lifecycleId,
+          record.packageId,
+          null,
+          record.status,
+          "Export package registered after successful save.",
+          now,
+          context.userId,
+          auditEventId,
+        );
+    });
+    transaction();
+    return record;
+  }
+
+  public listExportPackages(
+    context: SessionContext,
+    input: ExportRegistryListInput = { limit: 100 },
+  ): readonly ExportPackageRegistryRecord[] {
+    requireCapability(context, "export.manage");
+    const parsed = exportRegistryListInputSchema.parse(input);
+    this.markExpiredPackages(context);
+    const clauses: string[] = [];
+    const parameters: unknown[] = [];
+    if (parsed.patientId) {
+      clauses.push("patients.patient_id = ?");
+      parameters.push(parsed.patientId);
+    }
+    if (parsed.status) {
+      clauses.push("status = ?");
+      parameters.push(parsed.status);
+    }
+    parameters.push(parsed.limit);
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    return this.database.raw
+      .prepare(
+        `SELECT export_packages.*, patients.patient_id AS patient_display_id
+         FROM export_packages
+         INNER JOIN patients ON patients.id = export_packages.patient_id
+         ${where}
+         ORDER BY export_packages.created_at DESC, export_packages.package_id DESC LIMIT ?`,
+      )
+      .all(...parameters)
+      .map((row) =>
+        this.parseExportPackageRecord(row as Record<string, unknown>),
+      );
+  }
+
+  public transitionExportPackage(
+    context: SessionContext,
+    input: ExportRegistryTransitionInput,
+  ): ExportPackageRegistryRecord {
+    requireCapability(context, "export.manage");
+    const parsed = exportRegistryTransitionInputSchema.parse(input);
+    if (parsed.toStatus === "revoked" || parsed.toStatus === "destroyed") {
+      requireCapability(context, "export.revoke");
+    }
+    const current = this.findExportPackage(parsed.packageId);
+    if (!current) {
+      throw new Error(
+        "ELITE_EXPORT_REGISTRY_NOT_FOUND: export package was not found",
+      );
+    }
+    if (current.status === parsed.toStatus) return current;
+    if (!this.isAllowedExportTransition(current.status, parsed.toStatus)) {
+      throw new Error(
+        `ELITE_EXPORT_REGISTRY_TRANSITION_INVALID: cannot move ${current.status} to ${parsed.toStatus}`,
+      );
+    }
+    const changedAt = this.now();
+    const auditEventId = nanoid(18);
+    const lifecycleId = nanoid(18);
+    const next = {
+      ...current,
+      status: parsed.toStatus,
+      statusChangedAt: changedAt,
+      statusChangedByUserId: context.userId,
+    };
+    const transaction = this.database.raw.transaction(() => {
+      this.database.raw
+        .prepare(
+          "INSERT INTO audit_events (id, actor_user_id, device_id, action, entity_type, entity_id, result, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
+        )
+        .run(
+          auditEventId,
+          context.userId,
+          context.deviceId,
+          "export.lifecycle.changed",
+          "export-package",
+          current.packageId,
+          JSON.stringify({
+            fromStatus: current.status,
+            toStatus: parsed.toStatus,
+            reason: parsed.reason,
+          }),
+          changedAt,
+        );
+      this.database.raw
+        .prepare(
+          "UPDATE export_packages SET status = ?, status_changed_at = ?, status_changed_by_user_id = ? WHERE package_id = ?",
+        )
+        .run(
+          next.status,
+          next.statusChangedAt,
+          next.statusChangedByUserId,
+          next.packageId,
+        );
+      this.database.raw
+        .prepare(
+          "INSERT INTO export_package_lifecycle_events (id, package_id, from_status, to_status, reason, changed_at, changed_by_user_id, audit_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          lifecycleId,
+          current.packageId,
+          current.status,
+          parsed.toStatus,
+          parsed.reason,
+          changedAt,
+          context.userId,
+          auditEventId,
+        );
+    });
+    transaction();
+    return next;
+  }
+
+  public listExportPackageLifecycle(
+    context: SessionContext,
+    packageId: string,
+  ): readonly ExportPackageLifecycleEvent[] {
+    requireCapability(context, "export.manage");
+    const current = this.findExportPackage(packageId);
+    if (!current)
+      throw new Error(
+        "ELITE_EXPORT_REGISTRY_NOT_FOUND: export package was not found",
+      );
+    return this.database.raw
+      .prepare(
+        "SELECT id, package_id, from_status, to_status, reason, changed_at, changed_by_user_id, audit_event_id FROM export_package_lifecycle_events WHERE package_id = ? ORDER BY changed_at ASC, id ASC",
+      )
+      .all(packageId)
+      .map((row) => {
+        const record = row as Record<string, unknown>;
+        return exportPackageLifecycleEventSchema.parse({
+          id: String(record["id"]),
+          packageId: String(record["package_id"]),
+          fromStatus:
+            record["from_status"] === null
+              ? null
+              : String(record["from_status"]),
+          toStatus: String(record["to_status"]),
+          reason: String(record["reason"]),
+          changedAt: String(record["changed_at"]),
+          changedByUserId: String(record["changed_by_user_id"]),
+          auditEventId: String(record["audit_event_id"]),
+        });
+      });
+  }
+
+  public listSigningKeys(
+    context: SessionContext,
+  ): readonly ExportSigningKeyMetadata[] {
+    requireCapability(context, "export.key.manage");
+    const keys = this.signaturePort.listKeyMetadata?.() ?? [];
+    for (const key of keys)
+      this.ensureSignerKeyMetadata(context, key.keyId, key.keyVersion, key);
+    return keys.map((key) => exportSigningKeyMetadataSchema.parse(key));
+  }
+
+  public rotateSigningKey(
+    context: SessionContext,
+    reason: string,
+  ): ExportSigningKeyMetadata {
+    requireCapability(context, "export.key.manage");
+    if (context.role !== "admin")
+      throw new Error(
+        "ELITE_EXPORT_KEY_ADMIN_ONLY: only administrators can rotate signing keys",
+      );
+    const normalizedReason = reason.trim();
+    if (normalizedReason.length < 3 || normalizedReason.length > 1000)
+      throw new Error(
+        "ELITE_EXPORT_KEY_REASON_INVALID: reason must be 3-1000 characters",
+      );
+    if (!this.signaturePort.rotate)
+      throw new Error(
+        "ELITE_EXPORT_SIGNER_ROTATION_UNAVAILABLE: signer does not support rotation",
+      );
+    const rotated = this.signaturePort.rotate();
+    this.recordSigningKeyEvent(context, rotated, "rotated", normalizedReason);
+    return rotated;
+  }
+
+  public exportSigningKeyRecoveryBundle(
+    context: SessionContext,
+    passphrase: string,
+  ): ExportSigningKeyRecoveryBundle {
+    requireCapability(context, "export.key.manage");
+    if (context.role !== "admin")
+      throw new Error(
+        "ELITE_EXPORT_KEY_ADMIN_ONLY: only administrators can recover signing keys",
+      );
+    const parsedPassphrase = exportSigningKeyPassphraseSchema.parse(passphrase);
+    if (!this.signaturePort.exportRecoveryBundle)
+      throw new Error(
+        "ELITE_EXPORT_SIGNER_RECOVERY_UNAVAILABLE: signer does not support recovery export",
+      );
+    const bundle = exportSigningKeyRecoveryBundleSchema.parse(
+      this.signaturePort.exportRecoveryBundle(parsedPassphrase),
+    );
+    const metadata = this.signaturePort.getActiveKeyMetadata?.();
+    if (metadata)
+      this.recordSigningKeyEvent(
+        context,
+        metadata,
+        "recovery-exported",
+        "Encrypted signing-key recovery bundle exported.",
+      );
+    return bundle;
+  }
+
+  public restoreSigningKeyRecoveryBundle(
+    context: SessionContext,
+    bundle: ExportSigningKeyRecoveryBundle,
+    passphrase: string,
+  ): ExportSigningKeyMetadata {
+    requireCapability(context, "export.key.manage");
+    if (context.role !== "admin")
+      throw new Error(
+        "ELITE_EXPORT_KEY_ADMIN_ONLY: only administrators can recover signing keys",
+      );
+    const parsedPassphrase = exportSigningKeyPassphraseSchema.parse(passphrase);
+    if (!this.signaturePort.restoreRecoveryBundle)
+      throw new Error(
+        "ELITE_EXPORT_SIGNER_RECOVERY_UNAVAILABLE: signer does not support recovery import",
+      );
+    const restored = exportSigningKeyMetadataSchema.parse(
+      this.signaturePort.restoreRecoveryBundle(
+        exportSigningKeyRecoveryBundleSchema.parse(bundle),
+        parsedPassphrase,
+      ),
+    );
+    this.recordSigningKeyEvent(
+      context,
+      restored,
+      "recovery-imported",
+      "Encrypted signing-key recovery bundle imported.",
+    );
+    return restored;
   }
 
   public getOrgSettings(context: SessionContext): OrgSettings {
@@ -1045,6 +1455,300 @@ export class PatientExportService {
       updatedAt,
       updatedByUserId: context.userId,
     });
+  }
+
+  private parseExportPackageRecord(
+    row: Record<string, unknown>,
+  ): ExportPackageRegistryRecord {
+    return exportPackageRegistryRecordSchema.parse({
+      packageId: String(row["package_id"]),
+      packageType: String(row["package_type"]),
+      snapshotId: String(row["snapshot_id"]),
+      patientId: String(row["patient_display_id"] ?? row["patient_id"]),
+      format: String(row["format"]),
+      redactionPolicy: String(row["redaction_policy"]),
+      exportReason: String(row["export_reason"]),
+      createdAt: String(row["created_at"]),
+      createdByUserId: String(row["created_by_user_id"]),
+      expiresAt: row["expires_at"] === null ? null : String(row["expires_at"]),
+      status: String(row["status"]),
+      statusChangedAt: String(row["status_changed_at"]),
+      statusChangedByUserId: String(row["status_changed_by_user_id"]),
+      packageHash: String(row["package_hash"]),
+      payloadHash: String(row["payload_hash"]),
+      manifestHash: String(row["manifest_hash"]),
+      signerKeyId: String(row["signer_key_id"]),
+      signerKeyVersion: Number(row["signer_key_version"]),
+      archiveFileName:
+        row["archive_file_name"] === null
+          ? undefined
+          : String(row["archive_file_name"]),
+      archivePath:
+        row["archive_path"] === null ? undefined : String(row["archive_path"]),
+      payloadPath:
+        row["payload_path"] === null ? undefined : String(row["payload_path"]),
+      manifestPath:
+        row["manifest_path"] === null
+          ? undefined
+          : String(row["manifest_path"]),
+      signaturePath:
+        row["signature_path"] === null
+          ? undefined
+          : String(row["signature_path"]),
+      fhirProfileBundleId:
+        row["fhir_profile_bundle_id"] === null
+          ? undefined
+          : String(row["fhir_profile_bundle_id"]),
+    });
+  }
+
+  private findExportPackage(
+    packageId: string,
+  ): ExportPackageRegistryRecord | undefined {
+    const row = this.database.raw
+      .prepare(
+        "SELECT export_packages.*, patients.patient_id AS patient_display_id FROM export_packages INNER JOIN patients ON patients.id = export_packages.patient_id WHERE export_packages.package_id = ?",
+      )
+      .get(packageId) as Record<string, unknown> | undefined;
+    return row ? this.parseExportPackageRecord(row) : undefined;
+  }
+
+  private isAllowedExportTransition(
+    from: ExportPackageLifecycleStatus,
+    to: ExportPackageLifecycleStatus,
+  ): boolean {
+    const allowed: Record<
+      ExportPackageLifecycleStatus,
+      readonly ExportPackageLifecycleStatus[]
+    > = {
+      issued: [
+        "stored",
+        "downloaded",
+        "expired",
+        "revoked",
+        "superseded",
+        "archived",
+        "destroyed",
+      ],
+      stored: [
+        "downloaded",
+        "expired",
+        "revoked",
+        "superseded",
+        "archived",
+        "destroyed",
+      ],
+      downloaded: ["expired", "revoked", "superseded", "archived", "destroyed"],
+      expired: ["revoked", "archived", "destroyed"],
+      revoked: ["archived", "destroyed"],
+      superseded: ["archived", "destroyed"],
+      archived: ["destroyed"],
+      destroyed: [],
+    };
+    return allowed[from].includes(to);
+  }
+
+  private markExpiredPackages(context: SessionContext): void {
+    const now = this.now();
+    const rows = this.database.raw
+      .prepare(
+        "SELECT package_id FROM export_packages WHERE expires_at IS NOT NULL AND expires_at <= ? AND status IN ('issued', 'stored', 'downloaded')",
+      )
+      .all(now) as Array<{ package_id: string }>;
+    for (const row of rows) {
+      try {
+        this.transitionExportPackage(context, {
+          packageId: row.package_id,
+          toStatus: "expired",
+          reason: "Export expiration time elapsed.",
+        });
+      } catch {
+        // A concurrent state transition is safe to ignore during refresh.
+      }
+    }
+  }
+
+  private ensureSignerKeyMetadata(
+    context: SessionContext,
+    keyId: string,
+    keyVersion: number,
+    metadata?: ExportSigningKeyMetadata,
+    createdAt = this.now(),
+  ): ExportSigningKeyMetadata {
+    const source = metadata ?? {
+      keyId,
+      keyVersion,
+      algorithm: "ed25519" as const,
+      publicKeyPem:
+        this.signaturePort.getActiveKeyMetadata?.().publicKeyPem ??
+        "unknown-public-key".padEnd(64, "-"),
+      publicKeyFingerprint: createHash("sha256")
+        .update(
+          this.signaturePort.getActiveKeyMetadata?.().publicKeyPem ??
+            "unknown-public-key",
+        )
+        .digest("hex"),
+      status: "active" as const,
+      createdAt,
+      retiredAt: null,
+      revokedAt: null,
+    };
+    const parsed = exportSigningKeyMetadataSchema.parse(source);
+    const existing = this.database.raw
+      .prepare("SELECT key_id FROM export_signing_keys WHERE key_id = ?")
+      .get(parsed.keyId) as { key_id: string } | undefined;
+    if (!existing) {
+      this.database.raw
+        .prepare(
+          "INSERT INTO export_signing_keys (key_id, key_version, algorithm, public_key_pem, public_key_fingerprint, status, created_at, created_by_user_id, retired_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          parsed.keyId,
+          parsed.keyVersion,
+          parsed.algorithm,
+          parsed.publicKeyPem,
+          parsed.publicKeyFingerprint,
+          parsed.status,
+          parsed.createdAt,
+          context.userId,
+          parsed.retiredAt,
+          parsed.revokedAt,
+        );
+    }
+    return parsed;
+  }
+
+  private synchronizeSigningKeyMetadata(
+    context: SessionContext,
+    keys: readonly ExportSigningKeyMetadata[],
+  ): void {
+    const normalized = keys.map((key) =>
+      exportSigningKeyMetadataSchema.parse(key),
+    );
+    const transaction = this.database.raw.transaction(() => {
+      for (const key of normalized.filter(
+        (entry) => entry.status !== "active",
+      )) {
+        this.database.raw
+          .prepare(
+            "UPDATE export_signing_keys SET public_key_pem = ?, public_key_fingerprint = ?, status = ?, retired_at = ?, revoked_at = ? WHERE key_id = ?",
+          )
+          .run(
+            key.publicKeyPem,
+            key.publicKeyFingerprint,
+            key.status,
+            key.retiredAt,
+            key.revokedAt,
+            key.keyId,
+          );
+      }
+      for (const key of normalized.filter(
+        (entry) => entry.status === "active",
+      )) {
+        const existing = this.database.raw
+          .prepare("SELECT key_id FROM export_signing_keys WHERE key_id = ?")
+          .get(key.keyId) as { key_id: string } | undefined;
+        if (existing) {
+          this.database.raw
+            .prepare(
+              "UPDATE export_signing_keys SET key_version = ?, public_key_pem = ?, public_key_fingerprint = ?, status = ?, retired_at = ?, revoked_at = ? WHERE key_id = ?",
+            )
+            .run(
+              key.keyVersion,
+              key.publicKeyPem,
+              key.publicKeyFingerprint,
+              key.status,
+              key.retiredAt,
+              key.revokedAt,
+              key.keyId,
+            );
+        } else {
+          this.database.raw
+            .prepare(
+              "INSERT INTO export_signing_keys (key_id, key_version, algorithm, public_key_pem, public_key_fingerprint, status, created_at, created_by_user_id, retired_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              key.keyId,
+              key.keyVersion,
+              key.algorithm,
+              key.publicKeyPem,
+              key.publicKeyFingerprint,
+              key.status,
+              key.createdAt,
+              context.userId,
+              key.retiredAt,
+              key.revokedAt,
+            );
+        }
+      }
+    });
+    transaction();
+  }
+
+  private recordSigningKeyEvent(
+    context: SessionContext,
+    metadata: ExportSigningKeyMetadata,
+    eventType:
+      | "created"
+      | "rotated"
+      | "retired"
+      | "revoked"
+      | "recovery-exported"
+      | "recovery-imported",
+    reason: string,
+  ): void {
+    const now = this.now();
+    this.ensureSignerKeyMetadata(
+      context,
+      metadata.keyId,
+      metadata.keyVersion,
+      metadata,
+      metadata.createdAt,
+    );
+    const auditEventId = nanoid(18);
+    const eventId = nanoid(18);
+    const transaction = this.database.raw.transaction(() => {
+      this.database.raw
+        .prepare(
+          "INSERT INTO audit_events (id, actor_user_id, device_id, action, entity_type, entity_id, result, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
+        )
+        .run(
+          auditEventId,
+          context.userId,
+          context.deviceId,
+          `export.signing-key.${eventType}`,
+          "export-signing-key",
+          metadata.keyId,
+          JSON.stringify({ keyVersion: metadata.keyVersion, reason }),
+          now,
+        );
+      this.database.raw
+        .prepare(
+          "INSERT INTO export_signing_key_events (id, key_id, event_type, reason, occurred_at, occurred_by_user_id, audit_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          eventId,
+          metadata.keyId,
+          eventType,
+          reason,
+          now,
+          context.userId,
+          auditEventId,
+        );
+      this.database.raw
+        .prepare(
+          "UPDATE export_signing_keys SET public_key_pem = ?, public_key_fingerprint = ?, status = ?, retired_at = ?, revoked_at = ? WHERE key_id = ?",
+        )
+        .run(
+          metadata.publicKeyPem,
+          metadata.publicKeyFingerprint,
+          metadata.status,
+          metadata.retiredAt,
+          metadata.revokedAt,
+          metadata.keyId,
+        );
+    });
+    transaction();
   }
 
   private signaturePort: ExportSignaturePort = {

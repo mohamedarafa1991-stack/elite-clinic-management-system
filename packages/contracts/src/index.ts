@@ -33,6 +33,7 @@ export const capabilitySchema = z.enum([
   "export.manage",
   "export.sensitive",
   "export.revoke",
+  "export.key.manage",
   "audit.read",
   "module.manage",
 ]);
@@ -58,6 +59,7 @@ export const roleCapabilities = {
     "export.manage",
     "export.sensitive",
     "export.revoke",
+    "export.key.manage",
     "audit.read",
     "module.manage",
   ],
@@ -536,6 +538,156 @@ export const exportRevocationSchema = z.object({
 });
 export type ExportRevocation = z.infer<typeof exportRevocationSchema>;
 
+export const exportPackageLifecycleStatusSchema = z.enum([
+  "issued",
+  "stored",
+  "downloaded",
+  "expired",
+  "revoked",
+  "superseded",
+  "archived",
+  "destroyed",
+]);
+export type ExportPackageLifecycleStatus = z.infer<
+  typeof exportPackageLifecycleStatusSchema
+>;
+
+export const exportPackageTypeSchema = z.enum(["detached", "zip"]);
+export type ExportPackageType = z.infer<typeof exportPackageTypeSchema>;
+
+export const exportPackageRegistryRecordSchema = z.object({
+  packageId: opaqueIdSchema,
+  packageType: exportPackageTypeSchema,
+  snapshotId: opaqueIdSchema,
+  patientId: patientIdSchema,
+  format: exportFormatSchema,
+  redactionPolicy: exportRedactionPolicySchema,
+  exportReason: z.string().trim().min(3).max(500),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+  expiresAt: isoDateTimeSchema.nullable(),
+  status: exportPackageLifecycleStatusSchema,
+  statusChangedAt: isoDateTimeSchema,
+  statusChangedByUserId: opaqueIdSchema,
+  packageHash: z.string().regex(/^[a-f0-9]{64}$/),
+  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  signerKeyId: opaqueIdSchema,
+  signerKeyVersion: z.number().int().positive(),
+  archiveFileName: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]+$/)
+    .optional(),
+  archivePath: z.string().min(1).optional(),
+  payloadPath: z.string().min(1).optional(),
+  manifestPath: z.string().min(1).optional(),
+  signaturePath: z.string().min(1).optional(),
+  fhirProfileBundleId: z.string().min(3).max(128).optional(),
+});
+export type ExportPackageRegistryRecord = z.infer<
+  typeof exportPackageRegistryRecordSchema
+>;
+
+export const exportRegistryCreateInputSchema =
+  exportPackageRegistryRecordSchema.omit({
+    status: true,
+    statusChangedAt: true,
+    statusChangedByUserId: true,
+  });
+export type ExportRegistryCreateInput = z.infer<
+  typeof exportRegistryCreateInputSchema
+>;
+
+export const exportPackageLifecycleEventSchema = z.object({
+  id: opaqueIdSchema,
+  packageId: opaqueIdSchema,
+  fromStatus: exportPackageLifecycleStatusSchema.nullable(),
+  toStatus: exportPackageLifecycleStatusSchema,
+  reason: z.string().trim().min(3).max(1000),
+  changedAt: isoDateTimeSchema,
+  changedByUserId: opaqueIdSchema,
+  auditEventId: opaqueIdSchema,
+});
+export type ExportPackageLifecycleEvent = z.infer<
+  typeof exportPackageLifecycleEventSchema
+>;
+
+export const exportRegistryTransitionInputSchema = z.object({
+  packageId: opaqueIdSchema,
+  toStatus: exportPackageLifecycleStatusSchema,
+  reason: z.string().trim().min(3).max(1000),
+});
+export type ExportRegistryTransitionInput = z.infer<
+  typeof exportRegistryTransitionInputSchema
+>;
+
+export const exportRegistryListInputSchema = z.object({
+  patientId: patientIdSchema.optional(),
+  status: exportPackageLifecycleStatusSchema.optional(),
+  limit: z.number().int().min(1).max(500).default(100),
+});
+export type ExportRegistryListInput = z.infer<
+  typeof exportRegistryListInputSchema
+>;
+
+export const exportSigningKeyStatusSchema = z.enum([
+  "active",
+  "retired",
+  "revoked",
+]);
+export type ExportSigningKeyStatus = z.infer<
+  typeof exportSigningKeyStatusSchema
+>;
+
+export const exportSigningKeyMetadataSchema = z.object({
+  keyId: opaqueIdSchema,
+  keyVersion: z.number().int().positive(),
+  algorithm: z.literal("ed25519"),
+  publicKeyPem: z.string().min(64),
+  publicKeyFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  status: exportSigningKeyStatusSchema,
+  createdAt: isoDateTimeSchema,
+  retiredAt: isoDateTimeSchema.nullable(),
+  revokedAt: isoDateTimeSchema.nullable(),
+});
+export type ExportSigningKeyMetadata = z.infer<
+  typeof exportSigningKeyMetadataSchema
+>;
+
+export const exportSigningKeyRotationInputSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+});
+export type ExportSigningKeyRotationInput = z.infer<
+  typeof exportSigningKeyRotationInputSchema
+>;
+
+export const exportSigningKeyPassphraseSchema = z
+  .string()
+  .trim()
+  .min(12)
+  .max(256);
+export type ExportSigningKeyPassphrase = z.infer<
+  typeof exportSigningKeyPassphraseSchema
+>;
+
+export const exportSigningKeyRecoveryBundleSchema = z.object({
+  schemaVersion: z.literal(1),
+  keyId: opaqueIdSchema,
+  keyVersion: z.number().int().positive(),
+  algorithm: z.literal("ed25519"),
+  publicKeyPem: z.string().min(64),
+  publicKeyFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  kdf: z.literal("scrypt"),
+  saltBase64: z.string().min(16),
+  ivBase64: z.string().min(16),
+  authTagBase64: z.string().min(16),
+  ciphertextBase64: z.string().min(16),
+  createdAt: isoDateTimeSchema,
+});
+export type ExportSigningKeyRecoveryBundle = z.infer<
+  typeof exportSigningKeyRecoveryBundleSchema
+>;
+
 export const patientExportInputSchema = z.object({
   snapshotId: opaqueIdSchema,
   format: exportFormatSchema,
@@ -585,6 +737,8 @@ export const signedExportManifestSchema = z.object({
   snapshotPayloadHash: z.string().regex(/^[a-f0-9]{64}$/),
   payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
   signatureAlgorithm: z.literal("ed25519"),
+  signerKeyId: opaqueIdSchema.optional(),
+  signerKeyVersion: z.number().int().positive().optional(),
   publicKeyPem: z.string().min(64),
   signatureBase64: z.string().min(16),
   format: exportFormatSchema,

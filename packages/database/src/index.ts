@@ -673,6 +673,75 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_fhir_profile_bundles_status ON fhir_profile_bundles(status, updated_at);
     `,
   },
+  {
+    version: 14,
+    name: "export-registry-and-signing-key-lifecycle",
+    sql: `
+      CREATE TABLE IF NOT EXISTS export_signing_keys (
+        key_id TEXT PRIMARY KEY NOT NULL,
+        key_version INTEGER NOT NULL UNIQUE CHECK (key_version >= 1),
+        algorithm TEXT NOT NULL CHECK (algorithm = 'ed25519'),
+        public_key_pem TEXT NOT NULL,
+        public_key_fingerprint TEXT NOT NULL UNIQUE CHECK (length(public_key_fingerprint) = 64),
+        status TEXT NOT NULL CHECK (status IN ('active', 'retired', 'revoked')),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        retired_at TEXT,
+        revoked_at TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_export_signing_keys_active ON export_signing_keys(status) WHERE status = 'active';
+      CREATE TABLE IF NOT EXISTS export_packages (
+        package_id TEXT PRIMARY KEY NOT NULL,
+        package_type TEXT NOT NULL CHECK (package_type IN ('detached', 'zip')),
+        snapshot_id TEXT NOT NULL REFERENCES encounter_projection_snapshots(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        format TEXT NOT NULL CHECK (format IN ('pdf', 'fhir')),
+        redaction_policy TEXT NOT NULL CHECK (redaction_policy IN ('minimal', 'clinical', 'full')),
+        export_reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        expires_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('issued', 'stored', 'downloaded', 'expired', 'revoked', 'superseded', 'archived', 'destroyed')),
+        status_changed_at TEXT NOT NULL,
+        status_changed_by_user_id TEXT NOT NULL REFERENCES users(id),
+        package_hash TEXT NOT NULL CHECK (length(package_hash) = 64),
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        manifest_hash TEXT NOT NULL CHECK (length(manifest_hash) = 64),
+        signer_key_id TEXT NOT NULL REFERENCES export_signing_keys(key_id),
+        signer_key_version INTEGER NOT NULL CHECK (signer_key_version >= 1),
+        archive_file_name TEXT,
+        archive_path TEXT,
+        payload_path TEXT,
+        manifest_path TEXT,
+        signature_path TEXT,
+        fhir_profile_bundle_id TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_packages_patient_created ON export_packages(patient_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_export_packages_status_expiry ON export_packages(status, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_export_packages_created_by ON export_packages(created_by_user_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS export_package_lifecycle_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        package_id TEXT NOT NULL REFERENCES export_packages(package_id),
+        from_status TEXT CHECK (from_status IS NULL OR from_status IN ('issued', 'stored', 'downloaded', 'expired', 'revoked', 'superseded', 'archived', 'destroyed')),
+        to_status TEXT NOT NULL CHECK (to_status IN ('issued', 'stored', 'downloaded', 'expired', 'revoked', 'superseded', 'archived', 'destroyed')),
+        reason TEXT NOT NULL,
+        changed_at TEXT NOT NULL,
+        changed_by_user_id TEXT NOT NULL REFERENCES users(id),
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_package_lifecycle_events_package ON export_package_lifecycle_events(package_id, changed_at DESC);
+      CREATE TABLE IF NOT EXISTS export_signing_key_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        key_id TEXT NOT NULL REFERENCES export_signing_keys(key_id),
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'rotated', 'retired', 'revoked', 'recovery-exported', 'recovery-imported')),
+        reason TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        occurred_by_user_id TEXT NOT NULL REFERENCES users(id),
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_signing_key_events_key ON export_signing_key_events(key_id, occurred_at DESC);
+    `,
+  },
 ];
 
 function now(): string {

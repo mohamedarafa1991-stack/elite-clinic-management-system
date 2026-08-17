@@ -20,6 +20,8 @@ function signingData(manifest) {
       snapshotPayloadHash: manifest.snapshotPayloadHash,
       payloadHash: manifest.payloadHash,
       signatureAlgorithm: manifest.signatureAlgorithm,
+      signerKeyId: manifest.signerKeyId,
+      signerKeyVersion: manifest.signerKeyVersion,
       format: manifest.format,
       redactionPolicy: manifest.redactionPolicy,
       exportReason: manifest.exportReason,
