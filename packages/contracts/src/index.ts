@@ -1643,3 +1643,10 @@ export const syncConflictSchema = z.object({
   createdAt: isoDateTimeSchema,
 });
 export type SyncConflict = z.infer<typeof syncConflictSchema>;
+
+export {
+  assertCanonicalJsonSafeInteger,
+  canonicalJson,
+  type CanonicalJsonPrimitive,
+  type CanonicalJsonValue,
+} from "./canonical-json.js";

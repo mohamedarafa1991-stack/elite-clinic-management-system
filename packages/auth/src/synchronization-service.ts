@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import {
+  canonicalJson,
   syncCapabilityRequestSchema,
   syncCapabilityResponseSchema,
   syncDeltaRequestSchema,
@@ -35,18 +36,7 @@ function now(): string {
 }
 
 function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-    .join(",")}}`;
+  return canonicalJson(value);
 }
 
 function sha256(value: string): string {

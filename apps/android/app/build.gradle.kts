@@ -25,6 +25,8 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    sourceSets["test"].resources.srcDir("../../../test-vectors")
 }
 
 kotlin {
@@ -46,4 +48,5 @@ dependencies {
     ksp("androidx.room:room-compiler:2.7.2")
     implementation("androidx.work:work-runtime-ktx:2.10.3")
     implementation("androidx.security:security-crypto:1.1.0-alpha07")
+    testImplementation("junit:junit:4.13.2")
 }

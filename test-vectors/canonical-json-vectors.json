@@ -1,0 +1,107 @@
+{
+  "canonicalJsonVersion": 1,
+  "vectors": [
+    {
+      "id": "object-key-order-and-nesting",
+      "purpose": "Sort object keys recursively while retaining array order.",
+      "input": {
+        "zulu": 0,
+        "alpha": 42,
+        "nested": {
+          "beta": true,
+          "alpha": null
+        },
+        "unicodeKeys": {
+          "😀": "emoji",
+          "é": "accent",
+          "e": "plain",
+          "z": "last"
+        },
+        "list": [
+          3,
+          {
+            "zulu": "last",
+            "alpha": "first"
+          }
+        ]
+      },
+      "canonical": "{\"alpha\":42,\"list\":[3,{\"alpha\":\"first\",\"zulu\":\"last\"}],\"nested\":{\"alpha\":null,\"beta\":true},\"unicodeKeys\":{\"e\":\"plain\",\"z\":\"last\",\"é\":\"accent\",\"😀\":\"emoji\"},\"zulu\":0}",
+      "sha256": "528c917d1453b1206277fc88f53f260be2174bf0427e713de24a556ba13fa6cc"
+    },
+    {
+      "id": "unicode-escaping-and-boundaries",
+      "purpose": "Preserve Unicode and escape quotes, backslashes, and line breaks consistently.",
+      "input": {
+        "clinic": "ايليت Clinic",
+        "quote": "A \"synthetic\" record",
+        "slash": "C:\\Elite\\Clinic",
+        "line": "first\nsecond",
+        "empty": "",
+        "negative": -7,
+        "enabled": false
+      },
+      "canonical": "{\"clinic\":\"ايليت Clinic\",\"empty\":\"\",\"enabled\":false,\"line\":\"first\\nsecond\",\"negative\":-7,\"quote\":\"A \\\"synthetic\\\" record\",\"slash\":\"C:\\\\Elite\\\\Clinic\"}",
+      "sha256": "2b6527f19c0dca82d4c11250fe6e50b36184ee832d99d26cdc032864545cfa21"
+    },
+    {
+      "id": "appointment-payload",
+      "purpose": "Hash a minimum-necessary appointment synchronization payload.",
+      "input": {
+        "appointmentId": "appointment-001",
+        "patientId": "EL-00001",
+        "departmentId": "department-general",
+        "doctorId": "user-doctor-01",
+        "scheduledStart": "2026-08-17T09:00:00.000Z",
+        "scheduledEnd": "2026-08-17T09:15:00.000Z",
+        "status": "scheduled",
+        "visitType": "new",
+        "isWalkIn": false
+      },
+      "canonical": "{\"appointmentId\":\"appointment-001\",\"departmentId\":\"department-general\",\"doctorId\":\"user-doctor-01\",\"isWalkIn\":false,\"patientId\":\"EL-00001\",\"scheduledEnd\":\"2026-08-17T09:15:00.000Z\",\"scheduledStart\":\"2026-08-17T09:00:00.000Z\",\"status\":\"scheduled\",\"visitType\":\"new\"}",
+      "sha256": "3c4d9dcf33beacb496886a0e213d6d6a59acdbf367ddb398e2d8cf8d63ae5031"
+    },
+    {
+      "id": "enrollment-response-descriptor",
+      "purpose": "Canonicalize the signed Admin-approved enrollment response descriptor.",
+      "input": {
+        "protocolVersion": 1,
+        "schemaVersion": 1,
+        "enrollmentId": "enrollment-01",
+        "organizationId": "org-elite-cairo",
+        "deviceId": "android-device-01",
+        "userId": "user-nurse-01",
+        "role": "nurse",
+        "deviceName": "Front Desk Android",
+        "devicePublicKeyFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "policyVersion": 1,
+        "allowedScopes": ["appointments", "patient-summary"],
+        "issuedAt": "2026-08-17T09:00:00.000Z",
+        "expiresAt": "2026-08-18T09:00:00.000Z",
+        "offlineAccessUntil": "2026-09-16T09:00:00.000Z"
+      },
+      "canonical": "{\"allowedScopes\":[\"appointments\",\"patient-summary\"],\"deviceId\":\"android-device-01\",\"deviceName\":\"Front Desk Android\",\"devicePublicKeyFingerprint\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"enrollmentId\":\"enrollment-01\",\"expiresAt\":\"2026-08-18T09:00:00.000Z\",\"issuedAt\":\"2026-08-17T09:00:00.000Z\",\"offlineAccessUntil\":\"2026-09-16T09:00:00.000Z\",\"organizationId\":\"org-elite-cairo\",\"policyVersion\":1,\"protocolVersion\":1,\"role\":\"nurse\",\"schemaVersion\":1,\"userId\":\"user-nurse-01\"}",
+      "sha256": "2040ae21c931fda2b03e324aee89a7c3f8e0751f3602fc22388f155dc7d8227d"
+    },
+    {
+      "id": "session-initiation-descriptor",
+      "purpose": "Canonicalize the signed session initiation transcript binding identity, keys, and nonces.",
+      "input": {
+        "protocolVersion": 1,
+        "organizationId": "org-elite-cairo",
+        "enrollmentId": "enrollment-01",
+        "deviceId": "android-device-01",
+        "userId": "user-nurse-01",
+        "sessionId": "session-01",
+        "requestNonce": "0123456789abcdef0123456789abcdef",
+        "deviceIdentityKeyFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "deviceEphemeralKeyFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "serverEphemeralKeyFingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "clientCounter": 0,
+        "issuedAt": "2026-08-17T09:01:00.000Z",
+        "validUntil": "2026-08-17T09:06:00.000Z"
+      },
+      "canonical": "{\"clientCounter\":0,\"deviceEphemeralKeyFingerprint\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"deviceId\":\"android-device-01\",\"deviceIdentityKeyFingerprint\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"enrollmentId\":\"enrollment-01\",\"issuedAt\":\"2026-08-17T09:01:00.000Z\",\"organizationId\":\"org-elite-cairo\",\"protocolVersion\":1,\"requestNonce\":\"0123456789abcdef0123456789abcdef\",\"serverEphemeralKeyFingerprint\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"sessionId\":\"session-01\",\"userId\":\"user-nurse-01\",\"validUntil\":\"2026-08-17T09:06:00.000Z\"}",
+      "sha256": "5ecc3fcefac371a407b6bd215981123f36ea21804c49d9b8d6c4508cec50bd61"
+    }
+  ]
+}

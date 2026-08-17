@@ -11,14 +11,35 @@ object CanonicalJson {
         is JSONObject -> encodeObject(value)
         is JSONArray -> encodeArray(value)
         is String -> JSONObject.quote(value)
-        is Boolean, is Number -> value.toString()
-        else -> JSONObject.quote(value.toString())
+        is Boolean -> value.toString()
+        is Number -> encodeNumber(value)
+        else -> throw IllegalArgumentException(
+            "ELITE_CANONICAL_JSON_TYPE: unsupported value type ${value::class.java.name}",
+        )
     }
 
     fun copyWithout(json: JSONObject, vararg fieldNames: String): JSONObject {
         val copy = JSONObject(json.toString())
         fieldNames.forEach(copy::remove)
         return copy
+    }
+
+    private fun encodeNumber(value: Number): String {
+        val doubleValue = value.toDouble()
+        if (!doubleValue.isFinite() || doubleValue % 1.0 != 0.0) {
+            throw IllegalArgumentException("ELITE_CANONICAL_JSON_NUMBER: safe integers only")
+        }
+        if (kotlin.math.abs(doubleValue) > 9_007_199_254_740_991.0) {
+            throw IllegalArgumentException("ELITE_CANONICAL_JSON_NUMBER: safe integers only")
+        }
+        val longValue = value.toLong()
+        if (
+            longValue.toDouble() != doubleValue ||
+            longValue == Long.MIN_VALUE
+        ) {
+            throw IllegalArgumentException("ELITE_CANONICAL_JSON_NUMBER: safe integers only")
+        }
+        return longValue.toString()
     }
 
     private fun encodeObject(json: JSONObject): String {
