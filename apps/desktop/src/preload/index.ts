@@ -49,6 +49,14 @@ import type {
   ScheduleInput,
   ScheduleException,
   ScheduleExceptionInput,
+  ExportRecipient,
+  ExportRecipientCreateInput,
+  ExportConsentEvidence,
+  ExportConsentEvidenceCreateInput,
+  ExportDisclosure,
+  ExportDisclosureDecision,
+  ExportDisclosureRequest,
+  ExportReceipt,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -625,6 +633,95 @@ const eliteApi = {
         bundle,
         passphrase,
       ) as Promise<ExportSigningKeyMetadata>,
+    createRecipient: (token: string, input: ExportRecipientCreateInput) =>
+      ipcRenderer.invoke(
+        "export:recipient-create",
+        token,
+        input,
+      ) as Promise<ExportRecipient>,
+    listRecipients: (token: string) =>
+      ipcRenderer.invoke("export:recipients", token) as Promise<
+        readonly ExportRecipient[]
+      >,
+    verifyRecipient: (
+      token: string,
+      recipientId: string,
+      status: "verified" | "rejected",
+      reason: string,
+    ) =>
+      ipcRenderer.invoke(
+        "export:recipient-verify",
+        token,
+        recipientId,
+        status,
+        reason,
+      ) as Promise<ExportRecipient>,
+    createConsentEvidence: (
+      token: string,
+      input: ExportConsentEvidenceCreateInput,
+    ) =>
+      ipcRenderer.invoke(
+        "export:evidence-create",
+        token,
+        input,
+      ) as Promise<ExportConsentEvidence>,
+    listConsentEvidence: (token: string, patientId?: string) =>
+      ipcRenderer.invoke("export:evidence-list", token, patientId) as Promise<
+        readonly ExportConsentEvidence[]
+      >,
+    reviewConsentEvidence: (
+      token: string,
+      evidenceId: string,
+      decision: "approve" | "reject",
+      reason: string,
+    ) =>
+      ipcRenderer.invoke(
+        "export:evidence-review",
+        token,
+        evidenceId,
+        decision,
+        reason,
+      ) as Promise<ExportConsentEvidence>,
+    requestDisclosure: (token: string, input: ExportDisclosureRequest) =>
+      ipcRenderer.invoke(
+        "export:disclosure-request",
+        token,
+        input,
+      ) as Promise<ExportDisclosure>,
+    listDisclosures: (token: string) =>
+      ipcRenderer.invoke("export:disclosures", token) as Promise<
+        readonly ExportDisclosure[]
+      >,
+    decideDisclosure: (token: string, input: ExportDisclosureDecision) =>
+      ipcRenderer.invoke(
+        "export:disclosure-decision",
+        token,
+        input,
+      ) as Promise<ExportDisclosure>,
+    sendDisclosure: (token: string, disclosureId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "export:disclosure-send",
+        token,
+        disclosureId,
+        reason,
+      ) as Promise<ExportDisclosure>,
+    issueReceipt: (token: string, disclosureId: string) =>
+      ipcRenderer.invoke(
+        "export:receipt-issue",
+        token,
+        disclosureId,
+      ) as Promise<ExportReceipt>,
+    acknowledgeReceipt: (token: string, receiptId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "export:receipt-acknowledge",
+        token,
+        receiptId,
+        reason,
+      ) as Promise<ExportReceipt>,
+    listReceipts: (token: string) =>
+      ipcRenderer.invoke("export:receipts", token) as Promise<
+        readonly ExportReceipt[]
+      >,
   },
   settings: {
     getOrgSettings: (token: string) =>

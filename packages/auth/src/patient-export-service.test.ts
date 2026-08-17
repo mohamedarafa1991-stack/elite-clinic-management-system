@@ -206,9 +206,24 @@ describe("PatientExportService", () => {
       });
       expect(tampered.verified).toBe(false);
 
-      const validation = exporter.validateFhirBundle(
-        JSON.parse(fhir.toString("utf8")),
+      const parsedFhir = JSON.parse(fhir.toString("utf8")) as {
+        meta?: { security?: unknown[] };
+        entry?: Array<{ resource?: { resourceType?: string } }>;
+      };
+      const resourceTypes = parsedFhir.entry?.map(
+        (entry) => entry.resource?.resourceType,
       );
+      expect(resourceTypes).toEqual(
+        expect.arrayContaining(["Composition", "Provenance", "AuditEvent"]),
+      );
+      expect(parsedFhir.meta?.security).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "SIGNED-SNAPSHOT",
+          }),
+        ]),
+      );
+      const validation = exporter.validateFhirBundle(parsedFhir);
       expect(validation.valid).toBe(true);
       expect(validation.fhirVersion).toBe("R4");
       expect(validation.profileIds).toContain(

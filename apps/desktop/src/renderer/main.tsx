@@ -38,6 +38,10 @@ import type {
   ExportPackageRegistryRecord,
   ExportSigningKeyMetadata,
   ExportSigningKeyRecoveryBundle,
+  ExportRecipient,
+  ExportConsentEvidence,
+  ExportDisclosure,
+  ExportReceipt,
   FhirValidationResult,
   FhirProfileBundle,
   FhirProfileBundleRecord,
@@ -2109,6 +2113,27 @@ function ClinicalWorkflowWorkspace({
   const [keyRotationReason, setKeyRotationReason] = useState("");
   const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
   const [recoveryBundleJson, setRecoveryBundleJson] = useState("");
+  const [governanceRecipients, setGovernanceRecipients] = useState<
+    readonly ExportRecipient[]
+  >([]);
+  const [governanceEvidence, setGovernanceEvidence] = useState<
+    readonly ExportConsentEvidence[]
+  >([]);
+  const [governanceDisclosures, setGovernanceDisclosures] = useState<
+    readonly ExportDisclosure[]
+  >([]);
+  const [governanceReceipts, setGovernanceReceipts] = useState<
+    readonly ExportReceipt[]
+  >([]);
+  const [recipientDisplayName, setRecipientDisplayName] = useState("");
+  const [recipientOrganizationName, setRecipientOrganizationName] =
+    useState("");
+  const [recipientCategory, setRecipientCategory] =
+    useState<ExportRecipient["category"]>("referral-provider");
+  const [recipientContactChannel, setRecipientContactChannel] = useState("");
+  const [governanceEvidenceReference, setGovernanceEvidenceReference] =
+    useState("");
+  const [governanceReason, setGovernanceReason] = useState("");
   const [fhirProfiles, setFhirProfiles] = useState<
     readonly FhirProfileBundleRecord[]
   >([]);
@@ -2637,6 +2662,246 @@ function ClinicalWorkflowWorkspace({
     }
   };
 
+  const loadGovernance = async (): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const [recipients, evidence, disclosures, receipts] = await Promise.all([
+        window.elite.export.listRecipients(token),
+        window.elite.export.listConsentEvidence(token, patientId || undefined),
+        window.elite.export.listDisclosures(token),
+        window.elite.export.listReceipts(token),
+      ]);
+      setGovernanceRecipients(recipients);
+      setGovernanceEvidence(evidence);
+      setGovernanceDisclosures(disclosures);
+      setGovernanceReceipts(receipts);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load export governance data",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const createGovernanceRecipient = async (): Promise<void> => {
+    if (recipientDisplayName.trim().length < 1) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.createRecipient(token, {
+        displayName: recipientDisplayName,
+        organizationName: recipientOrganizationName || undefined,
+        category: recipientCategory,
+        contactChannel: recipientContactChannel || undefined,
+      });
+      setRecipientDisplayName("");
+      setRecipientOrganizationName("");
+      setRecipientContactChannel("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to create recipient",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const verifyFirstRecipient = async (): Promise<void> => {
+    const recipient = governanceRecipients.find(
+      (candidate) => candidate.verificationStatus === "unverified",
+    );
+    if (!recipient || governanceReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.verifyRecipient(
+        token,
+        recipient.id,
+        "verified",
+        governanceReason,
+      );
+      setGovernanceReason("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to verify recipient",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const createGovernanceEvidence = async (): Promise<void> => {
+    if (
+      patientId.trim().length < 3 ||
+      governanceEvidenceReference.trim().length < 1
+    )
+      return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.createConsentEvidence(token, {
+        patientId,
+        evidenceType: "patient-consent",
+        sourceReference: governanceEvidenceReference,
+      });
+      setGovernanceEvidenceReference("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to record consent evidence",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const approveFirstEvidence = async (): Promise<void> => {
+    const evidence = governanceEvidence.find(
+      (candidate) => candidate.status === "pending",
+    );
+    if (!evidence || governanceReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.reviewConsentEvidence(
+        token,
+        evidence.id,
+        "approve",
+        governanceReason,
+      );
+      setGovernanceReason("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to approve consent evidence",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const requestFirstDisclosure = async (): Promise<void> => {
+    const packageId = selectedRegistryPackageId;
+    const recipient = governanceRecipients.find(
+      (candidate) => candidate.verificationStatus === "verified",
+    );
+    const evidence = governanceEvidence.find(
+      (candidate) => candidate.status === "approved",
+    );
+    if (
+      !packageId ||
+      !recipient ||
+      !evidence ||
+      governanceReason.trim().length < 3
+    )
+      return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.requestDisclosure(token, {
+        packageId,
+        recipientId: recipient.id,
+        purposeOfUse: "referral",
+        deliveryMethod: "usb",
+        consentEvidenceId: evidence.id,
+        reason: governanceReason,
+      });
+      setGovernanceReason("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to request disclosure",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const advanceFirstDisclosure = async (): Promise<void> => {
+    const disclosure = governanceDisclosures.find(
+      (candidate) =>
+        candidate.status === "requested" || candidate.status === "approved",
+    );
+    if (!disclosure || governanceReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      if (disclosure.status === "requested") {
+        await window.elite.export.decideDisclosure(token, {
+          disclosureId: disclosure.id,
+          decision: "approve",
+          reason: governanceReason,
+        });
+      } else {
+        await window.elite.export.sendDisclosure(
+          token,
+          disclosure.id,
+          governanceReason,
+        );
+      }
+      setGovernanceReason("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to advance disclosure",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const issueFirstReceipt = async (): Promise<void> => {
+    const disclosure = governanceDisclosures.find(
+      (candidate) => candidate.status === "sent",
+    );
+    if (!disclosure) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.issueReceipt(token, disclosure.id);
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to issue export receipt",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+  const acknowledgeFirstReceipt = async (): Promise<void> => {
+    const receipt = governanceReceipts.find(
+      (candidate) => !candidate.acknowledgedAt,
+    );
+    if (!receipt || governanceReason.trim().length < 3) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await window.elite.export.acknowledgeReceipt(
+        token,
+        receipt.id,
+        governanceReason,
+      );
+      setGovernanceReason("");
+      await loadGovernance();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to acknowledge receipt",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
   const loadOrganizationSettings = async (): Promise<void> => {
     setIsBusy(true);
     setError(null);
@@ -4383,6 +4648,207 @@ function ClinicalWorkflowWorkspace({
                     placeholder="Encrypted signing-key recovery bundle JSON"
                     rows={4}
                   />
+                </div>
+              ) : null}
+              {canManage ? (
+                <div className="org-settings-panel export-governance-panel">
+                  <div className="section-heading">
+                    <div>
+                      <h4>Export governance and disclosure receipts</h4>
+                      <small>
+                        Review recipients, consent evidence, disclosures, and
+                        signed receipts without exposing recovery material.
+                      </small>
+                    </div>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void loadGovernance()}
+                    >
+                      Load governance data
+                    </button>
+                  </div>
+                  <div className="inline-fields">
+                    <label>
+                      Recipient name
+                      <input
+                        value={recipientDisplayName}
+                        onChange={(event) =>
+                          setRecipientDisplayName(event.target.value)
+                        }
+                        placeholder="Referral recipient"
+                      />
+                    </label>
+                    <label>
+                      Organization
+                      <input
+                        value={recipientOrganizationName}
+                        onChange={(event) =>
+                          setRecipientOrganizationName(event.target.value)
+                        }
+                        placeholder="Recipient organization"
+                      />
+                    </label>
+                    <label>
+                      Category
+                      <select
+                        value={recipientCategory}
+                        onChange={(event) =>
+                          setRecipientCategory(
+                            event.target.value as ExportRecipient["category"],
+                          )
+                        }
+                      >
+                        <option value="referral-provider">
+                          Referral provider
+                        </option>
+                        <option value="treating-provider">
+                          Treating provider
+                        </option>
+                        <option value="patient">Patient</option>
+                        <option value="guardian">Guardian</option>
+                        <option value="legal-authority">Legal authority</option>
+                        <option value="administrative-authority">
+                          Administrative authority
+                        </option>
+                        <option value="internal-clinic">Internal clinic</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label>
+                      Contact/delivery note
+                      <input
+                        value={recipientContactChannel}
+                        onChange={(event) =>
+                          setRecipientContactChannel(event.target.value)
+                        }
+                        placeholder="USB handoff or verified channel"
+                      />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={
+                        isBusy || recipientDisplayName.trim().length < 1
+                      }
+                      onClick={() => void createGovernanceRecipient()}
+                    >
+                      Create recipient
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || governanceReason.trim().length < 3}
+                      onClick={() => void verifyFirstRecipient()}
+                    >
+                      Verify first pending recipient
+                    </button>
+                  </div>
+                  <div className="inline-fields">
+                    <label>
+                      Evidence patient ID
+                      <input
+                        value={patientId}
+                        onChange={(event) => setPatientId(event.target.value)}
+                        placeholder="EL-00001"
+                      />
+                    </label>
+                    <label>
+                      Evidence reference
+                      <input
+                        value={governanceEvidenceReference}
+                        onChange={(event) =>
+                          setGovernanceEvidenceReference(event.target.value)
+                        }
+                        placeholder="Consent record or policy reference"
+                      />
+                    </label>
+                    <label>
+                      Governance reason
+                      <input
+                        value={governanceReason}
+                        onChange={(event) =>
+                          setGovernanceReason(event.target.value)
+                        }
+                        placeholder="Reason for review or delivery"
+                      />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={
+                        isBusy ||
+                        patientId.trim().length < 3 ||
+                        governanceEvidenceReference.trim().length < 1
+                      }
+                      onClick={() => void createGovernanceEvidence()}
+                    >
+                      Record patient-consent evidence
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || governanceReason.trim().length < 3}
+                      onClick={() => void approveFirstEvidence()}
+                    >
+                      Approve first pending evidence
+                    </button>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={
+                        isBusy ||
+                        governanceReason.trim().length < 3 ||
+                        !selectedRegistryPackageId
+                      }
+                      onClick={() => void requestFirstDisclosure()}
+                    >
+                      Request referral disclosure for selected package
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || governanceReason.trim().length < 3}
+                      onClick={() => void advanceFirstDisclosure()}
+                    >
+                      Approve/send next disclosure
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void issueFirstReceipt()}
+                    >
+                      Issue signed receipt
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={isBusy || governanceReason.trim().length < 3}
+                      onClick={() => void acknowledgeFirstReceipt()}
+                    >
+                      Acknowledge receipt
+                    </button>
+                  </div>
+                  <div className="export-registry-list">
+                    <small>Recipients: {governanceRecipients.length}</small>
+                    <small>Consent evidence: {governanceEvidence.length}</small>
+                    <small>Disclosures: {governanceDisclosures.length}</small>
+                    <small>Receipts: {governanceReceipts.length}</small>
+                    {governanceDisclosures[0] ? (
+                      <small>
+                        Latest disclosure: {governanceDisclosures[0].status} ·{" "}
+                        {governanceDisclosures[0].packageId}
+                      </small>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
               {canManage ? (

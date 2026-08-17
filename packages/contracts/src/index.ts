@@ -34,6 +34,11 @@ export const capabilitySchema = z.enum([
   "export.sensitive",
   "export.revoke",
   "export.key.manage",
+  "export.governance.request",
+  "export.governance.review",
+  "export.governance.send",
+  "export.governance.audit",
+  "export.receipt.manage",
   "audit.read",
   "module.manage",
 ]);
@@ -60,6 +65,11 @@ export const roleCapabilities = {
     "export.sensitive",
     "export.revoke",
     "export.key.manage",
+    "export.governance.request",
+    "export.governance.review",
+    "export.governance.send",
+    "export.governance.audit",
+    "export.receipt.manage",
     "audit.read",
     "module.manage",
   ],
@@ -75,6 +85,7 @@ export const roleCapabilities = {
     "billing.read",
     "billing.write",
     "export.manage",
+    "export.governance.request",
   ],
   nurse: [
     "patient.read",
@@ -715,6 +726,221 @@ export const patientExportInputSchema = z.object({
   exportReason: z.string().trim().min(3).max(500),
 });
 export type PatientExportInput = z.infer<typeof patientExportInputSchema>;
+
+export const exportRecipientCategorySchema = z.enum([
+  "patient",
+  "guardian",
+  "treating-provider",
+  "referral-provider",
+  "legal-authority",
+  "administrative-authority",
+  "internal-clinic",
+  "other",
+]);
+export type ExportRecipientCategory = z.infer<
+  typeof exportRecipientCategorySchema
+>;
+
+export const exportRecipientVerificationStatusSchema = z.enum([
+  "unverified",
+  "verified",
+  "rejected",
+]);
+export type ExportRecipientVerificationStatus = z.infer<
+  typeof exportRecipientVerificationStatusSchema
+>;
+
+export const exportRecipientSchema = z.object({
+  id: opaqueIdSchema,
+  displayName: z.string().trim().min(1).max(160),
+  organizationName: z.string().trim().max(160).optional(),
+  category: exportRecipientCategorySchema,
+  contactChannel: z.string().trim().max(160).optional(),
+  verificationStatus: exportRecipientVerificationStatusSchema,
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+});
+export type ExportRecipient = z.infer<typeof exportRecipientSchema>;
+
+export const exportConsentEvidenceTypeSchema = z.enum([
+  "patient-consent",
+  "guardian-consent",
+  "clinical-treatment",
+  "legal-request",
+  "administrative-policy",
+  "emergency-exception",
+]);
+export type ExportConsentEvidenceType = z.infer<
+  typeof exportConsentEvidenceTypeSchema
+>;
+
+export const exportConsentEvidenceStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "expired",
+]);
+export type ExportConsentEvidenceStatus = z.infer<
+  typeof exportConsentEvidenceStatusSchema
+>;
+
+export const exportConsentEvidenceSchema = z.object({
+  id: opaqueIdSchema,
+  patientId: patientIdSchema,
+  evidenceType: exportConsentEvidenceTypeSchema,
+  status: exportConsentEvidenceStatusSchema,
+  sourceReference: z.string().trim().min(1).max(240),
+  sourceHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  relatedPersonId: opaqueIdSchema.optional(),
+  effectiveFrom: isoDateTimeSchema.optional(),
+  effectiveUntil: isoDateTimeSchema.optional(),
+  recordedByUserId: opaqueIdSchema,
+  recordedAt: isoDateTimeSchema,
+  reviewedByUserId: opaqueIdSchema.optional(),
+  reviewedAt: isoDateTimeSchema.optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+export type ExportConsentEvidence = z.infer<typeof exportConsentEvidenceSchema>;
+
+export const exportDisclosureStatusSchema = z.enum([
+  "requested",
+  "approved",
+  "rejected",
+  "sent",
+  "acknowledged",
+  "cancelled",
+]);
+export type ExportDisclosureStatus = z.infer<
+  typeof exportDisclosureStatusSchema
+>;
+
+export const exportPurposeOfUseSchema = z.enum([
+  "treatment",
+  "referral",
+  "patient-access",
+  "legal-request",
+  "administrative",
+  "emergency",
+]);
+export type ExportPurposeOfUse = z.infer<typeof exportPurposeOfUseSchema>;
+
+export const exportDeliveryMethodSchema = z.enum([
+  "usb",
+  "lan-share",
+  "local-copy",
+  "printed",
+  "other",
+]);
+export type ExportDeliveryMethod = z.infer<typeof exportDeliveryMethodSchema>;
+
+export const exportDisclosureSchema = z.object({
+  id: opaqueIdSchema,
+  packageId: opaqueIdSchema,
+  patientId: patientIdSchema,
+  recipientId: opaqueIdSchema,
+  purposeOfUse: exportPurposeOfUseSchema,
+  deliveryMethod: exportDeliveryMethodSchema,
+  status: exportDisclosureStatusSchema,
+  requestedByUserId: opaqueIdSchema,
+  requestedAt: isoDateTimeSchema,
+  approvedByUserId: opaqueIdSchema.optional(),
+  approvedAt: isoDateTimeSchema.optional(),
+  decisionReason: z.string().trim().max(1000).optional(),
+  sentAt: isoDateTimeSchema.optional(),
+  acknowledgedAt: isoDateTimeSchema.optional(),
+  consentEvidenceId: opaqueIdSchema.optional(),
+  receiptId: opaqueIdSchema.optional(),
+});
+export type ExportDisclosure = z.infer<typeof exportDisclosureSchema>;
+
+export const exportDisclosureRequestSchema = z.object({
+  packageId: opaqueIdSchema,
+  recipientId: opaqueIdSchema,
+  purposeOfUse: exportPurposeOfUseSchema,
+  deliveryMethod: exportDeliveryMethodSchema,
+  consentEvidenceId: opaqueIdSchema.optional(),
+  reason: z.string().trim().min(3).max(1000),
+});
+export type ExportDisclosureRequest = z.infer<
+  typeof exportDisclosureRequestSchema
+>;
+
+export const exportDisclosureDecisionSchema = z.object({
+  disclosureId: opaqueIdSchema,
+  decision: z.enum(["approve", "reject", "cancel"]),
+  reason: z.string().trim().min(3).max(1000),
+});
+export type ExportDisclosureDecision = z.infer<
+  typeof exportDisclosureDecisionSchema
+>;
+
+export const exportReceiptSchema = z.object({
+  id: opaqueIdSchema,
+  disclosureId: opaqueIdSchema,
+  packageId: opaqueIdSchema,
+  recipientId: opaqueIdSchema,
+  purposeOfUse: exportPurposeOfUseSchema,
+  packageHash: z.string().regex(/^[a-f0-9]{64}$/),
+  manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  signerKeyId: opaqueIdSchema,
+  signerKeyVersion: z.number().int().positive(),
+  statusAtIssuance: exportPackageLifecycleStatusSchema,
+  issuedAt: isoDateTimeSchema,
+  issuedByUserId: opaqueIdSchema,
+  receiptHash: z.string().regex(/^[a-f0-9]{64}$/),
+  signatureBase64: z.string().min(16),
+  acknowledgedAt: isoDateTimeSchema.optional(),
+});
+export type ExportReceipt = z.infer<typeof exportReceiptSchema>;
+
+export const exportSecurityLabelSchema = z.object({
+  system: z.string().url(),
+  code: z.string().trim().min(1).max(64),
+  display: z.string().trim().min(1).max(160),
+});
+export type ExportSecurityLabel = z.infer<typeof exportSecurityLabelSchema>;
+
+export const exportFhirGovernanceMetadataSchema = z.object({
+  provenanceResourceId: opaqueIdSchema,
+  auditEventResourceId: opaqueIdSchema,
+  purposeOfUse: exportPurposeOfUseSchema,
+  securityLabels: z.array(exportSecurityLabelSchema).min(1),
+  redactionPolicy: exportRedactionPolicySchema,
+  redactionSummary: z.string().trim().min(1).max(1000),
+});
+export type ExportFhirGovernanceMetadata = z.infer<
+  typeof exportFhirGovernanceMetadataSchema
+>;
+
+export const exportRecipientCreateInputSchema = z.object({
+  displayName: z.string().trim().min(1).max(160),
+  organizationName: z.string().trim().max(160).optional(),
+  category: exportRecipientCategorySchema,
+  contactChannel: z.string().trim().max(160).optional(),
+});
+export type ExportRecipientCreateInput = z.infer<
+  typeof exportRecipientCreateInputSchema
+>;
+
+export const exportConsentEvidenceCreateInputSchema = z.object({
+  patientId: patientIdSchema,
+  evidenceType: exportConsentEvidenceTypeSchema,
+  sourceReference: z.string().trim().min(1).max(240),
+  sourceHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  relatedPersonId: opaqueIdSchema.optional(),
+  effectiveFrom: isoDateTimeSchema.optional(),
+  effectiveUntil: isoDateTimeSchema.optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+export type ExportConsentEvidenceCreateInput = z.infer<
+  typeof exportConsentEvidenceCreateInputSchema
+>;
 
 export const exportFieldPolicySchema = z.object({
   includeName: z.boolean(),

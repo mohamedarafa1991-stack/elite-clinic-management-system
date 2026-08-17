@@ -1,6 +1,7 @@
 import {
   AuthService,
   ClinicalWorkflowService,
+  ExportGovernanceService,
   EncounterService,
   MedicalHistoryService,
   PatientExportService,
@@ -43,6 +44,7 @@ let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let patientExportService: PatientExportService | undefined;
+let exportGovernanceService: ExportGovernanceService | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
 
@@ -76,6 +78,10 @@ function initializeServices(): void {
       join(app.getPath("userData"), "elite-export-signing-key.json"),
     );
     patientExportService.setSignaturePort(exportSigner);
+    exportGovernanceService = new ExportGovernanceService(
+      database,
+      exportSigner,
+    );
   } catch {
     // Never expose database paths, encryption keys, or native-driver details.
     serviceError = app.isPackaged
@@ -181,6 +187,14 @@ function requirePatientExportService(): PatientExportService {
   return patientExportService;
 }
 
+function requireExportGovernanceService(): ExportGovernanceService {
+  if (!exportGovernanceService) {
+    throw new Error(
+      "ELITE_EXPORT_GOVERNANCE_UNAVAILABLE: export governance services are unavailable",
+    );
+  }
+  return exportGovernanceService;
+}
 function requireExportSigner(): ElectronExportSigner {
   if (!exportSigner) {
     throw new Error(
@@ -903,6 +917,113 @@ function registerIpc(): void {
         passphrase,
       ),
   );
+  ipcMain.handle(
+    "export:recipient-create",
+    (_event, token: string, input: unknown) =>
+      requireExportGovernanceService().createRecipient(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle("export:recipients", (_event, token: string) =>
+    requireExportGovernanceService().listRecipients(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "export:recipient-verify",
+    (
+      _event,
+      token: string,
+      recipientId: string,
+      status: "verified" | "rejected",
+      reason: string,
+    ) =>
+      requireExportGovernanceService().verifyRecipient(
+        serviceContext(token),
+        recipientId,
+        status,
+        reason,
+      ),
+  );
+  ipcMain.handle(
+    "export:evidence-create",
+    (_event, token: string, input: unknown) =>
+      requireExportGovernanceService().recordConsentEvidence(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "export:evidence-list",
+    (_event, token: string, patientId?: string) =>
+      requireExportGovernanceService().listConsentEvidence(
+        serviceContext(token),
+        patientId,
+      ),
+  );
+  ipcMain.handle(
+    "export:evidence-review",
+    (
+      _event,
+      token: string,
+      evidenceId: string,
+      decision: "approve" | "reject",
+      reason: string,
+    ) =>
+      requireExportGovernanceService().reviewConsentEvidence(
+        serviceContext(token),
+        evidenceId,
+        decision,
+        reason,
+      ),
+  );
+  ipcMain.handle(
+    "export:disclosure-request",
+    (_event, token: string, input: unknown) =>
+      requireExportGovernanceService().requestDisclosure(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle("export:disclosures", (_event, token: string) =>
+    requireExportGovernanceService().listDisclosures(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "export:disclosure-decision",
+    (_event, token: string, input: unknown) =>
+      requireExportGovernanceService().decideDisclosure(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "export:disclosure-send",
+    (_event, token: string, disclosureId: string, reason: string) =>
+      requireExportGovernanceService().sendDisclosure(
+        serviceContext(token),
+        disclosureId,
+        reason,
+      ),
+  );
+  ipcMain.handle(
+    "export:receipt-issue",
+    (_event, token: string, disclosureId: string) =>
+      requireExportGovernanceService().issueReceipt(
+        serviceContext(token),
+        disclosureId,
+      ),
+  );
+  ipcMain.handle(
+    "export:receipt-acknowledge",
+    (_event, token: string, receiptId: string, reason: string) =>
+      requireExportGovernanceService().acknowledgeReceipt(
+        serviceContext(token),
+        receiptId,
+        reason,
+      ),
+  );
+  ipcMain.handle("export:receipts", (_event, token: string) =>
+    requireExportGovernanceService().listReceipts(serviceContext(token)),
+  );
   ipcMain.handle("settings:org-get", (_event, token: string) =>
     requirePatientExportService().getOrgSettings(serviceContext(token)),
   );
@@ -1175,5 +1296,6 @@ app.on("before-quit", () => {
   encounterService = undefined;
   clinicalService = undefined;
   patientExportService = undefined;
+  exportGovernanceService = undefined;
   exportSigner = undefined;
 });

@@ -810,6 +810,7 @@ export {
   hashFhirProfileBundle,
 } from "./fhir-profile-bundles.js";
 export type { MedicalHistoryServiceOptions } from "./medical-history-service.js";
+export { ExportGovernanceService } from "./export-governance-service.js";
 export { EncounterService } from "./encounter-service.js";
 export type { EncounterServiceOptions } from "./encounter-service.js";
 
@@ -818,6 +819,12 @@ export {
   exportSigningData,
   hashExportPayload,
   verifyExportPackage,
-  type ExportSignaturePort,
-  type ZipExportBuildResult,
 } from "./patient-export-service.js";
+export type {
+  ExportSignaturePort,
+  ZipExportBuildResult,
+} from "./patient-export-service.js";
+export {
+  exportReceiptSigningData,
+  verifyExportReceipt,
+} from "./export-governance-service.js";

@@ -742,6 +742,91 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_export_signing_key_events_key ON export_signing_key_events(key_id, occurred_at DESC);
     `,
   },
+  {
+    version: 15,
+    name: "export-governance",
+    sql: `
+      CREATE TABLE IF NOT EXISTS export_recipients (
+        id TEXT PRIMARY KEY NOT NULL,
+        display_name TEXT NOT NULL,
+        organization_name TEXT,
+        category TEXT NOT NULL CHECK (category IN ('patient', 'guardian', 'treating-provider', 'referral-provider', 'legal-authority', 'administrative-authority', 'internal-clinic', 'other')),
+        contact_channel TEXT,
+        verification_status TEXT NOT NULL CHECK (verification_status IN ('unverified', 'verified', 'rejected')),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_recipients_status ON export_recipients(verification_status, display_name);
+      CREATE TABLE IF NOT EXISTS export_consent_evidence (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        evidence_type TEXT NOT NULL CHECK (evidence_type IN ('patient-consent', 'guardian-consent', 'clinical-treatment', 'legal-request', 'administrative-policy', 'emergency-exception')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'expired')),
+        source_reference TEXT NOT NULL,
+        source_hash TEXT CHECK (source_hash IS NULL OR length(source_hash) = 64),
+        related_person_id TEXT REFERENCES related_persons(id),
+        effective_from TEXT,
+        effective_until TEXT,
+        recorded_by_user_id TEXT NOT NULL REFERENCES users(id),
+        recorded_at TEXT NOT NULL,
+        reviewed_by_user_id TEXT REFERENCES users(id),
+        reviewed_at TEXT,
+        notes TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_consent_evidence_patient ON export_consent_evidence(patient_id, status, recorded_at DESC);
+      CREATE TABLE IF NOT EXISTS export_disclosures (
+        id TEXT PRIMARY KEY NOT NULL,
+        package_id TEXT NOT NULL UNIQUE REFERENCES export_packages(package_id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        recipient_id TEXT NOT NULL REFERENCES export_recipients(id),
+        purpose_of_use TEXT NOT NULL CHECK (purpose_of_use IN ('treatment', 'referral', 'patient-access', 'legal-request', 'administrative', 'emergency')),
+        delivery_method TEXT NOT NULL CHECK (delivery_method IN ('usb', 'lan-share', 'local-copy', 'printed', 'other')),
+        status TEXT NOT NULL CHECK (status IN ('requested', 'approved', 'rejected', 'sent', 'acknowledged', 'cancelled')),
+        requested_by_user_id TEXT NOT NULL REFERENCES users(id),
+        requested_at TEXT NOT NULL,
+        approved_by_user_id TEXT REFERENCES users(id),
+        approved_at TEXT,
+        decision_reason TEXT,
+        sent_at TEXT,
+        acknowledged_at TEXT,
+        consent_evidence_id TEXT REFERENCES export_consent_evidence(id),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_disclosures_patient ON export_disclosures(patient_id, requested_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_export_disclosures_status ON export_disclosures(status, requested_at DESC);
+      CREATE TABLE IF NOT EXISTS export_receipts (
+        id TEXT PRIMARY KEY NOT NULL,
+        disclosure_id TEXT NOT NULL UNIQUE REFERENCES export_disclosures(id),
+        package_id TEXT NOT NULL REFERENCES export_packages(package_id),
+        recipient_id TEXT NOT NULL REFERENCES export_recipients(id),
+        purpose_of_use TEXT NOT NULL CHECK (purpose_of_use IN ('treatment', 'referral', 'patient-access', 'legal-request', 'administrative', 'emergency')),
+        package_hash TEXT NOT NULL CHECK (length(package_hash) = 64),
+        manifest_hash TEXT NOT NULL CHECK (length(manifest_hash) = 64),
+        signer_key_id TEXT NOT NULL REFERENCES export_signing_keys(key_id),
+        signer_key_version INTEGER NOT NULL CHECK (signer_key_version >= 1),
+        status_at_issuance TEXT NOT NULL CHECK (status_at_issuance IN ('issued', 'stored', 'downloaded', 'expired', 'revoked', 'superseded', 'archived', 'destroyed')),
+        issued_at TEXT NOT NULL,
+        issued_by_user_id TEXT NOT NULL REFERENCES users(id),
+        receipt_hash TEXT NOT NULL CHECK (length(receipt_hash) = 64),
+        signature_base64 TEXT NOT NULL,
+        acknowledged_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_receipts_package ON export_receipts(package_id, issued_at DESC);
+      CREATE TABLE IF NOT EXISTS export_governance_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        disclosure_id TEXT REFERENCES export_disclosures(id),
+        evidence_id TEXT REFERENCES export_consent_evidence(id),
+        receipt_id TEXT REFERENCES export_receipts(id),
+        event_type TEXT NOT NULL CHECK (event_type IN ('recipient-created', 'recipient-verified', 'evidence-recorded', 'evidence-reviewed', 'disclosure-requested', 'disclosure-approved', 'disclosure-rejected', 'disclosure-cancelled', 'disclosure-sent', 'receipt-issued', 'receipt-acknowledged')),
+        reason TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        occurred_by_user_id TEXT NOT NULL REFERENCES users(id),
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_export_governance_events_disclosure ON export_governance_events(disclosure_id, occurred_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_export_governance_events_evidence ON export_governance_events(evidence_id, occurred_at DESC);
+    `,
+  },
 ];
 
 function now(): string {

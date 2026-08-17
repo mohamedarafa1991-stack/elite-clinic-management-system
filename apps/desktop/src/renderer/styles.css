@@ -1175,3 +1175,23 @@ select {
     flex-direction: column;
   }
 }
+
+.export-governance-panel {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+.export-governance-panel .section-heading > div {
+  display: grid;
+  gap: 4px;
+}
+.export-governance-panel .section-heading small {
+  max-width: 720px;
+  color: #166534;
+}
+.export-governance-panel .export-registry-list {
+  border-color: #bbf7d0;
+  background: #ffffff;
+}
+.export-governance-panel .button-row {
+  flex-wrap: wrap;
+}

@@ -125,6 +125,9 @@ const FHIR_PROFILE_IDS = [
   "http://hl7.org/fhir/StructureDefinition/Patient",
   "http://hl7.org/fhir/StructureDefinition/ClinicalImpression",
   "http://hl7.org/fhir/StructureDefinition/FamilyMemberHistory",
+  "http://hl7.org/fhir/StructureDefinition/Composition",
+  "http://hl7.org/fhir/StructureDefinition/Provenance",
+  "http://hl7.org/fhir/StructureDefinition/AuditEvent",
   "urn:elite-clinic:fhir-profile:patient-record-document-r4",
 ] as const;
 
@@ -537,10 +540,92 @@ export class PatientExportService {
               "FamilyMemberHistory.name is required for this export profile.",
             );
           }
+        } else if (resourceType === "Composition") {
+          if (!isValidId(resourceId))
+            issue(
+              "error",
+              `${entryPath}.resource.id`,
+              "required",
+              "Composition.id is required.",
+            );
+          if (resource["status"] !== "final")
+            issue(
+              "error",
+              `${entryPath}.resource.status`,
+              "invalid-code",
+              "Composition.status must be final for an issued export.",
+            );
+          if (
+            !isObject(resource["subject"]) ||
+            typeof resource["subject"]["reference"] !== "string" ||
+            !String(resource["subject"]["reference"]).startsWith("Patient/")
+          ) {
+            issue(
+              "error",
+              `${entryPath}.resource.subject`,
+              "required-reference",
+              "Composition.subject must reference a Patient.",
+            );
+          }
+        } else if (resourceType === "Provenance") {
+          if (!isValidId(resourceId))
+            issue(
+              "error",
+              `${entryPath}.resource.id`,
+              "required",
+              "Provenance.id is required.",
+            );
+          if (
+            !Array.isArray(resource["target"]) ||
+            resource["target"].length === 0 ||
+            resource["target"].some(
+              (target) =>
+                !isObject(target) || typeof target["reference"] !== "string",
+            )
+          ) {
+            issue(
+              "error",
+              `${entryPath}.resource.target`,
+              "required-reference",
+              "Provenance.target must contain a resource reference.",
+            );
+          }
+          if (!isValidDateTime(resource["recorded"]))
+            issue(
+              "error",
+              `${entryPath}.resource.recorded`,
+              "invalid-datetime",
+              "Provenance.recorded must be an ISO-8601 date-time with offset.",
+            );
+        } else if (resourceType === "AuditEvent") {
+          if (!isValidId(resourceId))
+            issue(
+              "error",
+              `${entryPath}.resource.id`,
+              "required",
+              "AuditEvent.id is required.",
+            );
+          if (!isObject(resource["type"]))
+            issue(
+              "error",
+              `${entryPath}.resource.type`,
+              "required",
+              "AuditEvent.type is required.",
+            );
+          if (!isValidDateTime(resource["recorded"]))
+            issue(
+              "error",
+              `${entryPath}.resource.recorded`,
+              "invalid-datetime",
+              "AuditEvent.recorded must be an ISO-8601 date-time with offset.",
+            );
         } else if (
           resourceType !== "Patient" &&
           resourceType !== "ClinicalImpression" &&
-          resourceType !== "FamilyMemberHistory"
+          resourceType !== "FamilyMemberHistory" &&
+          resourceType !== "Composition" &&
+          resourceType !== "Provenance" &&
+          resourceType !== "AuditEvent"
         ) {
           issue(
             "error",
@@ -682,7 +767,11 @@ export class PatientExportService {
       parsed.fhirProfileBundleId ??
       org.fhirProfileBundleId ??
       "elite-clinic-r4";
-    const fhir = this.buildFhirBundleObject(payload, org.fhirSystemUrl);
+    const fhir = this.buildFhirBundleObject(
+      payload,
+      org.fhirSystemUrl,
+      context,
+    );
     const validation = this.validateFhirBundle(fhir, profileBundleId);
     if (!validation.valid) {
       throw new Error(
@@ -1899,11 +1988,131 @@ export class PatientExportService {
   private buildFhirBundleObject(
     payload: PatientExportPayload,
     fhirSystemUrl: string,
+    context: SessionContext,
   ): Record<string, unknown> {
+    const timestamp = this.now();
+    const bundleReference = `Bundle/${fhirResourceId(payload.snapshotId)}`;
+    const confidentiality = payload.redactionPolicy === "full" ? "V" : "R";
+    const securityLabels = [
+      {
+        system: "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        code: confidentiality,
+        display: confidentiality === "V" ? "Very restricted" : "Restricted",
+      },
+      {
+        system: "urn:elite-clinic:security-integrity",
+        code: "SIGNED-SNAPSHOT",
+        display: "Signed snapshot-bound export",
+      },
+    ];
+    const provenance = {
+      resourceType: "Provenance",
+      id: `provenance-${fhirResourceId(payload.snapshotId)}`,
+      target: [{ reference: bundleReference }],
+      recorded: timestamp,
+      activity: {
+        coding: [
+          {
+            system: "urn:elite-clinic:export-activity",
+            code: "patient-record-export",
+            display: "Patient record export generation",
+          },
+        ],
+      },
+      agent: [
+        {
+          type: {
+            coding: [
+              {
+                system:
+                  "http://terminology.hl7.org/CodeSystem/provenance-participant-type",
+                code: "author",
+              },
+            ],
+          },
+          who: { reference: `Practitioner/${fhirResourceId(context.userId)}` },
+        },
+        {
+          type: {
+            coding: [
+              {
+                system:
+                  "http://terminology.hl7.org/CodeSystem/provenance-participant-type",
+                code: "assembler",
+              },
+            ],
+          },
+          who: { reference: `Device/${fhirResourceId(context.deviceId)}` },
+        },
+      ],
+      entity: [
+        {
+          role: "source",
+          what: {
+            identifier: {
+              system: `${fhirSystemUrl}/projection-snapshot`,
+              value: payload.snapshotId,
+            },
+            display: `Snapshot SHA-256 ${payload.snapshotPayloadHash}`,
+          },
+        },
+        {
+          role: "source",
+          what: {
+            identifier: {
+              system: "urn:elite-clinic:redaction-policy",
+              value: payload.redactionPolicy,
+            },
+          },
+        },
+      ],
+    };
+    const auditEvent = {
+      resourceType: "AuditEvent",
+      id: `audit-export-${fhirResourceId(payload.snapshotId)}`,
+      type: {
+        system: "urn:elite-clinic:audit-event-type",
+        code: "export",
+        display: "Clinical export issued",
+      },
+      action: "C",
+      recorded: timestamp,
+      outcome: "0",
+      agent: [
+        {
+          who: { reference: `Practitioner/${fhirResourceId(context.userId)}` },
+          requestor: true,
+        },
+        {
+          who: { reference: `Device/${fhirResourceId(context.deviceId)}` },
+          requestor: false,
+        },
+      ],
+      source: {
+        site: fhirSystemUrl,
+        observer: { display: "Elite Clinic export service" },
+        type: [
+          {
+            system: "urn:elite-clinic:audit-source",
+            code: "local-hub",
+          },
+        ],
+      },
+      entity: [
+        {
+          what: { reference: bundleReference },
+          type: { system: "urn:elite-clinic:audit-entity", code: "export" },
+          name: payload.snapshotId,
+          description: `Redaction policy ${payload.redactionPolicy}`,
+        },
+      ],
+    };
     return {
       resourceType: "Bundle",
+      id: fhirResourceId(payload.snapshotId),
       type: "document",
-      timestamp: this.now(),
+      timestamp,
+      meta: { security: securityLabels },
       identifier: {
         system: `${fhirSystemUrl}/projection-snapshot`,
         value: payload.snapshotId,
@@ -1912,13 +2121,50 @@ export class PatientExportService {
             url: "urn:elite-clinic:snapshot-payload-hash",
             valueString: payload.snapshotPayloadHash,
           },
+          {
+            url: "urn:elite-clinic:redaction-summary",
+            valueString: `Fields governed by ${payload.redactionPolicy} policy; snapshot-bound and signed.`,
+          },
         ],
       },
       entry: [
         {
           resource: {
+            resourceType: "Composition",
+            id: `composition-${fhirResourceId(payload.snapshotId)}`,
+            status: "final",
+            type: {
+              coding: [
+                {
+                  system: "http://loinc.org",
+                  code: "60591-5",
+                  display: "Patient summary document",
+                },
+              ],
+            },
+            subject: { reference: `Patient/${payload.patientId}` },
+            date: timestamp,
+            author: [
+              { reference: `Practitioner/${fhirResourceId(context.userId)}` },
+            ],
+            title: "Elite Clinic patient record export",
+            section: [
+              {
+                title: "Clinical record",
+                entry: [
+                  {
+                    reference: `ClinicalImpression/${fhirResourceId(payload.effectiveEncounter.id)}`,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          resource: {
             resourceType: "Patient",
             id: payload.patientId,
+            meta: { security: securityLabels },
             ...(payload.identity.nameEn
               ? { name: [{ text: payload.identity.nameEn }] }
               : {}),
@@ -1944,6 +2190,7 @@ export class PatientExportService {
           resource: {
             resourceType: "ClinicalImpression",
             id: fhirResourceId(payload.effectiveEncounter.id),
+            meta: { security: securityLabels },
             subject: { reference: `Patient/${payload.patientId}` },
             date: payload.effectiveEncounter.encounterAt,
             description: [
@@ -1954,7 +2201,7 @@ export class PatientExportService {
               payload.effectiveEncounter.followUp,
             ]
               .filter(Boolean)
-              .join("\n"),
+              .join("\\n"),
             extension: [
               {
                 url: "urn:elite-clinic:effective-version",
@@ -1971,11 +2218,14 @@ export class PatientExportService {
           resource: {
             resourceType: "FamilyMemberHistory",
             id: fhirResourceId(String(entry["id"])),
+            meta: { security: securityLabels },
             patient: { reference: `Patient/${payload.patientId}` },
             name: String(entry["title"] ?? "Medical history"),
             note: [{ text: String(entry["details"] ?? "") }],
           },
         })),
+        { resource: provenance },
+        { resource: auditEvent },
       ],
     };
   }
