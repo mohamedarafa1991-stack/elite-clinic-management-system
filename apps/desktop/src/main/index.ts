@@ -8,6 +8,7 @@ import {
   PatientIdentityService,
   SynchronizationService,
   AndroidEnrollmentService,
+  LanSyncFrameRouter,
   exportSigningData,
   hashExportPayload,
   verifyExportPackage,
@@ -26,6 +27,7 @@ import { ElectronSafeStorageKeyProvider } from "./key-provider.js";
 import { fileURLToPath } from "node:url";
 import { writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { LanSyncHttpServer } from "./lan-sync-server.js";
 import {
   exportPackageSchema,
   patientExportInputSchema,
@@ -49,6 +51,7 @@ let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
 let synchronizationService: SynchronizationService | undefined;
 let androidEnrollmentService: AndroidEnrollmentService | undefined;
+let lanSyncServer: LanSyncHttpServer | undefined;
 let exportSigner: ElectronExportSigner | undefined;
 let serviceError: string | undefined;
 
@@ -1390,6 +1393,14 @@ function serviceContext(token: string) {
 app.whenReady().then(async () => {
   registerContentSecurityPolicy();
   initializeServices();
+  if (synchronizationService) {
+    lanSyncServer = new LanSyncHttpServer(
+      new LanSyncFrameRouter(synchronizationService),
+    );
+    void lanSyncServer.start().catch(() => {
+      lanSyncServer = undefined;
+    });
+  }
   registerIpc();
   mainWindow = createWindow();
   await loadRenderer(mainWindow);
@@ -1409,6 +1420,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  void lanSyncServer?.stop();
+  lanSyncServer = undefined;
   mainWindow = undefined;
   database?.close();
   database = undefined;

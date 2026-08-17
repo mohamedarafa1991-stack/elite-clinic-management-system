@@ -1,5 +1,6 @@
 package com.elite.clinic.sync
 
+import org.json.JSONObject
 import com.elite.clinic.data.EliteDatabase
 import com.elite.clinic.data.LocalOutboxEvent
 import java.time.Instant
@@ -11,6 +12,8 @@ interface SecureSessionTransport {
 interface SecureSession {
     val sessionId: String
     val validUntil: Instant
+
+    suspend fun requestDelta(request: JSONObject): JSONObject
 
     suspend fun submitOutbox(event: LocalOutboxEvent): SecureOperationResult
 
