@@ -6,6 +6,7 @@ import com.elite.clinic.security.AndroidIdentityKeyStore
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
 import java.security.KeyPair
@@ -41,6 +42,25 @@ class LanSyncSessionFactory(
         sessionId: String = "lan-${UUID.randomUUID()}",
         requestNonce: String = LanSyncRequestFactory.newRequestNonce(),
         requestedAt: String = Instant.now().toString(),
+    ): LanSyncHttpSession = try {
+        createSessionInternal(requestedScopes, sessionId, requestNonce, requestedAt)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: SyncFailureException) {
+        throw error
+    } catch (error: Throwable) {
+        throw SyncFailureClassifier.from(
+            error = error,
+            securityFallback = "ELITE_LAN_SESSION_SECURITY_FAILURE",
+            retryableFallback = "ELITE_LAN_SESSION_UNAVAILABLE",
+        )
+    }
+
+    private fun createSessionInternal(
+        requestedScopes: List<String>,
+        sessionId: String,
+        requestNonce: String,
+        requestedAt: String,
     ): LanSyncHttpSession {
         require(sessionId.isNotBlank()) { "ELITE_LAN_SESSION_ID_INVALID" }
         require(requestNonce.length in 16..128) {
@@ -204,10 +224,18 @@ class LanSyncSessionFactory(
             }
             val status = connection.responseCode
             if (status in 300..399) {
-                throw SecurityException("ELITE_LAN_SESSION_REDIRECT_REJECTED")
+                throw SyncFailureClassifier.security("ELITE_LAN_SESSION_REDIRECT_REJECTED")
+            }
+            if (status == HttpURLConnection.HTTP_REQUEST_TIMEOUT ||
+                status == 429 ||
+                status >= 500
+            ) {
+                throw SyncFailureClassifier.retryable(
+                    "ELITE_LAN_SESSION_INIT_TRANSIENT_HTTP_$status",
+                )
             }
             if (status !in 200..299) {
-                throw SecurityException("ELITE_LAN_SESSION_INIT_REJECTED_$status")
+                throw SyncFailureClassifier.security("ELITE_LAN_SESSION_INIT_REJECTED_$status")
             }
             return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
         } finally {

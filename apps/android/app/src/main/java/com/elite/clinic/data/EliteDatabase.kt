@@ -17,6 +17,7 @@ import com.elite.clinic.security.DeviceKeyStore
 import com.elite.clinic.sync.SyncConnectionProfileEntity
 import com.elite.clinic.sync.SyncCursorEntity
 import com.elite.clinic.sync.SyncDao
+import com.elite.clinic.sync.SyncHealthEntity
 import com.elite.clinic.sync.SyncImportEventEntity
 import com.elite.clinic.sync.SyncResourceMetadataEntity
 
@@ -76,11 +77,12 @@ interface LocalFoundationDao {
         LocalPatient::class,
         LocalOutboxEvent::class,
         SyncConnectionProfileEntity::class,
+        SyncHealthEntity::class,
         SyncCursorEntity::class,
         SyncResourceMetadataEntity::class,
         SyncImportEventEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class EliteDatabase : RoomDatabase() {
@@ -161,6 +163,25 @@ abstract class EliteDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_health (
+                        deviceId TEXT NOT NULL PRIMARY KEY,
+                        state TEXT NOT NULL,
+                        reasonCode TEXT,
+                        retryable INTEGER NOT NULL,
+                        lastAttemptAt TEXT,
+                        lastSuccessAt TEXT,
+                        nextRetryAt TEXT,
+                        updatedAt TEXT NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun create(
             context: Context,
             deviceKeyStore: DeviceKeyStore,
@@ -175,7 +196,7 @@ abstract class EliteDatabase : RoomDatabase() {
             check(deviceKeyStore != null) { "Device key store is required" }
             return Room.databaseBuilder(context, EliteDatabase::class.java, "elite-local.db")
                 .openHelperFactory(encryptedFactory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigrationOnDowngrade(false)
                 .build()
         }

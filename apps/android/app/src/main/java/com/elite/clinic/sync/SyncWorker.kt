@@ -36,8 +36,19 @@ class SyncWorker(
                     ),
                 )
             }
-        } catch (_: SecurityException) {
-            Result.failure(workDataOf("reason" to "SECURE_SESSION_REJECTED"))
+        } catch (error: SyncFailureException) {
+            if (error.retryable) {
+                Result.retry()
+            } else {
+                Result.failure(
+                    workDataOf(
+                        "reasonCode" to error.reasonCode,
+                        "retryable" to false,
+                    ),
+                )
+            }
+        } catch (error: SecurityException) {
+            Result.failure(workDataOf("reasonCode" to (error.message ?: "SECURE_SESSION_REJECTED")))
         } catch (_: Exception) {
             Result.retry()
         }
@@ -67,6 +78,22 @@ class SyncWorker(
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 PERIODIC_WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
+                request,
+            )
+        }
+
+        fun enqueueRetryNow(context: Context) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(constraints())
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    30,
+                    TimeUnit.SECONDS,
+                )
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                IMMEDIATE_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
                 request,
             )
         }

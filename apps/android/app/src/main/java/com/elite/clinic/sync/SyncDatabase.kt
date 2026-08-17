@@ -20,6 +20,15 @@ interface SyncDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConnectionProfile(profile: SyncConnectionProfileEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHealth(health: SyncHealthEntity)
+
+    @Query("SELECT * FROM sync_health WHERE deviceId = :deviceId LIMIT 1")
+    suspend fun getHealth(deviceId: String): SyncHealthEntity?
+
+    @Query("SELECT * FROM sync_health WHERE deviceId = :deviceId LIMIT 1")
+    fun observeHealth(deviceId: String): Flow<SyncHealthEntity?>
+
     @Query("SELECT * FROM sync_connection_profiles WHERE deviceId = :deviceId LIMIT 1")
     suspend fun getConnectionProfile(deviceId: String): SyncConnectionProfileEntity?
 

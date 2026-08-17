@@ -54,6 +54,10 @@ class EliteApplication : Application() {
             profileProvider = {
                 profileRepository?.getActive(deviceId)
             },
+            healthRepository = SyncHealthRepository(
+                encryptedDatabase.syncDao(),
+                deviceId,
+            ),
         )
         SyncWorker.enqueuePeriodic(this)
         SyncWorker.enqueueNow(this)
@@ -90,6 +94,10 @@ class EliteApplication : Application() {
             },
             profileRepository = profileRepository,
         )
+    }
+
+    fun retrySecureSyncNow() {
+        SyncWorker.enqueueRetryNow(this)
     }
 
     fun clearSecureSyncCoordinator() {

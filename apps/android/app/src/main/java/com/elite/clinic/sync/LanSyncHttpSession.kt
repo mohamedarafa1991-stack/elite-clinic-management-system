@@ -24,35 +24,46 @@ class LanSyncHttpSession(
     private val closed = AtomicBoolean(false)
 
     override suspend fun submitOutbox(event: LocalOutboxEvent): SecureOperationResult =
-        withContext(Dispatchers.IO) {
-            val response = postEncrypted(
-                messageType = "outbox-request",
-                request = outboxRequestFactory(event),
-            )
-            val operationId = response.optString("operationId", event.id)
-            when (response.optString("state")) {
-                "accepted" -> SecureOperationResult.Accepted
-                "already-applied" -> SecureOperationResult.AlreadyApplied
-                "conflict" -> SecureOperationResult.Conflict(
-                    response.optString("reasonCode", "SYNC_CONFLICT"),
+        withSyncFailureClassification(
+            securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
+            retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
+        ) {
+            withContext(Dispatchers.IO) {
+                val response = postEncrypted(
+                    messageType = "outbox-request",
+                    request = outboxRequestFactory(event),
                 )
-                "rejected" -> SecureOperationResult.Rejected(
-                    response.optString("reasonCode", "SYNC_REJECTED"),
-                )
-                else -> SecureOperationResult.RetryableFailure(
-                    "SYNC_ACKNOWLEDGMENT_UNRECOGNIZED",
-                )
-            }.let { result ->
-                // The operation ID is carried in the encrypted response and is
-                // intentionally not logged or copied into an external store.
-                result.withOperationId(operationId)
+                val operationId = response.optString("operationId", event.id)
+                when (response.optString("state")) {
+                    "accepted" -> SecureOperationResult.Accepted
+                    "already-applied" -> SecureOperationResult.AlreadyApplied
+                    "conflict" -> SecureOperationResult.Conflict(
+                        response.optString("reasonCode", "SYNC_CONFLICT"),
+                    )
+                    "rejected" -> SecureOperationResult.Rejected(
+                        response.optString("reasonCode", "SYNC_REJECTED"),
+                    )
+                    else -> SecureOperationResult.RetryableFailure(
+                        "SYNC_ACKNOWLEDGMENT_UNRECOGNIZED",
+                    )
+                }.let { result ->
+                    // The operation ID is carried in the encrypted response and is
+                    // intentionally not logged or copied into an external store.
+                    result.withOperationId(operationId)
+                }
             }
         }
 
-    suspend fun requestDelta(request: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val envelope = postEncrypted("sync-request", request)
-        envelope.optJSONObject("response") ?: envelope
-    }
+    suspend fun requestDelta(request: JSONObject): JSONObject =
+        withSyncFailureClassification(
+            securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
+            retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
+        ) {
+            withContext(Dispatchers.IO) {
+                val envelope = postEncrypted("sync-request", request)
+                envelope.optJSONObject("response") ?: envelope
+            }
+        }
 
     override suspend fun close() {
         closed.set(true)

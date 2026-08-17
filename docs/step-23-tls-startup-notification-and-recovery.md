@@ -14,12 +14,12 @@ Initial application startup now awaits LAN initialization before loading the ren
 
 ## User-facing states
 
-| State | Admin-facing behavior |
-|---|---|
-| `ready` | No recovery banner is shown. The Foundation status indicates that secure services are ready. |
-| `starting` | A non-terminal status is shown while startup is in progress. |
-| `failed` | The banner explains that LAN synchronization is unavailable and gives safe TLS configuration guidance. An authorized Admin sees the retry button. |
-| `unavailable` | The banner explains that secure local services are not ready. Recovery is unavailable until the main secure service boundary is restored. |
+| State         | Admin-facing behavior                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`       | No recovery banner is shown. The Foundation status indicates that secure services are ready.                                                      |
+| `starting`    | A non-terminal status is shown while startup is in progress.                                                                                      |
+| `failed`      | The banner explains that LAN synchronization is unavailable and gives safe TLS configuration guidance. An authorized Admin sees the retry button. |
+| `unavailable` | The banner explains that secure local services are not ready. Recovery is unavailable until the main secure service boundary is restored.         |
 
 Unauthenticated users and non-admin users can see the safe notification but cannot restart the listener. The retry action is therefore protected by both renderer gating and main-process authorization; the main-process check is authoritative.
 

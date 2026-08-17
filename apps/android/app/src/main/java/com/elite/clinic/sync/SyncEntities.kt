@@ -42,6 +42,18 @@ data class SyncImportEventEntity(
     val occurredAt: String,
 )
 
+@Entity(tableName = "sync_health")
+data class SyncHealthEntity(
+    @androidx.room.PrimaryKey val deviceId: String,
+    val state: String,
+    val reasonCode: String?,
+    val retryable: Boolean,
+    val lastAttemptAt: String?,
+    val lastSuccessAt: String?,
+    val nextRetryAt: String?,
+    val updatedAt: String,
+)
+
 @Entity(tableName = "sync_connection_profiles")
 data class SyncConnectionProfileEntity(
     @androidx.room.PrimaryKey val deviceId: String,
