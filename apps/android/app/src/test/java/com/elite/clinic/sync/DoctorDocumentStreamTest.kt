@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -16,9 +17,38 @@ class DoctorDocumentStreamTest {
         val document = DoctorDocumentStreamParser.parse(response)
 
         assertEquals("doctor-doc-01", document.documentId)
-        assertArrayEquals(bytes, document.copyBytesForViewer())
+        assertEquals(bytes.size, document.sizeBytes)
+        document.useViewerCopy { copy ->
+            assertArrayEquals(bytes, copy)
+        }
+        assertTrue(!document.isCleared)
+
         document.clear()
-        assertArrayEquals(ByteArray(bytes.size), document.copyBytesForViewer())
+        document.clear()
+
+        assertTrue(document.isCleared)
+        assertEquals(bytes.size, document.sizeBytes)
+        val error = assertThrows(IllegalStateException::class.java) {
+            document.useViewerCopy { error("cleared content must not be readable") }
+        }
+        assertEquals("SECURE_BYTES_CLEARED", error.message)
+    }
+
+    @Test
+    fun viewerCopyIsClearedWhenTheViewerCallbackThrows() {
+        val document = DoctorDocumentStreamParser.parse(
+            response("synthetic doctor cv".toByteArray(), "application/pdf"),
+        )
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            document.useViewerCopy { copy ->
+                assertTrue(copy.any { it != 0.toByte() })
+                throw IllegalStateException("synthetic viewer failure")
+            }
+        }
+        assertEquals("synthetic viewer failure", error.message)
+        assertTrue(!document.isCleared)
+        document.clear()
     }
 
     @Test

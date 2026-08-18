@@ -2,6 +2,8 @@ package com.elite.clinic.sync
 
 import android.util.Base64
 import com.elite.clinic.data.LocalOutboxEvent
+import com.elite.clinic.security.withZeroizedBytes
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -109,10 +111,18 @@ class LanSyncHttpSession(
 
     private fun postEncrypted(messageType: String, request: JSONObject): JSONObject {
         ensureUsable()
-        val frame = frameCodec.encrypt(
-            messageType = messageType,
-            plaintext = JSONObject().put("request", request).toString().toByteArray(),
-        )
+        val requestPlaintext = JSONObject()
+            .put("request", request)
+            .toString()
+            .toByteArray(StandardCharsets.UTF_8)
+        val frame = try {
+            frameCodec.encrypt(
+                messageType = messageType,
+                plaintext = requestPlaintext,
+            )
+        } finally {
+            requestPlaintext.fill(0)
+        }
         val endpoint = URL("$baseUrl/sync/lan")
         LanTlsConnection.requireHttps(endpoint)
         val connection = (endpoint.openConnection() as javax.net.ssl.HttpsURLConnection).apply {
@@ -130,8 +140,13 @@ class LanSyncHttpSession(
                 expectedHost = endpoint.host,
             )
             connection.instanceFollowRedirects = false
-            connection.outputStream.use { output ->
-                output.write(frame.toString().toByteArray())
+            val frameBytes = frame.toString().toByteArray(StandardCharsets.UTF_8)
+            try {
+                connection.outputStream.use { output ->
+                    output.write(frameBytes)
+                }
+            } finally {
+                frameBytes.fill(0)
             }
             val status = connection.responseCode
             if (status in 300..399) {
@@ -151,9 +166,20 @@ class LanSyncHttpSession(
             if (status !in 200..299) {
                 throw IllegalStateException("SECURE_LAN_HTTP_REJECTED_$status")
             }
-            val responseFrame = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val plaintext = frameCodec.decrypt(responseFrame)
-            return JSONObject(String(plaintext))
+            val responseFrameBytes = connection.inputStream.use { input ->
+                input.readBytes()
+            }
+            try {
+                val responseFrame = withZeroizedBytes(responseFrameBytes) { bytes ->
+                    JSONObject(String(bytes, StandardCharsets.UTF_8))
+                }
+                val plaintext = frameCodec.decrypt(responseFrame)
+                return withZeroizedBytes(plaintext) { bytes ->
+                    JSONObject(String(bytes, StandardCharsets.UTF_8))
+                }
+            } finally {
+                responseFrameBytes.fill(0)
+            }
         } finally {
             connection.disconnect()
         }

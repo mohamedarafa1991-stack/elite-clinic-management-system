@@ -1,6 +1,8 @@
 package com.elite.clinic.sync
 
 import android.util.Base64
+import com.elite.clinic.security.ZeroizableBytes
+import com.elite.clinic.security.withZeroizedBytes
 import java.security.MessageDigest
 import org.json.JSONObject
 
@@ -14,7 +16,9 @@ private val ALLOWED_DOCTOR_DOCUMENT_MIME_TYPES = setOf(
 
 /**
  * A document returned from the Hub for an in-memory viewer only.
- * The byte array must be cleared when the viewer is closed and is never passed to Room or a file API.
+ *
+ * The content owner is never passed to Room or a file API. Call [clear] when
+ * the viewer closes; subsequent content access is rejected.
  */
 class InMemoryDoctorDocument(
     val documentId: String,
@@ -22,14 +26,27 @@ class InMemoryDoctorDocument(
     val fileName: String,
     val mimeType: String,
     val version: Int,
-    private val bytes: ByteArray,
+    val sizeBytes: Int,
+    private val content: ZeroizableBytes,
 ) {
-    val sizeBytes: Int get() = bytes.size
+    val isCleared: Boolean
+        get() = content.isCleared
 
-    fun copyBytesForViewer(): ByteArray = bytes.copyOf()
+    /**
+     * Provides a temporary viewer copy and overwrites that copy before return,
+     * including when the viewer callback throws or is cancelled.
+     */
+    fun <T> useViewerCopy(block: (ByteArray) -> T): T {
+        val copy = content.copyForUse()
+        return try {
+            block(copy)
+        } finally {
+            copy.fill(0)
+        }
+    }
 
     fun clear() {
-        bytes.fill(0)
+        content.close()
     }
 }
 
@@ -41,34 +58,46 @@ object DoctorDocumentStreamParser {
         } catch (error: IllegalArgumentException) {
             throw IllegalArgumentException("SYNC_DOCTOR_DOCUMENT_BASE64_INVALID", error)
         }
-        require(bytes.isNotEmpty() && bytes.size <= MAX_DOCTOR_DOCUMENT_BYTES) {
-            "SYNC_DOCTOR_DOCUMENT_SIZE_INVALID"
+        var ownershipTransferred = false
+        try {
+            require(bytes.isNotEmpty() && bytes.size <= MAX_DOCTOR_DOCUMENT_BYTES) {
+                "SYNC_DOCTOR_DOCUMENT_SIZE_INVALID"
+            }
+            val mimeType = response.getString("mimeType")
+            require(mimeType in ALLOWED_DOCTOR_DOCUMENT_MIME_TYPES) {
+                "SYNC_DOCTOR_DOCUMENT_MIME_INVALID"
+            }
+            require(response.getInt("sizeBytes") == bytes.size) {
+                "SYNC_DOCTOR_DOCUMENT_SIZE_MISMATCH"
+            }
+            val expectedHash = response.getString("contentSha256")
+            require(expectedHash.matches(Regex("^[a-f0-9]{64}$"))) {
+                "SYNC_DOCTOR_DOCUMENT_HASH_INVALID"
+            }
+            val actualHash = withZeroizedBytes(
+                MessageDigest.getInstance("SHA-256").digest(bytes),
+            ) { digest ->
+                digest.joinToString("") { byte -> "%02x".format(byte) }
+            }
+            require(actualHash == expectedHash) {
+                "SYNC_DOCTOR_DOCUMENT_INTEGRITY_FAILURE"
+            }
+            val document = InMemoryDoctorDocument(
+                documentId = response.getString("documentId"),
+                displayName = response.getString("displayName"),
+                fileName = response.getString("fileName"),
+                mimeType = mimeType,
+                version = response.getInt("version"),
+                sizeBytes = bytes.size,
+                content = ZeroizableBytes.adopt(bytes),
+            )
+            ownershipTransferred = true
+            return document
+        } finally {
+            if (!ownershipTransferred) {
+                bytes.fill(0)
+            }
         }
-        val mimeType = response.getString("mimeType")
-        require(mimeType in ALLOWED_DOCTOR_DOCUMENT_MIME_TYPES) {
-            "SYNC_DOCTOR_DOCUMENT_MIME_INVALID"
-        }
-        require(response.getInt("sizeBytes") == bytes.size) {
-            "SYNC_DOCTOR_DOCUMENT_SIZE_MISMATCH"
-        }
-        val expectedHash = response.getString("contentSha256")
-        require(expectedHash.matches(Regex("^[a-f0-9]{64}$"))) {
-            "SYNC_DOCTOR_DOCUMENT_HASH_INVALID"
-        }
-        val actualHash = MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { byte -> "%02x".format(byte) }
-        require(actualHash == expectedHash) {
-            "SYNC_DOCTOR_DOCUMENT_INTEGRITY_FAILURE"
-        }
-        return InMemoryDoctorDocument(
-            documentId = response.getString("documentId"),
-            displayName = response.getString("displayName"),
-            fileName = response.getString("fileName"),
-            mimeType = mimeType,
-            version = response.getInt("version"),
-            bytes = bytes,
-        )
     }
 }
 

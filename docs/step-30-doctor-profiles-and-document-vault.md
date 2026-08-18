@@ -1,6 +1,6 @@
 # Step 30: Doctor Profiles and Secure Local Document Vault
 
-**Status:** Source implementation complete, including the Android document workspace; Android Gradle and physical-device verification pending.
+**Status:** Source implementation complete, including Android document hardening; Android Gradle and physical-device verification pending.
 **Scope:** Doctor profiles, professional documents, encrypted Windows storage, role-based editing, LAN-only Android viewing/upload, versioning, and auditability.
 
 ## Product behavior
@@ -42,7 +42,9 @@ Android viewing and uploading require an active secure LAN connection to the Win
 
 The Android UI now exposes a secure document workspace. It discovers active encrypted enrollment profiles from the existing Room connection-profile table, lets the user select a Hub session, accepts a document ID for one-shot viewing, and provides an `OpenDocument` file picker restricted to PDF, JPEG, PNG, and WebP. The picker reads the selected URI into a bounded in-memory byte array, rejects empty or oversized files, and clears the array after upload, cancellation, or activity disposal. The upload form sends only the contract fields required by the Hub: doctor ID, document type, display name, filename, MIME type, and Base64 content.
 
-The temporary viewer decodes images in memory and renders the first PDF page through `PdfRenderer` backed by an in-memory file descriptor. It provides no save, share, download, or external-viewer action. The viewer clears the document byte array and recycles decoded bitmaps when closed or disposed. The Android screen does not cache doctor profiles or document metadata; the current Hub protocol authorizes document retrieval by document ID, so the desktop Doctor Profiles workspace remains the source for discovering document IDs.
+The temporary viewer decodes images in memory and renders the first PDF page through `PdfRenderer` backed by an in-memory file descriptor. It provides no save, share, download, or external-viewer action. The viewer clears the document byte array and recycles decoded bitmaps when closed or disposed. While a document is loading or visible, the Android window uses `FLAG_SECURE` to protect screenshots, recordings, and recents thumbnails; the previous window-security state is restored when the workspace leaves composition. The Android screen does not cache doctor profiles or document metadata; the current Hub protocol authorizes document retrieval by document ID, so the desktop Doctor Profiles workspace remains the source for discovering document IDs.
+
+The Android document model now owns content through `ZeroizableBytes`, which overwrites mutable backing arrays on close and rejects post-clear access. Picker accumulation uses a bounded `ZeroizableByteBuffer` with one-way ownership transfer. Viewer copies, picker scratch buffers, Base64 request plaintext, decrypted response plaintext, encrypted-frame temporary arrays, HKDF intermediates, confirmation MACs, shared secrets, and failed session-construction key bundles have explicit cleanup paths where the code owns the mutable array. Immutable JSON/Base64 strings and managed-runtime/native copies remain best-effort residual risks rather than being represented as forensically erasable.
 
 ## Database migration
 
@@ -68,6 +70,9 @@ Synthetic tests cover:
 - Unsupported document sizes and MIME types.
 - Windows vault round trips, atomic storage, deletion, and path-traversal rejection.
 - Encrypted LAN document-request routing.
+- Zeroizable document ownership, parser post-clear rejection, bounded picker buffering, and scoped viewer-copy cleanup.
+- Session-key, frame, HTTP request/response, and confirmation-buffer cleanup regression coverage.
+- Secure-window behavior remains a physical Android acceptance test because Android compilation and device instrumentation are not available in the sandbox.
 
 The available TypeScript and desktop gate passed after implementation:
 
@@ -83,6 +88,6 @@ Android Kotlin compilation, Android JVM tests, APK assembly, and physical-device
 
 ## Release gates still required
 
-The Android workstation must verify Room/database compatibility with the new repository state, Kotlin compilation of the new Compose document workspace, repository active-profile lookup, secure-session and in-memory document-stream classes, and installation on API 29 and newer devices. Physical testing must verify Admin/doctor/nurse/receptionist permissions, correct and incorrect trust anchors, LAN-only view/upload behavior, OpenDocument MIME and size rejection, no Android file creation, no share/download affordances, viewer byte clearing, process death, session expiry, oversized-file rejection, corrupted-content rejection, and Hub restart.
+The Android workstation must verify Room/database compatibility with the new repository state, Kotlin compilation of the Compose document workspace and zeroizable wrappers, repository active-profile lookup, secure-session and in-memory document-stream classes, and installation on API 29 and newer devices. Physical testing must verify Admin/doctor/nurse/receptionist permissions, correct and incorrect trust anchors, LAN-only view/upload behavior, OpenDocument MIME and size rejection, no Android file creation, no share/download affordances, `FLAG_SECURE` protection for screenshots/recordings/recents, viewer byte clearing, post-clear access rejection, process death, session expiry, oversized-file rejection, corrupted-content rejection, and Hub restart.
 
 The clinic should also confirm whether document viewing by nurses and receptionists should expose all ordinary document types or only a smaller subset. The implementation currently allows ordinary non-sensitive documents and hides sensitive documents from users without the sensitive-read capability.

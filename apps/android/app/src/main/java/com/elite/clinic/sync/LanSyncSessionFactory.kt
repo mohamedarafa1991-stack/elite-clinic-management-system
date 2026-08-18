@@ -119,86 +119,119 @@ class LanSyncSessionFactory(
 
         val serverEphemeralSpki = grant.getString("serverEphemeralPublicKeySpkiBase64")
         val serverEphemeralBytes = Base64.decode(serverEphemeralSpki, Base64.DEFAULT)
-        require(
-            SessionProtocolCrypto.sha256Hex(serverEphemeralBytes) ==
-                grant.getString("serverEphemeralKeyFingerprint"),
-        ) { "ELITE_LAN_SESSION_SERVER_KEY_FINGERPRINT_INVALID" }
+        try {
+            require(
+                SessionProtocolCrypto.sha256Hex(serverEphemeralBytes) ==
+                    grant.getString("serverEphemeralKeyFingerprint"),
+            ) { "ELITE_LAN_SESSION_SERVER_KEY_FINGERPRINT_INVALID" }
+        } finally {
+            serverEphemeralBytes.fill(0)
+        }
+
         val sharedSecret = SessionKeyDerivation.deriveSharedSecret(
             ephemeral.private,
             serverEphemeralSpki,
         )
-        val transcriptHash = buildTranscriptHash(
-            descriptor = descriptor,
-            grant = grant,
-        )
-        if (transcriptHash != grant.getString("transcriptHash")) {
-            throw SecurityException("ELITE_LAN_SESSION_TRANSCRIPT_MISMATCH")
-        }
-        val keys = SessionKeyDerivation.deriveSessionKeys(
-            sharedSecret,
-            hexToBytes(transcriptHash),
-        )
-        val expectedMac = SessionKeyDerivation.keyConfirmationMac(
-            keys.keyConfirmationKey,
-            sessionId,
-            transcriptHash,
-            "hub",
-        )
-        val actualMac = Base64.decode(
-            grant.getString("keyConfirmationMacBase64"),
-            Base64.DEFAULT,
-        )
-        if (!SessionKeyDerivation.verifyKeyConfirmation(expectedMac, actualMac)) {
-            throw SecurityException("ELITE_LAN_SESSION_KEY_CONFIRMATION_INVALID")
-        }
-        val noncePrefix = Base64.decode(
-            grant.getString("noncePrefixBase64"),
-            Base64.DEFAULT,
-        )
-        require(noncePrefix.size == 4) { "ELITE_LAN_SESSION_NONCE_PREFIX_INVALID" }
-        val now = Instant.now()
-        val issuedAt = parseInstant(grant.getString("issuedAt"))
-        val validUntil = parseInstant(grant.getString("validUntil"))
-        val enrollmentExpiresAt = parseInstant(policy.expiresAt)
-        val offlineAccessUntil = parseInstant(policy.offlineAccessUntil)
-        require(!issuedAt.isAfter(now.plusSeconds(30))) {
-            "ELITE_LAN_SESSION_ISSUED_IN_FUTURE"
-        }
-        require(validUntil.isAfter(now)) { "ELITE_LAN_SESSION_EXPIRED" }
-        require(!validUntil.isAfter(issuedAt.plusSeconds(5 * 60))) {
-            "ELITE_LAN_SESSION_WINDOW_TOO_LONG"
-        }
-        require(!validUntil.isAfter(enrollmentExpiresAt)) {
-            "ELITE_LAN_SESSION_ENROLLMENT_WINDOW_INVALID"
-        }
-        require(!validUntil.isAfter(offlineAccessUntil)) {
-            "ELITE_LAN_SESSION_OFFLINE_WINDOW_INVALID"
-        }
-        val frameCodec = SessionFrameCodec(
-            sessionId = sessionId,
-            noncePrefix = noncePrefix,
-            sendKey = keys.clientToHubKey,
-            receiveKey = keys.hubToClientKey,
-            sendDirection = "client-to-hub",
-            receiveDirection = "hub-to-client",
-        )
-        return LanSyncHttpSession(
-            baseUrl = baseUrl.trimEnd('/'),
-            hubTlsCertificatePem = hubTlsCertificatePem,
-            frameCodec = frameCodec,
-            sessionId = sessionId,
-            validUntil = validUntil,
-            outboxRequestFactory = { event ->
-                LanSyncRequestFactory.buildOutboxRequest(
-                    policy = policy,
-                    event = event,
-                    scope = outboxScopeResolver(event),
-                    reason = outboxReason,
+        var keys: DerivedSessionKeys? = null
+        var noncePrefix: ByteArray? = null
+        var frameCodec: SessionFrameCodec? = null
+        var handedOff = false
+        try {
+            val transcriptHash = buildTranscriptHash(
+                descriptor = descriptor,
+                grant = grant,
+            )
+            if (transcriptHash != grant.getString("transcriptHash")) {
+                throw SecurityException("ELITE_LAN_SESSION_TRANSCRIPT_MISMATCH")
+            }
+            val transcriptHashBytes = hexToBytes(transcriptHash)
+            try {
+                keys = SessionKeyDerivation.deriveSessionKeys(
+                    sharedSecret,
+                    transcriptHashBytes,
                 )
-            },
-            connectTimeoutMillis = connectTimeoutMillis,
-            readTimeoutMillis = readTimeoutMillis,
-        )
+            } finally {
+                transcriptHashBytes.fill(0)
+            }
+            val derivedKeys = keys ?: error("ELITE_LAN_SESSION_KEYS_UNAVAILABLE")
+
+            val expectedMac = SessionKeyDerivation.keyConfirmationMac(
+                derivedKeys.keyConfirmationKey,
+                sessionId,
+                transcriptHash,
+                "hub",
+            )
+            val actualMac = Base64.decode(
+                grant.getString("keyConfirmationMacBase64"),
+                Base64.DEFAULT,
+            )
+            try {
+                if (!SessionKeyDerivation.verifyKeyConfirmation(expectedMac, actualMac)) {
+                    throw SecurityException("ELITE_LAN_SESSION_KEY_CONFIRMATION_INVALID")
+                }
+            } finally {
+                expectedMac.fill(0)
+                actualMac.fill(0)
+            }
+
+            noncePrefix = Base64.decode(
+                grant.getString("noncePrefixBase64"),
+                Base64.DEFAULT,
+            )
+            require(noncePrefix?.size == 4) { "ELITE_LAN_SESSION_NONCE_PREFIX_INVALID" }
+            val now = Instant.now()
+            val issuedAt = parseInstant(grant.getString("issuedAt"))
+            val validUntil = parseInstant(grant.getString("validUntil"))
+            val enrollmentExpiresAt = parseInstant(policy.expiresAt)
+            val offlineAccessUntil = parseInstant(policy.offlineAccessUntil)
+            require(!issuedAt.isAfter(now.plusSeconds(30))) {
+                "ELITE_LAN_SESSION_ISSUED_IN_FUTURE"
+            }
+            require(validUntil.isAfter(now)) { "ELITE_LAN_SESSION_EXPIRED" }
+            require(!validUntil.isAfter(issuedAt.plusSeconds(5 * 60))) {
+                "ELITE_LAN_SESSION_WINDOW_TOO_LONG"
+            }
+            require(!validUntil.isAfter(enrollmentExpiresAt)) {
+                "ELITE_LAN_SESSION_ENROLLMENT_WINDOW_INVALID"
+            }
+            require(!validUntil.isAfter(offlineAccessUntil)) {
+                "ELITE_LAN_SESSION_OFFLINE_WINDOW_INVALID"
+            }
+            frameCodec = SessionFrameCodec(
+                sessionId = sessionId,
+                noncePrefix = noncePrefix ?: error("ELITE_LAN_SESSION_NONCE_PREFIX_UNAVAILABLE"),
+                sendKey = derivedKeys.clientToHubKey,
+                receiveKey = derivedKeys.hubToClientKey,
+                sendDirection = "client-to-hub",
+                receiveDirection = "hub-to-client",
+            )
+            val session = LanSyncHttpSession(
+                baseUrl = baseUrl.trimEnd('/'),
+                hubTlsCertificatePem = hubTlsCertificatePem,
+                frameCodec = frameCodec ?: error("ELITE_LAN_SESSION_CODEC_UNAVAILABLE"),
+                sessionId = sessionId,
+                validUntil = validUntil,
+                outboxRequestFactory = { event ->
+                    LanSyncRequestFactory.buildOutboxRequest(
+                        policy = policy,
+                        event = event,
+                        scope = outboxScopeResolver(event),
+                        reason = outboxReason,
+                    )
+                },
+                connectTimeoutMillis = connectTimeoutMillis,
+                readTimeoutMillis = readTimeoutMillis,
+            )
+            handedOff = true
+            return session
+        } finally {
+            sharedSecret.fill(0)
+            keys?.close()
+            noncePrefix?.fill(0)
+            if (!handedOff) {
+                frameCodec?.close()
+            }
+        }
     }
 
     private fun postSessionInit(request: JSONObject): JSONObject {

@@ -25,6 +25,25 @@ class SessionKeyDerivationTest {
     }
 
     @Test
+    fun derivedSessionKeysCloseOverwritesAllKeyArrays() {
+        val keys = SessionKeyDerivation.deriveSessionKeys(
+            sharedSecret = ByteArray(32) { 3 },
+            transcriptHash = ByteArray(32) { 7 },
+        )
+        val root = keys.rootKey
+        val clientToHub = keys.clientToHubKey
+        val hubToClient = keys.hubToClientKey
+        val confirmation = keys.keyConfirmationKey
+
+        keys.close()
+
+        assertArrayEquals(ByteArray(32), root)
+        assertArrayEquals(ByteArray(32), clientToHub)
+        assertArrayEquals(ByteArray(32), hubToClient)
+        assertArrayEquals(ByteArray(32), confirmation)
+    }
+
+    @Test
     fun ecdhDerivesEqualSecretsAndSeparatedDirectionKeys() {
         val generator = KeyPairGenerator.getInstance("EC")
         generator.initialize(ECGenParameterSpec("secp256r1"))

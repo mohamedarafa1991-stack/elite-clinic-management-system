@@ -57,6 +57,31 @@ class SessionFrameCodecTest {
     }
 
     @Test
+    fun codecClonesInputsBeforeCallerCleanup() {
+        val inputNoncePrefix = hex("01020304")
+        val inputSendKey = ByteArray(32) { 0x31 }
+        val inputReceiveKey = ByteArray(32) { 0x32 }
+        val codec = SessionFrameCodec(
+            sessionId = sessionId,
+            noncePrefix = inputNoncePrefix,
+            sendKey = inputSendKey,
+            receiveKey = inputReceiveKey,
+            sendDirection = "client-to-hub",
+            receiveDirection = "hub-to-client",
+        )
+        inputNoncePrefix.fill(0)
+        inputSendKey.fill(0)
+        inputReceiveKey.fill(0)
+
+        val frame = codec.encrypt("sync-request", "owned-key-test".toByteArray())
+        assertEquals(
+            Base64.encodeToString(hex("010203040000000000000000"), Base64.NO_WRAP),
+            frame.getString("nonceBase64"),
+        )
+        codec.close()
+    }
+
+    @Test
     fun closesAndRejectsFurtherUse() {
         val client = clientCodec()
         client.close()

@@ -1,6 +1,8 @@
 package com.elite.clinic
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -9,6 +11,7 @@ import android.net.Uri
 import android.os.MemoryFile
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import android.view.WindowManager.LayoutParams.FLAG_SECURE
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,16 +54,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.elite.clinic.security.ZeroizableByteBuffer
+import com.elite.clinic.security.ZeroizableBytes
 import com.elite.clinic.sync.ActiveSyncConnectionProfile
 import com.elite.clinic.sync.DoctorDocumentStreamParser
 import com.elite.clinic.sync.InMemoryDoctorDocument
 import com.elite.clinic.sync.SyncConnectionProfileRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 
 private const val MAX_DOCTOR_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -85,10 +92,13 @@ private val DOCTOR_DOCUMENT_TYPES = listOf(
 private data class PickedDoctorDocument(
     val fileName: String,
     val mimeType: String,
-    val bytes: ByteArray,
+    private val content: ZeroizableBytes,
 ) {
-    val sizeBytes: Int get() = bytes.size
-    fun clear() = bytes.fill(0)
+    val sizeBytes: Int get() = content.size
+
+    fun <T> useContent(block: (ByteArray) -> T): T = content.use(block)
+
+    fun clear() = content.close()
 }
 
 @Composable
@@ -103,6 +113,7 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
 
     var documentId by remember { mutableStateOf("") }
     var viewedDocument by remember { mutableStateOf<InMemoryDoctorDocument?>(null) }
+    var isViewingDocument by remember { mutableStateOf(false) }
     var operationMessage by remember { mutableStateOf<String?>(null) }
     var operationError by remember { mutableStateOf<String?>(null) }
     var isBusy by remember { mutableStateOf(false) }
@@ -113,11 +124,11 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
     var pickedDocument by remember { mutableStateOf<PickedDoctorDocument?>(null) }
 
     val selectedProfile = profiles.getOrNull(selectedProfileIndex)
-    val activeDeviceId = selectedProfile?.entity?.deviceId
 
     fun clearViewedDocument() {
         viewedDocument?.clear()
         viewedDocument = null
+        isViewingDocument = false
     }
 
     fun clearPickedDocument() {
@@ -163,6 +174,9 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                     readPickedDoctorDocument(context, uri)
                 }
                 operationMessage = "File selected in memory. It will be erased after upload or cancellation."
+            } catch (error: CancellationException) {
+                clearPickedDocument()
+                throw error
             } catch (error: Exception) {
                 clearPickedDocument()
                 operationError = userFacingError(error)
@@ -171,6 +185,7 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
     }
 
     MaterialTheme {
+        SecureDocumentWindow(enabled = isViewingDocument || viewedDocument != null)
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
@@ -239,15 +254,21 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             operationError = null
                             operationMessage = null
                             clearViewedDocument()
+                            isViewingDocument = true
                             try {
                                 val response = withContext(Dispatchers.IO) {
                                     application.requestDoctorDocument(profile.entity.deviceId, documentId.trim())
                                 }
                                 viewedDocument = DoctorDocumentStreamParser.parse(response)
                                 operationMessage = "Document loaded temporarily. Close the viewer when finished."
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (error: Exception) {
                                 operationError = userFacingError(error)
                             } finally {
+                                if (viewedDocument == null) {
+                                    isViewingDocument = false
+                                }
                                 isBusy = false
                             }
                         }
@@ -321,7 +342,9 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             operationMessage = null
                             try {
                                 val encoded = withContext(Dispatchers.Default) {
-                                    Base64.encodeToString(picked.bytes, Base64.NO_WRAP)
+                                    picked.useContent { bytes ->
+                                        Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                    }
                                 }
                                 val response = withContext(Dispatchers.IO) {
                                     application.uploadDoctorDocument(
@@ -340,6 +363,8 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                                 }
                                 operationMessage = "Upload accepted: ${response.optString("documentId", "document metadata returned")}."
                                 clearPickedDocument()
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (error: Exception) {
                                 operationError = userFacingError(error)
                             } finally {
@@ -456,18 +481,19 @@ private fun TemporaryDoctorDocumentViewer(
 private fun SecureImagePreview(document: InMemoryDoctorDocument) {
     var bitmap by remember(document.documentId) { mutableStateOf<Bitmap?>(null) }
     var error by remember(document.documentId) { mutableStateOf<String?>(null) }
+    val latestBitmap by rememberUpdatedState(bitmap)
     DisposableEffect(document.documentId) {
         onDispose {
-            bitmap?.recycle()
+            latestBitmap?.recycle()
         }
     }
     LaunchedEffect(document.documentId) {
         try {
-            val bytes = document.copyBytesForViewer()
             bitmap = withContext(Dispatchers.Default) {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                document.useViewerCopy { bytes ->
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
             }
-            bytes.fill(0)
             if (bitmap == null) error = "Image could not be decoded in memory."
         } catch (exception: Exception) {
             error = userFacingError(exception)
@@ -493,16 +519,17 @@ private fun SecureImagePreview(document: InMemoryDoctorDocument) {
 private fun SecurePdfPreview(document: InMemoryDoctorDocument) {
     var bitmap by remember(document.documentId) { mutableStateOf<Bitmap?>(null) }
     var error by remember(document.documentId) { mutableStateOf<String?>(null) }
+    val latestBitmap by rememberUpdatedState(bitmap)
     DisposableEffect(document.documentId) {
         onDispose {
-            bitmap?.recycle()
+            latestBitmap?.recycle()
         }
     }
     LaunchedEffect(document.documentId) {
         try {
-            val bytes = document.copyBytesForViewer()
-            bitmap = withContext(Dispatchers.Default) { renderFirstPdfPage(bytes) }
-            bytes.fill(0)
+            bitmap = withContext(Dispatchers.Default) {
+                document.useViewerCopy(::renderFirstPdfPage)
+            }
             if (bitmap == null) error = "PDF could not be rendered in memory."
         } catch (exception: Exception) {
             error = userFacingError(exception)
@@ -522,6 +549,42 @@ private fun SecurePdfPreview(document: InMemoryDoctorDocument) {
     } else {
         CircularProgressIndicator(modifier = Modifier.size(28.dp))
     }
+}
+
+@Composable
+private fun SecureDocumentWindow(enabled: Boolean) {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() } ?: return
+    val window = activity.window
+    val wasSecure = remember(window) {
+        window.attributes.flags and FLAG_SECURE != 0
+    }
+
+    DisposableEffect(window) {
+        onDispose {
+            if (wasSecure) {
+                window.addFlags(FLAG_SECURE)
+            } else {
+                window.clearFlags(FLAG_SECURE)
+            }
+        }
+    }
+    SideEffect {
+        if (enabled) {
+            window.addFlags(FLAG_SECURE)
+        } else if (!wasSecure) {
+            window.clearFlags(FLAG_SECURE)
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
 }
 
 private fun renderFirstPdfPage(bytes: ByteArray): Bitmap? {
@@ -554,26 +617,36 @@ private fun readPickedDoctorDocument(context: Context, uri: Uri): PickedDoctorDo
         "Only PDF, JPEG, PNG, and WebP files are supported"
     }
     val fileName = resolver.queryDisplayName(uri)
-    val bytes = resolver.openInputStream(uri)?.use { input ->
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(64 * 1024)
-        var total = 0
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            total += read
-            if (total > MAX_DOCTOR_DOCUMENT_BYTES) {
-                throw IllegalArgumentException("Document exceeds the 20 MiB limit")
+    val accumulator = ZeroizableByteBuffer(
+        maxSize = MAX_DOCTOR_DOCUMENT_BYTES,
+        initialCapacity = 64 * 1024,
+    )
+    var transferred: ZeroizableBytes? = null
+    return try {
+        val input = resolver.openInputStream(uri)
+            ?: throw IOException("Unable to read the selected document")
+        input.use { stream ->
+            val scratch = ByteArray(64 * 1024)
+            try {
+                while (true) {
+                    val read = stream.read(scratch)
+                    if (read < 0) break
+                    accumulator.append(scratch, count = read)
+                }
+            } finally {
+                scratch.fill(0)
             }
-            output.write(buffer, 0, read)
         }
-        output.toByteArray()
-    } ?: throw IOException("Unable to read the selected document")
-    if (bytes.isEmpty()) {
-        bytes.fill(0)
-        throw IllegalArgumentException("Empty documents are not accepted")
+        transferred = accumulator.seal()
+        val content = transferred
+            ?: error("SECURE_DOCUMENT_CONTENT_TRANSFER_FAILED")
+        val result = PickedDoctorDocument(fileName, mimeType, content)
+        transferred = null
+        result
+    } finally {
+        accumulator.close()
+        transferred?.close()
     }
-    return PickedDoctorDocument(fileName, mimeType, bytes)
 }
 
 private fun android.content.ContentResolver.queryDisplayName(uri: Uri): String {

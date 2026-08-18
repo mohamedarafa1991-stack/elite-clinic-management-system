@@ -11,12 +11,15 @@ import javax.crypto.spec.SecretKeySpec
 
 class SessionFrameCodec(
     private val sessionId: String,
-    private val noncePrefix: ByteArray,
-    private val sendKey: ByteArray,
-    private val receiveKey: ByteArray,
+    noncePrefix: ByteArray,
+    sendKey: ByteArray,
+    receiveKey: ByteArray,
     private val sendDirection: String,
     private val receiveDirection: String,
 ) {
+    private val noncePrefix = noncePrefix.copyOf()
+    private val sendKey = sendKey.copyOf()
+    private val receiveKey = receiveKey.copyOf()
     private var sendCounter = 0L
     private var receiveCounter = 0L
     private var closed = false
@@ -40,32 +43,49 @@ class SessionFrameCodec(
         )
         val counter = sendCounter
         val nonce = deriveNonce(noncePrefix, counter)
-        val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
-        val unsigned = JSONObject()
-            .put("protocolVersion", 1)
-            .put("messageType", messageType)
-            .put("sessionId", sessionId)
-            .put("direction", sendDirection)
-            .put("counter", counter)
-            .put("nonceBase64", nonceBase64)
-        val aad = canonicalAad(unsigned)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(
-            Cipher.ENCRYPT_MODE,
-            SecretKeySpec(sendKey, "AES"),
-            GCMParameterSpec(TAG_BITS, nonce),
-        )
-        cipher.updateAAD(aad)
-        val encrypted = cipher.doFinal(plaintext)
-        val ciphertextLength = encrypted.size - TAG_BYTES
-        val ciphertext = encrypted.copyOfRange(0, ciphertextLength)
-        val tag = encrypted.copyOfRange(ciphertextLength, encrypted.size)
-        val frame = JSONObject(unsigned.toString())
-            .put("aadHash", sha256Hex(aad))
-            .put("ciphertextBase64", Base64.encodeToString(ciphertext, Base64.NO_WRAP))
-            .put("tagBase64", Base64.encodeToString(tag, Base64.NO_WRAP))
-        sendCounter += 1
-        return frame
+        try {
+            val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
+            val unsigned = JSONObject()
+                .put("protocolVersion", 1)
+                .put("messageType", messageType)
+                .put("sessionId", sessionId)
+                .put("direction", sendDirection)
+                .put("counter", counter)
+                .put("nonceBase64", nonceBase64)
+            val aad = canonicalAad(unsigned)
+            try {
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(
+                    Cipher.ENCRYPT_MODE,
+                    SecretKeySpec(sendKey, "AES"),
+                    GCMParameterSpec(TAG_BITS, nonce),
+                )
+                cipher.updateAAD(aad)
+                val encrypted = cipher.doFinal(plaintext)
+                try {
+                    val ciphertextLength = encrypted.size - TAG_BYTES
+                    val ciphertext = encrypted.copyOfRange(0, ciphertextLength)
+                    val tag = encrypted.copyOfRange(ciphertextLength, encrypted.size)
+                    try {
+                        val frame = JSONObject(unsigned.toString())
+                            .put("aadHash", sha256Hex(aad))
+                            .put("ciphertextBase64", Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+                            .put("tagBase64", Base64.encodeToString(tag, Base64.NO_WRAP))
+                        sendCounter += 1
+                        return frame
+                    } finally {
+                        ciphertext.fill(0)
+                        tag.fill(0)
+                    }
+                } finally {
+                    encrypted.fill(0)
+                }
+            } finally {
+                aad.fill(0)
+            }
+        } finally {
+            nonce.fill(0)
+        }
     }
 
     fun decrypt(frame: JSONObject): ByteArray {
@@ -94,44 +114,64 @@ class SessionFrameCodec(
             )
         }
         val nonce = deriveNonce(noncePrefix, counter)
-        val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
-        if (frame.getString("nonceBase64") != nonceBase64) throw IllegalArgumentException(
-            "ELITE_SESSION_NONCE_MISMATCH: frame nonce is invalid",
-        )
-        val unsigned = JSONObject()
-            .put("protocolVersion", version)
-            .put("messageType", frame.getString("messageType"))
-            .put("sessionId", sessionId)
-            .put("direction", receiveDirection)
-            .put("counter", counter)
-            .put("nonceBase64", nonceBase64)
-        val aad = canonicalAad(unsigned)
-        if (sha256Hex(aad) != frame.getString("aadHash")) throw IllegalArgumentException(
-            "ELITE_SESSION_AAD_TAMPERED: frame AAD hash is invalid",
-        )
-        val ciphertext = Base64.decode(frame.getString("ciphertextBase64"), Base64.DEFAULT)
-        val tag = Base64.decode(frame.getString("tagBase64"), Base64.DEFAULT)
-        if (tag.size != TAG_BYTES) throw IllegalArgumentException(
-            "ELITE_SESSION_TAG_INVALID: AES-GCM tag length is not 16 bytes",
-        )
-        val encrypted = ByteArray(ciphertext.size + tag.size)
-        ciphertext.copyInto(encrypted)
-        tag.copyInto(encrypted, ciphertext.size)
-        return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                SecretKeySpec(receiveKey, "AES"),
-                GCMParameterSpec(TAG_BITS, nonce),
+        try {
+            val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
+            if (frame.getString("nonceBase64") != nonceBase64) throw IllegalArgumentException(
+                "ELITE_SESSION_NONCE_MISMATCH: frame nonce is invalid",
             )
-            cipher.updateAAD(aad)
-            val plaintext = cipher.doFinal(encrypted)
-            receiveCounter += 1
-            plaintext
-        } catch (_: Exception) {
-            throw IllegalArgumentException(
-                "ELITE_SESSION_AUTHENTICATION_FAILED: AES-GCM authentication failed",
-            )
+            val unsigned = JSONObject()
+                .put("protocolVersion", version)
+                .put("messageType", frame.getString("messageType"))
+                .put("sessionId", sessionId)
+                .put("direction", receiveDirection)
+                .put("counter", counter)
+                .put("nonceBase64", nonceBase64)
+            val aad = canonicalAad(unsigned)
+            try {
+                if (sha256Hex(aad) != frame.getString("aadHash")) throw IllegalArgumentException(
+                    "ELITE_SESSION_AAD_TAMPERED: frame AAD hash is invalid",
+                )
+                val ciphertext = Base64.decode(frame.getString("ciphertextBase64"), Base64.DEFAULT)
+                try {
+                    val tag = Base64.decode(frame.getString("tagBase64"), Base64.DEFAULT)
+                    try {
+                        if (tag.size != TAG_BYTES) throw IllegalArgumentException(
+                            "ELITE_SESSION_TAG_INVALID: AES-GCM tag length is not 16 bytes",
+                        )
+                        val encrypted = ByteArray(ciphertext.size + tag.size)
+                        try {
+                            ciphertext.copyInto(encrypted)
+                            tag.copyInto(encrypted, ciphertext.size)
+                            return try {
+                                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                                cipher.init(
+                                    Cipher.DECRYPT_MODE,
+                                    SecretKeySpec(receiveKey, "AES"),
+                                    GCMParameterSpec(TAG_BITS, nonce),
+                                )
+                                cipher.updateAAD(aad)
+                                val plaintext = cipher.doFinal(encrypted)
+                                receiveCounter += 1
+                                plaintext
+                            } catch (_: Exception) {
+                                throw IllegalArgumentException(
+                                    "ELITE_SESSION_AUTHENTICATION_FAILED: AES-GCM authentication failed",
+                                )
+                            }
+                        } finally {
+                            encrypted.fill(0)
+                        }
+                    } finally {
+                        tag.fill(0)
+                    }
+                } finally {
+                    ciphertext.fill(0)
+                }
+            } finally {
+                aad.fill(0)
+            }
+        } finally {
+            nonce.fill(0)
         }
     }
 
@@ -174,9 +214,13 @@ class SessionFrameCodec(
             return nonce.array()
         }
 
-        private fun sha256Hex(value: ByteArray): String = MessageDigest
-            .getInstance("SHA-256")
-            .digest(value)
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+        private fun sha256Hex(value: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(value)
+            return try {
+                digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+            } finally {
+                digest.fill(0)
+            }
+        }
     }
 }
