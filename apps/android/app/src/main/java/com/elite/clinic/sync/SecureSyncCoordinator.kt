@@ -2,9 +2,10 @@ package com.elite.clinic.sync
 
 import com.elite.clinic.data.EliteDatabase
 import com.elite.clinic.data.LocalOutboxEvent
+import java.time.Instant
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
-import java.time.Instant
 
 interface SecureSessionTransport {
     suspend fun openSession(): SecureSession
@@ -45,13 +46,16 @@ class SecureSyncCoordinator(
     private val profileProvider: suspend () -> ActiveSyncConnectionProfile? = { null },
     private val healthRepository: SyncHealthRepository? = null,
     private val batchSize: Int = DEFAULT_BATCH_SIZE,
+    private val now: () -> Instant = { Instant.now() },
 ) {
     suspend fun runOnce(): SyncRunResult {
         require(batchSize in 1..MAX_BATCH_SIZE) {
             "ELITE_SYNC_BATCH_SIZE_INVALID: batch size is outside the safe bound"
         }
         val foundationDao = database.foundationDao()
-        val pending = foundationDao.pendingEvents(batchSize)
+        val recoveredAt = now()
+        foundationDao.recoverExpiredSendingEvents(deviceId, recoveredAt.toString())
+        val pending = foundationDao.pendingEvents(deviceId, batchSize)
         val profile = try {
             profileProvider()
         } catch (error: CancellationException) {
@@ -59,7 +63,7 @@ class SecureSyncCoordinator(
         } catch (error: Throwable) {
             val failure = SyncFailureClassifier.from(
                 error = error,
-                securityFallback = "SYNC_PROFILE_INVALID",
+                securityFallback = SyncHealthReasonCodes.PROFILE_INVALID,
                 retryableFallback = "SYNC_PROFILE_UNAVAILABLE",
             )
             safeMarkFailure(failure)
@@ -79,14 +83,16 @@ class SecureSyncCoordinator(
             val failure = SyncFailureClassifier.from(
                 error = error,
                 securityFallback = "SYNC_TRANSPORT_SECURITY_FAILURE",
-                retryableFallback = "SYNC_TRANSPORT_UNAVAILABLE",
+                retryableFallback = SyncHealthReasonCodes.TRANSPORT_UNAVAILABLE,
             )
             safeMarkFailure(failure)
             if (failure.retryable) return retryResult()
             throw failure
         }
         if (transport == null) {
-            val failure = SyncFailureClassifier.retryable("SYNC_TRANSPORT_NOT_PROVISIONED")
+            val failure = SyncFailureClassifier.retryable(
+                SyncHealthReasonCodes.TRANSPORT_NOT_PROVISIONED,
+            )
             safeMarkFailure(failure)
             return retryResult()
         }
@@ -99,7 +105,7 @@ class SecureSyncCoordinator(
             val failure = SyncFailureClassifier.from(
                 error = error,
                 securityFallback = "SYNC_SESSION_OPEN_SECURITY_FAILURE",
-                retryableFallback = "SYNC_SESSION_OPEN_UNAVAILABLE",
+                retryableFallback = SyncHealthReasonCodes.SESSION_OPEN_UNAVAILABLE,
             )
             safeMarkFailure(failure)
             if (failure.retryable) return retryResult()
@@ -130,7 +136,7 @@ class SecureSyncCoordinator(
                         cursor = cursor?.cursor,
                         syncSessionId = LanSyncRequestFactory.newSyncSessionId(),
                         requestNonce = requestNonce,
-                        requestedAt = Instant.now().toString(),
+                        requestedAt = now().toString(),
                         clientBaseVersion = cursor?.serverSequence ?: 0,
                         maxChanges = batchSize,
                     )
@@ -147,7 +153,7 @@ class SecureSyncCoordinator(
                         val failure = SyncFailureClassifier.from(
                             error = error,
                             securityFallback = "SECURE_DELTA_VERIFICATION_FAILED",
-                            retryableFallback = "SECURE_DELTA_TRANSIENT_FAILURE",
+                            retryableFallback = SyncHealthReasonCodes.DELTA_TRANSIENT_FAILURE,
                         )
                         if (!failure.retryable) {
                             safeMarkFailure(failure)
@@ -162,34 +168,50 @@ class SecureSyncCoordinator(
 
             if (!retry) {
                 for (event in pending) {
-                    if (event.deviceId != deviceId) continue
-                    val claimed = foundationDao.transitionEventState(
+                    val claimToken = UUID.randomUUID().toString()
+                    val claimedAt = now()
+                    val claimExpiresAt = OutboxClaimLease.expiresAt(claimedAt)
+                    val claimed = foundationDao.claimPendingEvent(
                         id = event.id,
-                        expectedState = "pending",
-                        state = "sending",
+                        deviceId = deviceId,
+                        claimToken = claimToken,
+                        claimedAt = claimedAt.toString(),
+                        claimExpiresAt = claimExpiresAt.toString(),
                     )
                     if (claimed != 1) continue
                     submitted += 1
+
                     val result = try {
                         session.submitOutbox(event)
                     } catch (error: CancellationException) {
-                        foundationDao.transitionEventState(
+                        foundationDao.releaseClaimedEvent(
                             id = event.id,
-                            expectedState = "sending",
-                            state = "pending",
+                            deviceId = deviceId,
+                            claimToken = claimToken,
+                            failureCode = "SYNC_CANCELLED",
+                            failureAt = now().toString(),
                         )
                         throw error
                     } catch (error: Throwable) {
-                        foundationDao.transitionEventState(
-                            id = event.id,
-                            expectedState = "sending",
-                            state = "pending",
-                        )
                         val failure = SyncFailureClassifier.from(
                             error = error,
                             securityFallback = "SECURE_OUTBOX_SECURITY_FAILURE",
-                            retryableFallback = "SECURE_OUTBOX_TRANSIENT_FAILURE",
+                            retryableFallback = SyncHealthReasonCodes.OUTBOX_TRANSIENT_FAILURE,
                         )
+                        val released = foundationDao.releaseClaimedEvent(
+                            id = event.id,
+                            deviceId = deviceId,
+                            claimToken = claimToken,
+                            failureCode = failure.reasonCode,
+                            failureAt = now().toString(),
+                        )
+                        if (released != 1) {
+                            retryFailure = SyncFailureClassifier.retryable(
+                                SyncHealthReasonCodes.OUTBOX_CLAIM_LOST,
+                            )
+                            retry = true
+                            break
+                        }
                         if (!failure.retryable) {
                             safeMarkFailure(failure)
                             throw failure
@@ -198,43 +220,61 @@ class SecureSyncCoordinator(
                         retry = true
                         break
                     }
+
+                    val finalState = when (result) {
+                        SecureOperationResult.Accepted,
+                        SecureOperationResult.AlreadyApplied,
+                        -> "acknowledged"
+                        is SecureOperationResult.Conflict -> "conflict"
+                        is SecureOperationResult.Rejected -> "rejected"
+                        is SecureOperationResult.RetryableFailure -> "pending"
+                    }
+                    if (result is SecureOperationResult.RetryableFailure) {
+                        val released = foundationDao.releaseClaimedEvent(
+                            id = event.id,
+                            deviceId = deviceId,
+                            claimToken = claimToken,
+                            failureCode = result.reasonCode,
+                            failureAt = now().toString(),
+                        )
+                        if (released != 1) {
+                            retryFailure = SyncFailureClassifier.retryable(
+                                SyncHealthReasonCodes.OUTBOX_CLAIM_LOST,
+                            )
+                        } else {
+                            retryFailure = SyncFailureClassifier.retryable(result.reasonCode)
+                        }
+                        retry = true
+                        break
+                    }
+
+                    val reasonCode = when (result) {
+                        is SecureOperationResult.Conflict -> result.reasonCode
+                        is SecureOperationResult.Rejected -> result.reasonCode
+                        else -> null
+                    }
+                    val finalized = foundationDao.finalizeClaimedEvent(
+                        id = event.id,
+                        deviceId = deviceId,
+                        claimToken = claimToken,
+                        finalState = finalState,
+                        failureCode = reasonCode,
+                        failureAt = if (reasonCode == null) null else now().toString(),
+                    )
+                    if (finalized != 1) {
+                        retryFailure = SyncFailureClassifier.retryable(
+                            SyncHealthReasonCodes.OUTBOX_CLAIM_LOST,
+                        )
+                        retry = true
+                        break
+                    }
                     when (result) {
                         SecureOperationResult.Accepted,
                         SecureOperationResult.AlreadyApplied,
-                        -> {
-                            foundationDao.transitionEventState(
-                                id = event.id,
-                                expectedState = "sending",
-                                state = "acknowledged",
-                            )
-                            acknowledged += 1
-                        }
-                        is SecureOperationResult.Conflict -> {
-                            foundationDao.transitionEventState(
-                                id = event.id,
-                                expectedState = "sending",
-                                state = "conflict",
-                            )
-                            conflicts += 1
-                        }
-                        is SecureOperationResult.Rejected -> {
-                            foundationDao.transitionEventState(
-                                id = event.id,
-                                expectedState = "sending",
-                                state = "rejected",
-                            )
-                            rejected += 1
-                        }
-                        is SecureOperationResult.RetryableFailure -> {
-                            foundationDao.transitionEventState(
-                                id = event.id,
-                                expectedState = "sending",
-                                state = "pending",
-                            )
-                            retryFailure = SyncFailureClassifier.retryable(result.reasonCode)
-                            retry = true
-                            break
-                        }
+                        -> acknowledged += 1
+                        is SecureOperationResult.Conflict -> conflicts += 1
+                        is SecureOperationResult.Rejected -> rejected += 1
+                        is SecureOperationResult.RetryableFailure -> Unit
                     }
                 }
             }
@@ -248,7 +288,7 @@ class SecureSyncCoordinator(
 
         if (retry) {
             safeMarkFailure(
-                retryFailure ?: SyncFailureClassifier.retryable("SYNC_TRANSIENT_FAILURE"),
+                retryFailure ?: SyncFailureClassifier.retryable(SyncHealthReasonCodes.TRANSIENT_FAILURE),
             )
         } else {
             safeMarkSuccess()
@@ -263,13 +303,12 @@ class SecureSyncCoordinator(
         )
     }
 
-    private suspend fun retryResult(): SyncRunResult {
-        return SyncRunResult(0, 0, 0, 0, retry = true)
-    }
+    private suspend fun retryResult(): SyncRunResult =
+        SyncRunResult(0, 0, 0, 0, retry = true)
 
     private suspend fun safeMarkAttempt() {
         try {
-            healthRepository?.markAttempt()
+            healthRepository?.markAttempt(now())
         } catch (_: Throwable) {
             // Health telemetry must not block local-first synchronization.
         }
@@ -277,7 +316,7 @@ class SecureSyncCoordinator(
 
     private suspend fun safeMarkSuccess() {
         try {
-            healthRepository?.markSuccess()
+            healthRepository?.markSuccess(now())
         } catch (_: Throwable) {
             // Health telemetry must not replace a successful sync result.
         }
@@ -285,7 +324,7 @@ class SecureSyncCoordinator(
 
     private suspend fun safeMarkFailure(failure: SyncFailureException) {
         try {
-            healthRepository?.markFailure(failure)
+            healthRepository?.markFailure(failure, now())
         } catch (_: Throwable) {
             // Health telemetry must not replace the original sync failure.
         }

@@ -1,7 +1,7 @@
 package com.elite.clinic.sync
 
-import kotlinx.coroutines.flow.Flow
 import java.time.Instant
+import kotlinx.coroutines.flow.Flow
 
 class SyncHealthRepository(
     private val dao: SyncDao,
@@ -12,28 +12,37 @@ class SyncHealthRepository(
         dao.upsertHealth(
             SyncHealthEntity(
                 deviceId = deviceId,
-                state = "running",
+                state = SyncHealthState.RUNNING.storedValue,
                 reasonCode = null,
                 retryable = false,
                 lastAttemptAt = now.toString(),
                 lastSuccessAt = current?.lastSuccessAt,
                 nextRetryAt = null,
                 updatedAt = now.toString(),
+                attemptCount = (current?.attemptCount ?: 0) + 1,
+                lastFailureAt = current?.lastFailureAt,
+                terminalAt = null,
+                lastCompletedAt = current?.lastCompletedAt,
             ),
         )
     }
 
     suspend fun markSuccess(now: Instant = Instant.now()) {
+        val current = dao.getHealth(deviceId)
         dao.upsertHealth(
             SyncHealthEntity(
                 deviceId = deviceId,
-                state = "ready",
+                state = SyncHealthState.READY.storedValue,
                 reasonCode = null,
                 retryable = false,
-                lastAttemptAt = now.toString(),
+                lastAttemptAt = current?.lastAttemptAt ?: now.toString(),
                 lastSuccessAt = now.toString(),
                 nextRetryAt = null,
                 updatedAt = now.toString(),
+                attemptCount = current?.attemptCount ?: 0,
+                lastFailureAt = current?.lastFailureAt,
+                terminalAt = null,
+                lastCompletedAt = now.toString(),
             ),
         )
     }
@@ -42,22 +51,30 @@ class SyncHealthRepository(
         failure: SyncFailureException,
         now: Instant = Instant.now(),
     ) {
+        val current = dao.getHealth(deviceId)
         val nextRetryAt = if (failure.retryable) {
             now.plusSeconds(RETRY_DELAY_SECONDS).toString()
         } else {
             null
         }
-        val current = dao.getHealth(deviceId)
         dao.upsertHealth(
             SyncHealthEntity(
                 deviceId = deviceId,
-                state = if (failure.retryable) "retry-scheduled" else "blocked",
+                state = if (failure.retryable) {
+                    SyncHealthState.RETRY_SCHEDULED.storedValue
+                } else {
+                    SyncHealthState.BLOCKED.storedValue
+                },
                 reasonCode = failure.reasonCode,
                 retryable = failure.retryable,
                 lastAttemptAt = current?.lastAttemptAt ?: now.toString(),
                 lastSuccessAt = current?.lastSuccessAt,
                 nextRetryAt = nextRetryAt,
                 updatedAt = now.toString(),
+                attemptCount = current?.attemptCount ?: 0,
+                lastFailureAt = now.toString(),
+                terminalAt = if (failure.retryable) null else now.toString(),
+                lastCompletedAt = current?.lastCompletedAt,
             ),
         )
     }

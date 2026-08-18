@@ -1,5 +1,6 @@
 package com.elite.clinic.sync
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 
 @Entity(
@@ -52,6 +53,10 @@ data class SyncHealthEntity(
     val lastSuccessAt: String?,
     val nextRetryAt: String?,
     val updatedAt: String,
+    @ColumnInfo(defaultValue = "0") val attemptCount: Int = 0,
+    val lastFailureAt: String? = null,
+    val terminalAt: String? = null,
+    val lastCompletedAt: String? = null,
 )
 
 @Entity(tableName = "sync_connection_profiles")
