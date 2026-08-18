@@ -30,6 +30,10 @@ import type {
   BillingRefundInput,
   Department,
   DoctorDirectoryEntry,
+  DoctorProfile,
+  DoctorProfileUpdateInput,
+  DoctorDocument,
+  DoctorDocumentUploadInput,
   MedicalHistoryEntry,
   MedicalHistoryInput,
   Diagnosis,
@@ -6259,6 +6263,621 @@ function BillingWorkspace({
   );
 }
 
+function DoctorWorkspace({
+  token,
+  session,
+}: {
+  token: string;
+  session: SessionSummary;
+}): ReactElement {
+  const [profiles, setProfiles] = useState<readonly DoctorProfile[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const [profile, setProfile] = useState<DoctorProfile | null>(null);
+  const [documents, setDocuments] = useState<readonly DoctorDocument[]>([]);
+  const [form, setForm] = useState<DoctorProfileUpdateInput | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [documentType, setDocumentType] =
+    useState<DoctorDocumentUploadInput["documentType"]>("other");
+  const [documentName, setDocumentName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [viewer, setViewer] = useState<{
+    url: string;
+    name: string;
+    mimeType: string;
+  } | null>(null);
+  const canEditSelected =
+    session.role === "admin" || session.userId === selectedDoctorId;
+  const canManageDocuments =
+    session.role === "admin" || session.userId === selectedDoctorId;
+
+  const loadDoctor = async (doctorId: string): Promise<void> => {
+    if (!doctorId) return;
+    setError(null);
+    try {
+      const [nextProfile, nextDocuments] = await Promise.all([
+        window.elite.doctor.getProfile(token, doctorId),
+        window.elite.doctor.listDocuments(
+          token,
+          doctorId,
+          session.role === "admin",
+        ),
+      ]);
+      setSelectedDoctorId(doctorId);
+      setProfile(nextProfile);
+      setDocuments(nextDocuments);
+      setForm({
+        doctorId,
+        displayNameEn: nextProfile.displayNameEn,
+        displayNameAr: nextProfile.displayNameAr ?? null,
+        professionalRegistrationNumber:
+          nextProfile.professionalRegistrationNumber ?? null,
+        licenseExpiry: nextProfile.licenseExpiry ?? null,
+        specialtyIds: nextProfile.specialtyIds,
+        departmentIds: nextProfile.departmentIds,
+        qualifications: nextProfile.qualifications ?? null,
+        biography: nextProfile.biography ?? null,
+        languages: nextProfile.languages,
+        phone: nextProfile.phone ?? null,
+        email: nextProfile.email ?? null,
+        clinicRoom: nextProfile.clinicRoom ?? null,
+        consultationFeeEgp: nextProfile.consultationFeeEgp ?? null,
+        licenseVerificationStatus: nextProfile.licenseVerificationStatus,
+        isClinicalApprover: nextProfile.isClinicalApprover,
+        isActive: nextProfile.isActive,
+      });
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load doctor profile",
+      );
+    }
+  };
+
+  const loadProfiles = async (): Promise<void> => {
+    try {
+      const nextProfiles = await window.elite.doctor.listProfiles(token);
+      setProfiles(nextProfiles);
+      const preferred =
+        session.role === "doctor"
+          ? session.userId
+          : (nextProfiles[0]?.doctorId ?? "");
+      if (preferred) await loadDoctor(preferred);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load doctor profiles",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void loadProfiles();
+    return () => {
+      if (viewer) URL.revokeObjectURL(viewer.url);
+    };
+  }, [token]);
+
+  const saveProfile = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!form || !canEditSelected) return;
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const editablePayload: DoctorProfileUpdateInput =
+        session.role === "admin"
+          ? form
+          : {
+              doctorId: form.doctorId,
+              displayNameEn: form.displayNameEn,
+              displayNameAr: form.displayNameAr,
+              professionalRegistrationNumber:
+                form.professionalRegistrationNumber,
+              licenseExpiry: form.licenseExpiry,
+              qualifications: form.qualifications,
+              biography: form.biography,
+              languages: form.languages,
+              phone: form.phone,
+              email: form.email,
+              clinicRoom: form.clinicRoom,
+            };
+      const updated = await window.elite.doctor.updateProfile(
+        token,
+        editablePayload,
+      );
+      setProfile(updated);
+      setNotice("Doctor profile saved.");
+      await loadProfiles();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save doctor profile",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const upload = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (!selectedFile || !selectedDoctorId || !canManageDocuments) return;
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const bytes = new Uint8Array(await selectedFile.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      await window.elite.doctor.uploadDocument(token, {
+        doctorId: selectedDoctorId,
+        documentType,
+        displayName: documentName.trim() || selectedFile.name,
+        fileName: selectedFile.name,
+        mimeType: selectedFile.type as DoctorDocumentUploadInput["mimeType"],
+        contentBase64: btoa(binary),
+      });
+      setSelectedFile(null);
+      setDocumentName("");
+      setNotice("Document encrypted and stored on the Windows Hub.");
+      await loadDoctor(selectedDoctorId);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to upload doctor document",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const viewDocument = async (documentId: string): Promise<void> => {
+    setError(null);
+    try {
+      const content = await window.elite.doctor.viewDocument(token, documentId);
+      if (viewer) URL.revokeObjectURL(viewer.url);
+      const bytes = Uint8Array.from(atob(content.contentBase64), (character) =>
+        character.charCodeAt(0),
+      );
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: content.mimeType }),
+      );
+      setViewer({ url, name: content.fileName, mimeType: content.mimeType });
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to view document",
+      );
+    }
+  };
+
+  const archiveDocument = async (documentId: string): Promise<void> => {
+    if (!canManageDocuments) return;
+    setIsBusy(true);
+    try {
+      await window.elite.doctor.archiveDocument(token, documentId);
+      await loadDoctor(selectedDoctorId);
+      setNotice("Document version archived.");
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to archive document",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const updateForm = <K extends keyof DoctorProfileUpdateInput>(
+    key: K,
+    value: DoctorProfileUpdateInput[K],
+  ): void => {
+    setForm((current) => (current ? { ...current, [key]: value } : current));
+  };
+
+  return (
+    <section className="card" aria-labelledby="doctor-workspace-title">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Staff records</p>
+          <h2 id="doctor-workspace-title">Doctor profiles and documents</h2>
+        </div>
+        <span className="status ok">Windows Hub vault</span>
+      </div>
+      <p className="form-help">
+        Documents are encrypted and stored on the Windows Hub. Android access is
+        streamed over the secured LAN session and is not stored on Android.
+      </p>
+      <ErrorMessage message={error} />
+      {notice ? <p className="success">{notice}</p> : null}
+      <label>
+        Doctor
+        <select
+          value={selectedDoctorId}
+          onChange={(event) => void loadDoctor(event.target.value)}
+        >
+          <option value="">Select doctor</option>
+          {profiles.map((item) => (
+            <option key={item.doctorId} value={item.doctorId}>
+              {item.displayNameEn}
+            </option>
+          ))}
+        </select>
+      </label>
+      {profile && form ? (
+        <>
+          <form
+            className="form-section"
+            onSubmit={(event) => void saveProfile(event)}
+          >
+            <h3>Profile</h3>
+            <div className="form-grid">
+              <label>
+                English name
+                <input
+                  disabled={!canEditSelected}
+                  value={String(form.displayNameEn ?? "")}
+                  onChange={(event) =>
+                    updateForm("displayNameEn", event.target.value)
+                  }
+                />
+              </label>
+              <label>
+                Arabic name
+                <input
+                  disabled={!canEditSelected}
+                  value={String(form.displayNameAr ?? "")}
+                  onChange={(event) =>
+                    updateForm("displayNameAr", event.target.value || null)
+                  }
+                />
+              </label>
+              <label>
+                Registration number
+                <input
+                  disabled={!canEditSelected}
+                  value={String(form.professionalRegistrationNumber ?? "")}
+                  onChange={(event) =>
+                    updateForm(
+                      "professionalRegistrationNumber",
+                      event.target.value || null,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                License expiry
+                <input
+                  disabled={!canEditSelected}
+                  type="date"
+                  value={String(form.licenseExpiry ?? "").slice(0, 10)}
+                  onChange={(event) =>
+                    updateForm(
+                      "licenseExpiry",
+                      event.target.value
+                        ? `${event.target.value}T00:00:00.000Z`
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Phone
+                <input
+                  disabled={!canEditSelected}
+                  value={String(form.phone ?? "")}
+                  onChange={(event) =>
+                    updateForm("phone", event.target.value || null)
+                  }
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  disabled={!canEditSelected}
+                  type="email"
+                  value={String(form.email ?? "")}
+                  onChange={(event) =>
+                    updateForm("email", event.target.value || null)
+                  }
+                />
+              </label>
+              <label>
+                Clinic room
+                <input
+                  disabled={!canEditSelected}
+                  value={String(form.clinicRoom ?? "")}
+                  onChange={(event) =>
+                    updateForm("clinicRoom", event.target.value || null)
+                  }
+                />
+              </label>
+              <label>
+                Languages
+                <input
+                  disabled={!canEditSelected}
+                  value={(form.languages ?? []).join(", ")}
+                  onChange={(event) =>
+                    updateForm(
+                      "languages",
+                      event.target.value
+                        .split(",")
+                        .map((value) => value.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Qualifications
+                <textarea
+                  disabled={!canEditSelected}
+                  value={String(form.qualifications ?? "")}
+                  onChange={(event) =>
+                    updateForm("qualifications", event.target.value || null)
+                  }
+                />
+              </label>
+              <label>
+                Biography
+                <textarea
+                  disabled={!canEditSelected}
+                  value={String(form.biography ?? "")}
+                  onChange={(event) =>
+                    updateForm("biography", event.target.value || null)
+                  }
+                />
+              </label>
+              {session.role === "admin" ? (
+                <>
+                  <label>
+                    License verification
+                    <select
+                      value={String(form.licenseVerificationStatus)}
+                      onChange={(event) =>
+                        updateForm(
+                          "licenseVerificationStatus",
+                          event.target
+                            .value as DoctorProfileUpdateInput["licenseVerificationStatus"],
+                        )
+                      }
+                    >
+                      <option value="unverified">Unverified</option>
+                      <option value="pending">Pending</option>
+                      <option value="verified">Verified</option>
+                      <option value="expired">Expired</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </label>
+                  <label>
+                    Consultation fee (EGP)
+                    <input
+                      type="number"
+                      min="0"
+                      value={String(form.consultationFeeEgp ?? "")}
+                      onChange={(event) =>
+                        updateForm(
+                          "consultationFeeEgp",
+                          event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    Specialty IDs
+                    <input
+                      value={(form.specialtyIds ?? []).join(", ")}
+                      onChange={(event) =>
+                        updateForm(
+                          "specialtyIds",
+                          event.target.value
+                            .split(",")
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    Department IDs
+                    <input
+                      value={(form.departmentIds ?? []).join(", ")}
+                      onChange={(event) =>
+                        updateForm(
+                          "departmentIds",
+                          event.target.value
+                            .split(",")
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.isClinicalApprover)}
+                      onChange={(event) =>
+                        updateForm("isClinicalApprover", event.target.checked)
+                      }
+                    />{" "}
+                    Clinical approver
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.isActive)}
+                      onChange={(event) =>
+                        updateForm("isActive", event.target.checked)
+                      }
+                    />{" "}
+                    Active account
+                  </label>
+                </>
+              ) : null}
+            </div>
+            {canEditSelected ? (
+              <button
+                className="button primary"
+                type="submit"
+                disabled={isBusy}
+              >
+                Save profile
+              </button>
+            ) : (
+              <p className="form-help">Read-only view for this account.</p>
+            )}
+          </form>
+          <section className="form-section">
+            <h3>Documents</h3>
+            <div className="list-stack">
+              {documents.map((document) => (
+                <article className="list-item" key={document.documentId}>
+                  <div>
+                    <strong>{document.displayName}</strong>
+                    <span>
+                      {document.documentType} · version {document.version} ·{" "}
+                      {Math.ceil(document.sizeBytes / 1024)} KB ·{" "}
+                      {document.status}
+                    </span>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => void viewDocument(document.documentId)}
+                    >
+                      View temporarily
+                    </button>
+                    {canManageDocuments && document.status === "active" ? (
+                      <button
+                        className="button danger"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          void archiveDocument(document.documentId)
+                        }
+                      >
+                        Archive
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+              {!documents.length ? (
+                <p className="form-help">
+                  No documents are stored for this doctor.
+                </p>
+              ) : null}
+            </div>
+            {canManageDocuments ? (
+              <form
+                className="form-section"
+                onSubmit={(event) => void upload(event)}
+              >
+                <h4>Upload or replace document</h4>
+                <div className="form-grid">
+                  <label>
+                    Document type
+                    <select
+                      value={documentType}
+                      onChange={(event) =>
+                        setDocumentType(
+                          event.target
+                            .value as DoctorDocumentUploadInput["documentType"],
+                        )
+                      }
+                    >
+                      {[
+                        "national-id",
+                        "passport",
+                        "medical-degree",
+                        "professional-license",
+                        "specialty-certificate",
+                        "cv",
+                        "employment-contract",
+                        "training-certificate",
+                        "profile-photo",
+                        "other",
+                      ].map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Display name
+                    <input
+                      value={documentName}
+                      onChange={(event) => setDocumentName(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    File
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={(event) =>
+                        setSelectedFile(event.target.files?.[0] ?? null)
+                      }
+                    />
+                  </label>
+                </div>
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={isBusy || !selectedFile}
+                >
+                  Encrypt and store
+                </button>
+              </form>
+            ) : null}
+          </section>
+          {viewer ? (
+            <section className="form-section">
+              <h3>Temporary document viewer: {viewer.name}</h3>
+              {viewer.mimeType === "application/pdf" ? (
+                <iframe
+                  title={viewer.name}
+                  src={viewer.url}
+                  style={{ width: "100%", minHeight: 560 }}
+                />
+              ) : (
+                <img
+                  alt={viewer.name}
+                  src={viewer.url}
+                  style={{ maxWidth: "100%", maxHeight: 560 }}
+                />
+              )}
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  URL.revokeObjectURL(viewer.url);
+                  setViewer(null);
+                }}
+              >
+                Close and erase viewer
+              </button>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <p className="form-help">Select a doctor to view the profile.</p>
+      )}
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -6323,6 +6942,9 @@ function AuthenticatedView({
       ) : null}
       {session.capabilities.includes("billing.read") ? (
         <BillingWorkspace token={token} session={session} />
+      ) : null}
+      {session.capabilities.includes("doctor.profile.read") ? (
+        <DoctorWorkspace token={token} session={session} />
       ) : null}
       {session.capabilities.includes("appointment.read") ? (
         <ClinicalWorkflowWorkspace

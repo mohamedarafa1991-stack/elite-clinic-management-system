@@ -110,7 +110,7 @@ export class LanSyncHttpServer {
         return;
       }
       const frame = JSON.parse(body) as SessionFrame;
-      const result = this.router.route(frame);
+      const result = await this.router.route(frame);
       writeJson(response, 200, result);
     } catch (error) {
       const message =

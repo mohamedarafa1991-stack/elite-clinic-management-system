@@ -27,6 +27,7 @@ describe("Elite database foundation", () => {
 
       expect(migrationVersions()).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        21,
       ]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
@@ -45,6 +46,8 @@ describe("Elite database foundation", () => {
       expect(tables).toContain("billing_payments");
       expect(tables).toContain("billing_refunds");
       expect(tables).toContain("billing_receipts");
+      expect(tables).toContain("doctor_profiles");
+      expect(tables).toContain("doctor_documents");
       const syncCursorSchema = database.raw
         .prepare(
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sync_cursors'",

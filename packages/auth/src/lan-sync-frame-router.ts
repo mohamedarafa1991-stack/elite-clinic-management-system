@@ -1,5 +1,7 @@
 import {
   canonicalJson,
+  doctorDocumentUploadInputSchema,
+  doctorDocumentViewRequestSchema,
   syncDeltaRequestSchema,
   syncOutboxInputSchema,
   type SessionGrant,
@@ -7,6 +9,7 @@ import {
 } from "@elite/contracts";
 import type { SessionContext } from "./index.js";
 import type { SynchronizationService } from "./synchronization-service.js";
+import type { DoctorProfileService } from "./doctor-profile-service.js";
 import { verifySessionGrant } from "./session-protocol.js";
 import {
   SessionFrameChannel,
@@ -79,6 +82,7 @@ export class LanSyncFrameRouter {
 
   public constructor(
     private readonly synchronizationService: SynchronizationService,
+    private readonly doctorProfileService?: DoctorProfileService,
   ) {}
 
   public registerSession(options: LanSyncFrameRouterOptions): void {
@@ -115,7 +119,7 @@ export class LanSyncFrameRouter {
     this.sessions.delete(sessionId);
   }
 
-  public route(frame: SessionFrame): SessionFrame {
+  public async route(frame: SessionFrame): Promise<SessionFrame> {
     const session = this.sessions.get(frame.sessionId);
     if (!session) {
       throw new Error(
@@ -124,7 +128,7 @@ export class LanSyncFrameRouter {
     }
     const decrypted = session.channel.decrypt(frame);
     const request = JSON.parse(decrypted.plaintext.toString("utf8")) as unknown;
-    const response = this.routeRequest(
+    const response = await this.routeRequest(
       session.context,
       frame.messageType,
       request,
@@ -132,18 +136,22 @@ export class LanSyncFrameRouter {
     const responseType =
       frame.messageType === "sync-request"
         ? "sync-response"
-        : "outbox-response";
+        : frame.messageType === "outbox-request"
+          ? "outbox-response"
+          : frame.messageType === "document-upload-request"
+            ? "document-upload-response"
+            : "document-response";
     return session.channel.encrypt(
       responseType,
       Buffer.from(canonicalJson(response), "utf8"),
     );
   }
 
-  private routeRequest(
+  private async routeRequest(
     context: SessionContext,
     messageType: SessionFrame["messageType"],
     value: unknown,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
     if (!value || typeof value !== "object" || !("request" in value)) {
       throw new Error(
         "ELITE_LAN_REQUEST_ENVELOPE_INVALID: request envelope is invalid",
@@ -167,6 +175,32 @@ export class LanSyncFrameRouter {
         operationId: queued.operationId,
         state: "accepted",
         queued,
+      };
+    }
+    if (messageType === "document-request") {
+      if (!this.doctorProfileService) {
+        throw new Error(
+          "ELITE_DOCTOR_DOCUMENT_SERVICE_UNAVAILABLE: document service is unavailable",
+        );
+      }
+      return {
+        response: await this.doctorProfileService.viewDocument(
+          context,
+          doctorDocumentViewRequestSchema.parse(request),
+        ),
+      };
+    }
+    if (messageType === "document-upload-request") {
+      if (!this.doctorProfileService) {
+        throw new Error(
+          "ELITE_DOCTOR_DOCUMENT_SERVICE_UNAVAILABLE: document service is unavailable",
+        );
+      }
+      return {
+        response: await this.doctorProfileService.uploadDocument(
+          context,
+          doctorDocumentUploadInputSchema.parse(request),
+        ),
       };
     }
     throw new Error(

@@ -394,7 +394,7 @@ function startLoopbackServer(
       const frame = JSON.parse(body) as Parameters<
         LanSyncFrameRouter["route"]
       >[0];
-      const result = router.route(frame);
+      const result = await router.route(frame);
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(result));
     } catch (error) {

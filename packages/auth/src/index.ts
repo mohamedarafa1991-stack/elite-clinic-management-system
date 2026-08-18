@@ -803,6 +803,11 @@ export type {
 
 export { ClinicalWorkflowService } from "./clinical-service.js";
 export { BillingService } from "./billing-service.js";
+export {
+  DoctorProfileService,
+  createDerivedDoctorVaultKey,
+} from "./doctor-profile-service.js";
+export type { DoctorDocumentVault } from "./doctor-profile-service.js";
 export { MedicalHistoryService } from "./medical-history-service.js";
 export {
   BUILTIN_FHIR_PROFILE_BUNDLES,

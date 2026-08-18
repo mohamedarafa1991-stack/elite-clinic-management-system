@@ -65,6 +65,34 @@ class LanSyncHttpSession(
             }
         }
 
+    override suspend fun requestDoctorDocument(documentId: String): JSONObject =
+        withSyncFailureClassification(
+            securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
+            retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
+        ) {
+            withContext(Dispatchers.IO) {
+                val envelope = postEncrypted(
+                    "document-request",
+                    JSONObject().put("documentId", documentId),
+                )
+                // The response is intentionally returned only to the caller's
+                // in-memory viewer. It must not be written to Room, files, logs,
+                // WorkManager input, or the outbox.
+                envelope.optJSONObject("response") ?: envelope
+            }
+        }
+
+    suspend fun uploadDoctorDocument(request: JSONObject): JSONObject =
+        withSyncFailureClassification(
+            securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
+            retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
+        ) {
+            withContext(Dispatchers.IO) {
+                val envelope = postEncrypted("document-upload-request", request)
+                envelope.optJSONObject("response") ?: envelope
+            }
+        }
+
     override suspend fun close() {
         closed.set(true)
         frameCodec.close()

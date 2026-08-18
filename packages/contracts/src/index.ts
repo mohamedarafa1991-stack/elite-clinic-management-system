@@ -44,6 +44,12 @@ export const capabilitySchema = z.enum([
   "sync.manage",
   "audit.read",
   "module.manage",
+  "doctor.profile.read",
+  "doctor.profile.write",
+  "doctor.document.read",
+  "doctor.document.write",
+  "doctor.document.sensitive-read",
+  "doctor.document.archive",
 ]);
 export type Capability = z.infer<typeof capabilitySchema>;
 
@@ -78,6 +84,12 @@ export const roleCapabilities = {
     "sync.manage",
     "audit.read",
     "module.manage",
+    "doctor.profile.read",
+    "doctor.profile.write",
+    "doctor.document.read",
+    "doctor.document.write",
+    "doctor.document.sensitive-read",
+    "doctor.document.archive",
   ],
   doctor: [
     "patient.read",
@@ -94,6 +106,12 @@ export const roleCapabilities = {
     "export.governance.request",
     "sync.read",
     "sync.write",
+    "doctor.profile.read",
+    "doctor.profile.write",
+    "doctor.document.read",
+    "doctor.document.write",
+    "doctor.document.sensitive-read",
+    "doctor.document.archive",
   ],
   nurse: [
     "patient.read",
@@ -104,6 +122,8 @@ export const roleCapabilities = {
     "appointment.write",
     "sync.read",
     "sync.write",
+    "doctor.profile.read",
+    "doctor.document.read",
   ],
   receptionist: [
     "patient.read",
@@ -141,6 +161,147 @@ export const doctorDirectoryEntrySchema = z.object({
   isActive: z.literal(true),
 });
 export type DoctorDirectoryEntry = z.infer<typeof doctorDirectoryEntrySchema>;
+
+export const doctorLicenseVerificationStatusSchema = z.enum([
+  "unverified",
+  "pending",
+  "verified",
+  "expired",
+  "rejected",
+]);
+export type DoctorLicenseVerificationStatus = z.infer<
+  typeof doctorLicenseVerificationStatusSchema
+>;
+
+export const doctorDocumentTypeSchema = z.enum([
+  "national-id",
+  "passport",
+  "medical-degree",
+  "professional-license",
+  "specialty-certificate",
+  "cv",
+  "employment-contract",
+  "training-certificate",
+  "profile-photo",
+  "other",
+]);
+export type DoctorDocumentType = z.infer<typeof doctorDocumentTypeSchema>;
+
+export const doctorDocumentStatusSchema = z.enum([
+  "active",
+  "archived",
+  "destroyed",
+]);
+export type DoctorDocumentStatus = z.infer<typeof doctorDocumentStatusSchema>;
+
+export const doctorProfileSchema = z.object({
+  doctorId: opaqueIdSchema,
+  displayNameEn: z.string().trim().min(1).max(160),
+  displayNameAr: z.string().trim().max(160).optional(),
+  professionalRegistrationNumber: z.string().trim().max(80).optional(),
+  licenseExpiry: isoDateTimeSchema.optional(),
+  licenseVerificationStatus: doctorLicenseVerificationStatusSchema,
+  specialtyIds: z.array(opaqueIdSchema).max(32),
+  departmentIds: z.array(opaqueIdSchema).max(32),
+  qualifications: z.string().trim().max(4000).optional(),
+  biography: z.string().trim().max(6000).optional(),
+  languages: z.array(z.string().trim().min(1).max(64)).max(16),
+  phone: phoneSchema.optional(),
+  email: z.string().email().max(254).optional(),
+  clinicRoom: z.string().trim().max(80).optional(),
+  consultationFeeEgp: z.number().int().nonnegative().optional(),
+  isClinicalApprover: z.boolean(),
+  isActive: z.boolean(),
+  updatedAt: isoDateTimeSchema,
+});
+export type DoctorProfile = z.infer<typeof doctorProfileSchema>;
+
+export const doctorProfileUpdateInputSchema = z.object({
+  doctorId: opaqueIdSchema,
+  displayNameEn: z.string().trim().min(1).max(160).optional(),
+  displayNameAr: z.string().trim().max(160).nullable().optional(),
+  professionalRegistrationNumber: z
+    .string()
+    .trim()
+    .max(80)
+    .nullable()
+    .optional(),
+  licenseExpiry: isoDateTimeSchema.nullable().optional(),
+  licenseVerificationStatus: doctorLicenseVerificationStatusSchema.optional(),
+  specialtyIds: z.array(opaqueIdSchema).max(32).optional(),
+  departmentIds: z.array(opaqueIdSchema).max(32).optional(),
+  qualifications: z.string().trim().max(4000).nullable().optional(),
+  biography: z.string().trim().max(6000).nullable().optional(),
+  languages: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+  phone: phoneSchema.nullable().optional(),
+  email: z.string().email().max(254).nullable().optional(),
+  clinicRoom: z.string().trim().max(80).nullable().optional(),
+  consultationFeeEgp: z.number().int().nonnegative().nullable().optional(),
+  isClinicalApprover: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+export type DoctorProfileUpdateInput = z.infer<
+  typeof doctorProfileUpdateInputSchema
+>;
+
+export const doctorDocumentSchema = z.object({
+  documentId: opaqueIdSchema,
+  familyId: opaqueIdSchema,
+  doctorId: opaqueIdSchema,
+  documentType: doctorDocumentTypeSchema,
+  displayName: z.string().trim().min(1).max(200),
+  fileName: z.string().trim().min(1).max(240),
+  mimeType: z.enum([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(20 * 1024 * 1024),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  version: z.number().int().positive(),
+  status: doctorDocumentStatusSchema,
+  sensitive: z.boolean(),
+  uploadedByUserId: opaqueIdSchema,
+  uploadedAt: isoDateTimeSchema,
+  archivedAt: isoDateTimeSchema.optional(),
+  archivedByUserId: opaqueIdSchema.optional(),
+});
+export type DoctorDocument = z.infer<typeof doctorDocumentSchema>;
+
+export const doctorDocumentUploadInputSchema = z.object({
+  doctorId: opaqueIdSchema,
+  documentType: doctorDocumentTypeSchema,
+  displayName: z.string().trim().min(1).max(200),
+  fileName: z.string().trim().min(1).max(240),
+  mimeType: z.enum([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]),
+  contentBase64: z.string().min(4).max(28_000_000),
+  replacesDocumentId: opaqueIdSchema.optional(),
+});
+export type DoctorDocumentUploadInput = z.infer<
+  typeof doctorDocumentUploadInputSchema
+>;
+
+export const doctorDocumentViewRequestSchema = z.object({
+  documentId: opaqueIdSchema,
+});
+export type DoctorDocumentViewRequest = z.infer<
+  typeof doctorDocumentViewRequestSchema
+>;
+
+export const doctorDocumentContentSchema = doctorDocumentSchema.extend({
+  contentBase64: z.string().min(4).max(28_000_000),
+});
+export type DoctorDocumentContent = z.infer<typeof doctorDocumentContentSchema>;
 
 export const deviceStatusSchema = z.enum([
   "pending",
@@ -1985,6 +2146,10 @@ export const sessionFrameSchema = z.object({
     "sync-response",
     "outbox-request",
     "outbox-response",
+    "document-request",
+    "document-response",
+    "document-upload-request",
+    "document-upload-response",
   ]),
   sessionId: opaqueIdSchema,
   direction: z.enum(["client-to-hub", "hub-to-client"]),

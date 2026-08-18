@@ -1,6 +1,7 @@
 import {
   AuthService,
   BillingService,
+  DoctorProfileService,
   ClinicalWorkflowService,
   ExportGovernanceService,
   EncounterService,
@@ -45,6 +46,7 @@ import {
 } from "@elite/contracts";
 import { ElectronExportSigner } from "./export-signer.js";
 import { renderPatientExportPdf } from "./export-pdf.js";
+import { FileSystemDoctorDocumentVault } from "./doctor-document-vault.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -56,6 +58,7 @@ let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let billingService: BillingService | undefined;
+let doctorProfileService: DoctorProfileService | undefined;
 let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
 let synchronizationService: SynchronizationService | undefined;
@@ -74,14 +77,15 @@ function initializeServices(): void {
     const filename = app.isPackaged
       ? join(app.getPath("userData"), "elite-clinic.db")
       : ":memory:";
+    const keyProvider = new ElectronSafeStorageKeyProvider(
+      safeStorage,
+      join(app.getPath("userData"), "elite-clinic.db.key"),
+    );
     const options = app.isPackaged
       ? {
           filename,
           mode: "production" as const,
-          keyProvider: new ElectronSafeStorageKeyProvider(
-            safeStorage,
-            join(app.getPath("userData"), "elite-clinic.db.key"),
-          ),
+          keyProvider,
         }
       : {
           filename,
@@ -94,6 +98,16 @@ function initializeServices(): void {
     encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
     billingService = new BillingService(database);
+    const doctorVaultKey = app.isPackaged
+      ? keyProvider.getOrCreateKey()
+      : Buffer.alloc(32, 7);
+    doctorProfileService = new DoctorProfileService(
+      database,
+      new FileSystemDoctorDocumentVault(
+        join(app.getPath("userData"), "doctor-documents"),
+      ),
+      doctorVaultKey,
+    );
     patientExportService = new PatientExportService(database);
     exportSigner = new ElectronExportSigner(
       safeStorage,
@@ -131,7 +145,7 @@ async function startLanSyncServer(): Promise<void> {
   }
   lanSyncStatus = lanSyncStartingStatus(attemptAt);
   const server = new LanSyncHttpServer(
-    new LanSyncFrameRouter(synchronizationService),
+    new LanSyncFrameRouter(synchronizationService, doctorProfileService),
     lanSessionService,
   );
   lanSyncServer = server;
@@ -275,6 +289,14 @@ function requireExportGovernanceService(): ExportGovernanceService {
     );
   }
   return exportGovernanceService;
+}
+function requireDoctorProfileService(): DoctorProfileService {
+  if (!doctorProfileService) {
+    throw new Error(
+      "ELITE_DOCTOR_PROFILE_STORAGE_UNAVAILABLE: doctor profile services are unavailable",
+    );
+  }
+  return doctorProfileService;
 }
 function requireSynchronizationService(): SynchronizationService {
   if (!synchronizationService) {
@@ -1373,6 +1395,53 @@ function registerIpc(): void {
   );
   ipcMain.handle("clinical:doctors", (_event, token: string) =>
     requireClinicalService().listDoctors(serviceContext(token)),
+  );
+  ipcMain.handle("doctor:profiles", (_event, token: string) =>
+    requireDoctorProfileService().listProfiles(serviceContext(token)),
+  );
+  ipcMain.handle("doctor:profile", (_event, token: string, doctorId: string) =>
+    requireDoctorProfileService().getProfile(serviceContext(token), doctorId),
+  );
+  ipcMain.handle(
+    "doctor:profile-update",
+    (_event, token: string, input: unknown) =>
+      requireDoctorProfileService().updateProfile(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "doctor:documents",
+    (_event, token: string, doctorId: string, includeArchived?: boolean) =>
+      requireDoctorProfileService().listDocuments(
+        serviceContext(token),
+        doctorId,
+        includeArchived,
+      ),
+  );
+  ipcMain.handle(
+    "doctor:document-upload",
+    (_event, token: string, input: unknown) =>
+      requireDoctorProfileService().uploadDocument(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "doctor:document-view",
+    (_event, token: string, input: unknown) =>
+      requireDoctorProfileService().viewDocument(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "doctor:document-archive",
+    (_event, token: string, documentId: string) =>
+      requireDoctorProfileService().archiveDocument(
+        serviceContext(token),
+        documentId,
+      ),
   );
   ipcMain.handle("billing:packages", (_event, token: string) =>
     requireBillingService().listPackages(serviceContext(token)),

@@ -1337,6 +1337,63 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
       DROP TABLE sync_outbox_v19;
     `,
   },
+  {
+    version: 21,
+    name: "doctor-profiles-and-document-vault",
+    sql: `
+      CREATE TABLE IF NOT EXISTS doctor_profiles (
+        doctor_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id),
+        professional_registration_number TEXT,
+        license_expiry TEXT,
+        license_verification_status TEXT NOT NULL CHECK (license_verification_status IN ('unverified', 'pending', 'verified', 'expired', 'rejected')),
+        specialty_ids_json TEXT NOT NULL DEFAULT '[]',
+        department_ids_json TEXT NOT NULL DEFAULT '[]',
+        qualifications TEXT,
+        biography TEXT,
+        languages_json TEXT NOT NULL DEFAULT '[]',
+        phone TEXT,
+        email TEXT,
+        clinic_room TEXT,
+        consultation_fee_egp INTEGER CHECK (consultation_fee_egp IS NULL OR consultation_fee_egp >= 0),
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (doctor_id) REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_doctor_profiles_license
+        ON doctor_profiles(license_verification_status, license_expiry);
+
+      CREATE TABLE IF NOT EXISTS doctor_documents (
+        document_id TEXT PRIMARY KEY NOT NULL,
+        family_id TEXT NOT NULL,
+        doctor_id TEXT NOT NULL REFERENCES users(id),
+        document_type TEXT NOT NULL CHECK (document_type IN ('national-id', 'passport', 'medical-degree', 'professional-license', 'specialty-certificate', 'cv', 'employment-contract', 'training-certificate', 'profile-photo', 'other')),
+        display_name TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL CHECK (mime_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')),
+        size_bytes INTEGER NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 20971520),
+        content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
+        version INTEGER NOT NULL CHECK (version > 0),
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived', 'destroyed')),
+        sensitive INTEGER NOT NULL CHECK (sensitive IN (0, 1)),
+        vault_relpath TEXT NOT NULL UNIQUE,
+        encryption_version INTEGER NOT NULL CHECK (encryption_version > 0),
+        nonce_base64 TEXT NOT NULL,
+        auth_tag_base64 TEXT NOT NULL,
+        uploaded_by_user_id TEXT NOT NULL REFERENCES users(id),
+        uploaded_at TEXT NOT NULL,
+        archived_at TEXT,
+        archived_by_user_id TEXT REFERENCES users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (family_id, version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_doctor_documents_doctor_status
+        ON doctor_documents(doctor_id, status, uploaded_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_doctor_documents_family
+        ON doctor_documents(family_id, version DESC);
+    `,
+  },
 ];
 
 function now(): string {

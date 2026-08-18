@@ -13,6 +13,11 @@ import type {
   Appointment,
   AppointmentCreateInput,
   DoctorDirectoryEntry,
+  DoctorProfile,
+  DoctorProfileUpdateInput,
+  DoctorDocument,
+  DoctorDocumentContent,
+  DoctorDocumentUploadInput,
   MedicalHistoryEntry,
   MedicalHistoryInput,
   Diagnosis,
@@ -580,6 +585,47 @@ const eliteApi = {
         id,
         input,
       ) as Promise<Appointment>,
+  },
+  doctor: {
+    listProfiles: (token: string) =>
+      ipcRenderer.invoke("doctor:profiles", token) as Promise<
+        readonly DoctorProfile[]
+      >,
+    getProfile: (token: string, doctorId: string) =>
+      ipcRenderer.invoke(
+        "doctor:profile",
+        token,
+        doctorId,
+      ) as Promise<DoctorProfile>,
+    updateProfile: (token: string, input: DoctorProfileUpdateInput) =>
+      ipcRenderer.invoke(
+        "doctor:profile-update",
+        token,
+        input,
+      ) as Promise<DoctorProfile>,
+    listDocuments: (token: string, doctorId: string, includeArchived = false) =>
+      ipcRenderer.invoke(
+        "doctor:documents",
+        token,
+        doctorId,
+        includeArchived,
+      ) as Promise<readonly DoctorDocument[]>,
+    uploadDocument: (token: string, input: DoctorDocumentUploadInput) =>
+      ipcRenderer.invoke(
+        "doctor:document-upload",
+        token,
+        input,
+      ) as Promise<DoctorDocument>,
+    viewDocument: (token: string, documentId: string) =>
+      ipcRenderer.invoke("doctor:document-view", token, {
+        documentId,
+      }) as Promise<DoctorDocumentContent>,
+    archiveDocument: (token: string, documentId: string) =>
+      ipcRenderer.invoke(
+        "doctor:document-archive",
+        token,
+        documentId,
+      ) as Promise<DoctorDocument>,
   },
   billing: {
     listPackages: (token: string) =>

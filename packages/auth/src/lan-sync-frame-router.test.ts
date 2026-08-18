@@ -82,7 +82,7 @@ describe("mapHubAcknowledgment", () => {
 });
 
 describe("LanSyncFrameRouter", () => {
-  it("routes an encrypted sync request and returns an encrypted response", () => {
+  it("routes an encrypted sync request and returns an encrypted response", async () => {
     const clientKey = Buffer.alloc(32, 0x11);
     const hubKey = Buffer.alloc(32, 0x22);
     const fakeService = {
@@ -130,7 +130,7 @@ describe("LanSyncFrameRouter", () => {
       requestedAt: "2030-01-01T00:00:00.000Z",
       maxChanges: 10,
     };
-    const responseFrame = router.route(
+    const responseFrame = await router.route(
       client.encrypt("sync-request", Buffer.from(JSON.stringify({ request }))),
     );
     const response = JSON.parse(
@@ -141,5 +141,72 @@ describe("LanSyncFrameRouter", () => {
     expect(response.response.scope).toBe("appointments");
     expect(response.response.responseNonce).toBe(request.requestNonce);
     expect(response.response.changes).toEqual([]);
+  });
+
+  it("routes an encrypted doctor-document request without exposing plaintext outside the frame", async () => {
+    const clientKey = Buffer.alloc(32, 0x31);
+    const hubKey = Buffer.alloc(32, 0x41);
+    const fakeService = {
+      getDelta: () => ({
+        protocolVersion: 1,
+        scope: "appointments",
+        responseNonce: "0123456789abcdef0123456789abcdef",
+        changes: [],
+      }),
+    } as unknown as SynchronizationService;
+    const fakeDoctorService = {
+      viewDocument: async () => ({
+        documentId: "doctor-doc-01",
+        familyId: "doctor-family-01",
+        doctorId: "doctor-01",
+        documentType: "cv",
+        displayName: "Synthetic CV",
+        fileName: "synthetic-cv.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 12,
+        contentSha256: "a".repeat(64),
+        version: 1,
+        status: "active",
+        sensitive: false,
+        uploadedByUserId: "doctor-01",
+        uploadedAt: "2030-01-01T00:00:00.000Z",
+        contentBase64: Buffer.from("synthetic cv").toString("base64"),
+      }),
+    } as unknown as import("./doctor-profile-service.js").DoctorProfileService;
+    const router = new LanSyncFrameRouter(fakeService, fakeDoctorService);
+    router.registerSession({
+      context: testContext(),
+      sessionChannel: {
+        sessionId: "session-document-01",
+        noncePrefix: Buffer.from("11121314", "hex"),
+        sendKey: hubKey,
+        receiveKey: clientKey,
+        sendDirection: "hub-to-client",
+        receiveDirection: "client-to-hub",
+      },
+    });
+    const client = new SessionFrameChannel({
+      sessionId: "session-document-01",
+      noncePrefix: Buffer.from("11121314", "hex"),
+      sendKey: clientKey,
+      receiveKey: hubKey,
+      sendDirection: "client-to-hub",
+      receiveDirection: "hub-to-client",
+    });
+    const responseFrame = await router.route(
+      client.encrypt(
+        "document-request",
+        Buffer.from(
+          JSON.stringify({ request: { documentId: "doctor-doc-01" } }),
+        ),
+      ),
+    );
+    const response = JSON.parse(
+      client.decrypt(responseFrame).plaintext.toString("utf8"),
+    ) as { response: { contentBase64: string; documentId: string } };
+    expect(response.response.documentId).toBe("doctor-doc-01");
+    expect(response.response.contentBase64).toBe(
+      Buffer.from("synthetic cv").toString("base64"),
+    );
   });
 });
