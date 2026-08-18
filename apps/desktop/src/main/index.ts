@@ -1,5 +1,6 @@
 import {
   AuthService,
+  BillingService,
   ClinicalWorkflowService,
   ExportGovernanceService,
   EncounterService,
@@ -54,6 +55,7 @@ let patientService: PatientIdentityService | undefined;
 let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
+let billingService: BillingService | undefined;
 let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
 let synchronizationService: SynchronizationService | undefined;
@@ -91,6 +93,7 @@ function initializeServices(): void {
     medicalHistoryService = new MedicalHistoryService(database);
     encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
+    billingService = new BillingService(database);
     patientExportService = new PatientExportService(database);
     exportSigner = new ElectronExportSigner(
       safeStorage,
@@ -1371,6 +1374,51 @@ function registerIpc(): void {
   ipcMain.handle("clinical:doctors", (_event, token: string) =>
     requireClinicalService().listDoctors(serviceContext(token)),
   );
+  ipcMain.handle("billing:packages", (_event, token: string) =>
+    requireBillingService().listPackages(serviceContext(token)),
+  );
+  ipcMain.handle(
+    "billing:package-create",
+    (_event, token: string, input: unknown) =>
+      requireBillingService().createPackage(serviceContext(token), input),
+  );
+  ipcMain.handle(
+    "billing:package-archive",
+    (_event, token: string, packageId: string, reason: string) =>
+      requireBillingService().archivePackage(
+        serviceContext(token),
+        packageId,
+        reason,
+      ),
+  );
+  ipcMain.handle(
+    "billing:invoices",
+    (_event, token: string, patientId?: string) =>
+      requireBillingService().listInvoices(serviceContext(token), patientId),
+  );
+  ipcMain.handle(
+    "billing:invoice-create",
+    (_event, token: string, input: unknown) =>
+      requireBillingService().createInvoice(
+        serviceContext(token),
+        input as never,
+      ),
+  );
+  ipcMain.handle(
+    "billing:invoice-get",
+    (_event, token: string, invoiceId: string) =>
+      requireBillingService().getInvoice(serviceContext(token), invoiceId),
+  );
+  ipcMain.handle(
+    "billing:payment-post",
+    (_event, token: string, input: unknown) =>
+      requireBillingService().postPayment(serviceContext(token), input),
+  );
+  ipcMain.handle(
+    "billing:refund-post",
+    (_event, token: string, input: unknown) =>
+      requireBillingService().refundPayment(serviceContext(token), input),
+  );
   ipcMain.handle(
     "clinical:service-create",
     (_event, token: string, input: unknown) =>
@@ -1453,6 +1501,11 @@ function requireEncounterService(): EncounterService {
   if (!encounterService) throw new Error("Encounter service unavailable");
   return encounterService;
 }
+function requireBillingService(): BillingService {
+  if (!billingService) throw new Error("ELITE_BILLING_SERVICE_UNAVAILABLE");
+  return billingService;
+}
+
 function requireClinicalService(): ClinicalWorkflowService {
   if (!clinicalService)
     throw new Error("Clinical workflow service unavailable");

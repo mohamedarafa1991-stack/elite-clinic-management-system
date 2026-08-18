@@ -802,6 +802,7 @@ export type {
 } from "./patient-service.js";
 
 export { ClinicalWorkflowService } from "./clinical-service.js";
+export { BillingService } from "./billing-service.js";
 export { MedicalHistoryService } from "./medical-history-service.js";
 export {
   BUILTIN_FHIR_PROFILE_BUNDLES,

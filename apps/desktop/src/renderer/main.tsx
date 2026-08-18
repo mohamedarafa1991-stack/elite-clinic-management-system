@@ -22,6 +22,12 @@ import type {
   PatientUpdateInput,
   Appointment,
   AppointmentCreateInput,
+  BillingInvoice,
+  BillingInvoiceCreateInput,
+  BillingPackage,
+  BillingPayment,
+  BillingPaymentInput,
+  BillingRefundInput,
   Department,
   DoctorDirectoryEntry,
   MedicalHistoryEntry,
@@ -5743,6 +5749,516 @@ function MergeReviewQueue({ token }: { token: string }): ReactElement {
   );
 }
 
+function formatEgp(amount: number): string {
+  return `${amount.toLocaleString("en-EG")} EGP`;
+}
+
+function BillingWorkspace({
+  token,
+  session,
+}: {
+  token: string;
+  session: SessionSummary;
+}): ReactElement {
+  const [packages, setPackages] = useState<readonly BillingPackage[]>([]);
+  const [services, setServices] = useState<readonly Service[]>([]);
+  const [invoices, setInvoices] = useState<readonly BillingInvoice[]>([]);
+  const [patientId, setPatientId] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [packageId, setPackageId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [discountEgp, setDiscountEgp] = useState("0");
+  const [discountReason, setDiscountReason] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] =
+    useState<BillingPaymentInput["method"]>("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [refundPaymentId, setRefundPaymentId] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [packageCode, setPackageCode] = useState("");
+  const [packageName, setPackageName] = useState("");
+  const [packagePrice, setPackagePrice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
+  const canManageCatalog = session.capabilities.includes("module.manage");
+  const canWriteBilling = session.capabilities.includes("billing.write");
+  const canRefund = session.capabilities.includes("billing.refund");
+
+  const refresh = async (): Promise<void> => {
+    setError(null);
+    try {
+      const [nextPackages, nextServices, nextInvoices] = await Promise.all([
+        window.elite.billing.listPackages(token),
+        window.elite.clinical.listServices(token),
+        window.elite.billing.listInvoices(token),
+      ]);
+      setPackages(nextPackages);
+      setServices(
+        nextServices.filter((service) => service.status === "active"),
+      );
+      setInvoices(nextInvoices);
+      if (!selectedInvoiceId && nextInvoices[0]) {
+        setSelectedInvoiceId(nextInvoices[0].id);
+      }
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load billing data",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const createPackage = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!serviceId) return;
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await window.elite.billing.createPackage(token, {
+        code: packageCode,
+        nameEn: packageName,
+        priceEgp: Number(packagePrice),
+        items: [{ serviceId, quantity: 1 }],
+      });
+      setPackageCode("");
+      setPackageName("");
+      setPackagePrice("");
+      setNotice("Service package created.");
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to create package",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createInvoice = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!patientId || (!serviceId && !packageId)) return;
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const line = serviceId
+        ? { serviceId, quantity: Number(quantity) }
+        : { packageId, quantity: Number(quantity) };
+      const input: BillingInvoiceCreateInput = {
+        patientId,
+        lines: [line],
+        discountEgp: Number(discountEgp),
+        ...(discountReason.trim()
+          ? { discountReason: discountReason.trim() }
+          : {}),
+      };
+      const invoice = await window.elite.billing.createInvoice(token, input);
+      setSelectedInvoiceId(invoice.id);
+      setInvoices((current) => [
+        invoice,
+        ...current.filter((item) => item.id !== invoice.id),
+      ]);
+      setNotice(`Invoice ${invoice.invoiceNumber} created.`);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to create invoice",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const postPayment = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedInvoiceId) return;
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const input: BillingPaymentInput = {
+        invoiceId: selectedInvoiceId,
+        amountEgp: Number(paymentAmount),
+        method: paymentMethod,
+        ...(paymentReference.trim()
+          ? { reference: paymentReference.trim() }
+          : {}),
+      };
+      const result = await window.elite.billing.postPayment(token, input);
+      const payment = result.payment as BillingPayment;
+      setRefundPaymentId(payment.id);
+      setPaymentAmount("");
+      setPaymentReference("");
+      setNotice(`Receipt ${result.receipt.receiptNumber} issued.`);
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to post payment",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const postRefund = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const input: BillingRefundInput = {
+        paymentId: refundPaymentId,
+        amountEgp: Number(refundAmount),
+        reason: refundReason,
+      };
+      await window.elite.billing.postRefund(token, input);
+      setRefundAmount("");
+      setRefundReason("");
+      setNotice("Refund recorded and the invoice was reconciled.");
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to record refund",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section className="card" aria-labelledby="billing-title">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Step 29 · Finance</p>
+          <h2 id="billing-title">Service billing and receipts</h2>
+        </div>
+        <span className="status ok">EGP · local-first</span>
+      </div>
+      <p className="form-help">
+        Prices are captured on the invoice at creation time. Payments, receipts,
+        partial payments, and refunds are recorded as audited ledger events.
+      </p>
+      <ErrorMessage message={error} />
+      {notice ? <p className="status ok">{notice}</p> : null}
+      {canManageCatalog ? (
+        <form
+          className="form-section"
+          onSubmit={(event) => void createPackage(event)}
+        >
+          <h3>Admin service package</h3>
+          <div className="form-grid">
+            <label>
+              Code
+              <input
+                required
+                value={packageCode}
+                onChange={(event) => setPackageCode(event.target.value)}
+              />
+            </label>
+            <label>
+              Name
+              <input
+                required
+                value={packageName}
+                onChange={(event) => setPackageName(event.target.value)}
+              />
+            </label>
+            <label>
+              Price (EGP)
+              <input
+                required
+                min="0"
+                type="number"
+                value={packagePrice}
+                onChange={(event) => setPackagePrice(event.target.value)}
+              />
+            </label>
+            <label>
+              Included service
+              <select
+                required
+                value={serviceId}
+                onChange={(event) => setServiceId(event.target.value)}
+              >
+                <option value="">Select service</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.nameEn} · {formatEgp(service.priceEgp)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button className="button secondary" type="submit" disabled={isBusy}>
+            Create package
+          </button>
+        </form>
+      ) : null}
+      <div className="form-section">
+        <h3>Available catalog</h3>
+        <div className="patient-list">
+          {services.map((service) => (
+            <div className="patient-row" key={service.id}>
+              <span>
+                <strong>{service.nameEn}</strong>
+                <small>
+                  {service.code} · {formatEgp(service.priceEgp)}
+                </small>
+              </span>
+              <span className="status ok">Active</span>
+            </div>
+          ))}
+          {packages.map((pkg) => (
+            <div className="patient-row" key={pkg.id}>
+              <span>
+                <strong>{pkg.nameEn}</strong>
+                <small>
+                  {pkg.code} · {formatEgp(pkg.priceEgp)}
+                </small>
+              </span>
+              <span className="status ok">{pkg.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {canWriteBilling ? (
+        <form
+          className="form-section"
+          onSubmit={(event) => void createInvoice(event)}
+        >
+          <h3>Create invoice</h3>
+          <div className="form-grid">
+            <label>
+              Patient ID
+              <input
+                required
+                placeholder="EL-00001"
+                value={patientId}
+                onChange={(event) => setPatientId(event.target.value)}
+              />
+            </label>
+            <label>
+              Service
+              <select
+                value={serviceId}
+                onChange={(event) => {
+                  setServiceId(event.target.value);
+                  setPackageId("");
+                }}
+              >
+                <option value="">No service</option>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.nameEn} · {formatEgp(service.priceEgp)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Package
+              <select
+                value={packageId}
+                onChange={(event) => {
+                  setPackageId(event.target.value);
+                  setServiceId("");
+                }}
+              >
+                <option value="">No package</option>
+                {packages
+                  .filter((pkg) => pkg.status === "active")
+                  .map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.nameEn} · {formatEgp(pkg.priceEgp)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Quantity
+              <input
+                required
+                min="1"
+                type="number"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              Discount (EGP)
+              <input
+                min="0"
+                type="number"
+                value={discountEgp}
+                onChange={(event) => setDiscountEgp(event.target.value)}
+              />
+            </label>
+            <label>
+              Discount reason
+              <input
+                value={discountReason}
+                onChange={(event) => setDiscountReason(event.target.value)}
+              />
+            </label>
+          </div>
+          <button
+            className="button primary"
+            type="submit"
+            disabled={isBusy || (!serviceId && !packageId)}
+          >
+            Create invoice
+          </button>
+        </form>
+      ) : null}
+      <div className="form-section">
+        <h3>Invoices</h3>
+        <div className="patient-list">
+          {invoices.map((invoice) => (
+            <button
+              className="patient-row"
+              type="button"
+              key={invoice.id}
+              onClick={() => setSelectedInvoiceId(invoice.id)}
+            >
+              <span>
+                <strong>{invoice.invoiceNumber}</strong>
+                <small>
+                  {invoice.patientId} · {invoice.status}
+                </small>
+              </span>
+              <span>
+                <strong>{formatEgp(invoice.totalEgp)}</strong>
+                <small>
+                  Paid {formatEgp(invoice.paidEgp)} · Balance{" "}
+                  {formatEgp(invoice.balanceEgp)}
+                </small>
+              </span>
+            </button>
+          ))}
+          {invoices.length === 0 ? (
+            <p className="muted">No invoices recorded yet.</p>
+          ) : null}
+        </div>
+      </div>
+      {selectedInvoiceId && canWriteBilling ? (
+        <form
+          className="form-section"
+          onSubmit={(event) => void postPayment(event)}
+        >
+          <h3>Post payment and issue receipt</h3>
+          <div className="form-grid">
+            <label>
+              Invoice
+              <select
+                value={selectedInvoiceId}
+                onChange={(event) => setSelectedInvoiceId(event.target.value)}
+              >
+                {invoices.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {invoice.invoiceNumber} · Balance{" "}
+                    {formatEgp(invoice.balanceEgp)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Amount (EGP)
+              <input
+                required
+                min="1"
+                type="number"
+                value={paymentAmount}
+                onChange={(event) => setPaymentAmount(event.target.value)}
+              />
+            </label>
+            <label>
+              Method
+              <select
+                value={paymentMethod}
+                onChange={(event) =>
+                  setPaymentMethod(
+                    event.target.value as BillingPaymentInput["method"],
+                  )
+                }
+              >
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="bank-transfer">Bank transfer</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Reference
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+              />
+            </label>
+          </div>
+          <button className="button primary" type="submit" disabled={isBusy}>
+            Post payment
+          </button>
+        </form>
+      ) : null}
+      {selectedInvoiceId && canRefund ? (
+        <form
+          className="form-section"
+          onSubmit={(event) => void postRefund(event)}
+        >
+          <h3>Refund payment</h3>
+          <div className="form-grid">
+            <label>
+              Payment ID
+              <input
+                required
+                value={refundPaymentId}
+                onChange={(event) => setRefundPaymentId(event.target.value)}
+              />
+            </label>
+            <label>
+              Refund amount (EGP)
+              <input
+                required
+                min="1"
+                type="number"
+                value={refundAmount}
+                onChange={(event) => setRefundAmount(event.target.value)}
+              />
+            </label>
+            <label>
+              Reason
+              <input
+                required
+                minLength={3}
+                value={refundReason}
+                onChange={(event) => setRefundReason(event.target.value)}
+              />
+            </label>
+          </div>
+          <button className="button danger" type="submit" disabled={isBusy}>
+            Record refund
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -5804,6 +6320,9 @@ function AuthenticatedView({
       ) : null}
       {session.capabilities.includes("patient.read") ? (
         <PatientWorkspace token={token} session={session} />
+      ) : null}
+      {session.capabilities.includes("billing.read") ? (
+        <BillingWorkspace token={token} session={session} />
       ) : null}
       {session.capabilities.includes("appointment.read") ? (
         <ClinicalWorkflowWorkspace

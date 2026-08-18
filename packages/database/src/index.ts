@@ -1118,6 +1118,111 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         ON android_enrollment_events(enrollment_id, occurred_at DESC);
     `,
   },
+  {
+    version: 19,
+    name: "billing-catalog-and-ledger",
+    sql: `
+      CREATE TABLE IF NOT EXISTS billing_packages (
+        id TEXT PRIMARY KEY NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        name_en TEXT NOT NULL,
+        name_ar TEXT,
+        price_egp INTEGER NOT NULL CHECK (price_egp >= 0),
+        validity_days INTEGER CHECK (validity_days IS NULL OR validity_days > 0),
+        status TEXT NOT NULL CHECK (status IN ('active', 'archived')) DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_packages_status
+        ON billing_packages(status, name_en);
+      CREATE TABLE IF NOT EXISTS billing_package_items (
+        id TEXT PRIMARY KEY NOT NULL,
+        package_id TEXT NOT NULL REFERENCES billing_packages(id),
+        service_id TEXT NOT NULL REFERENCES services(id),
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        UNIQUE(package_id, service_id)
+      );
+      CREATE TABLE IF NOT EXISTS billing_invoices (
+        id TEXT PRIMARY KEY NOT NULL,
+        invoice_number TEXT NOT NULL UNIQUE,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        appointment_id TEXT REFERENCES appointments(id),
+        currency TEXT NOT NULL CHECK (currency = 'EGP'),
+        status TEXT NOT NULL CHECK (status IN ('open', 'partially-paid', 'paid', 'voided', 'refunded')) DEFAULT 'open',
+        subtotal_egp INTEGER NOT NULL CHECK (subtotal_egp >= 0),
+        discount_egp INTEGER NOT NULL CHECK (discount_egp >= 0),
+        discount_reason TEXT,
+        total_egp INTEGER NOT NULL CHECK (total_egp >= 0),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_invoices_patient
+        ON billing_invoices(patient_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_billing_invoices_status
+        ON billing_invoices(status, created_at DESC);
+      CREATE TABLE IF NOT EXISTS billing_invoice_lines (
+        id TEXT PRIMARY KEY NOT NULL,
+        invoice_id TEXT NOT NULL REFERENCES billing_invoices(id),
+        service_id TEXT REFERENCES services(id),
+        package_id TEXT REFERENCES billing_packages(id),
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        description_en TEXT NOT NULL,
+        unit_price_egp INTEGER NOT NULL CHECK (unit_price_egp >= 0),
+        line_total_egp INTEGER NOT NULL CHECK (line_total_egp >= 0),
+        CHECK ((service_id IS NOT NULL AND package_id IS NULL) OR (service_id IS NULL AND package_id IS NOT NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_invoice_lines_invoice
+        ON billing_invoice_lines(invoice_id);
+      CREATE TABLE IF NOT EXISTS billing_payments (
+        id TEXT PRIMARY KEY NOT NULL,
+        invoice_id TEXT NOT NULL REFERENCES billing_invoices(id),
+        amount_egp INTEGER NOT NULL CHECK (amount_egp > 0),
+        method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'bank-transfer', 'other')),
+        reference TEXT,
+        status TEXT NOT NULL CHECK (status IN ('posted', 'voided', 'refunded')) DEFAULT 'posted',
+        received_at TEXT NOT NULL,
+        received_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_payments_invoice
+        ON billing_payments(invoice_id, received_at);
+      CREATE TABLE IF NOT EXISTS billing_refunds (
+        id TEXT PRIMARY KEY NOT NULL,
+        payment_id TEXT NOT NULL REFERENCES billing_payments(id),
+        amount_egp INTEGER NOT NULL CHECK (amount_egp > 0),
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('posted', 'voided')) DEFAULT 'posted',
+        refunded_at TEXT NOT NULL,
+        refunded_by_user_id TEXT NOT NULL REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_refunds_payment
+        ON billing_refunds(payment_id, refunded_at);
+      CREATE TABLE IF NOT EXISTS billing_receipts (
+        id TEXT PRIMARY KEY NOT NULL,
+        receipt_number TEXT NOT NULL UNIQUE,
+        invoice_id TEXT NOT NULL REFERENCES billing_invoices(id),
+        payment_id TEXT NOT NULL REFERENCES billing_payments(id),
+        amount_egp INTEGER NOT NULL CHECK (amount_egp > 0),
+        issued_at TEXT NOT NULL,
+        issued_by_user_id TEXT NOT NULL REFERENCES users(id),
+        status TEXT NOT NULL CHECK (status IN ('issued', 'voided')) DEFAULT 'issued'
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_receipts_invoice
+        ON billing_receipts(invoice_id, issued_at DESC);
+      CREATE TABLE IF NOT EXISTS billing_number_sequences (
+        name TEXT PRIMARY KEY NOT NULL,
+        next_value INTEGER NOT NULL CHECK (next_value > 0)
+      );
+      INSERT OR IGNORE INTO billing_number_sequences(name, next_value)
+        VALUES ('invoice', 1), ('receipt', 1);
+    `,
+  },
 ];
 
 function now(): string {

@@ -1492,6 +1492,156 @@ export const serviceSchema = z.object({
 });
 export type Service = z.infer<typeof serviceSchema>;
 
+export const billingInvoiceStatusSchema = z.enum([
+  "open",
+  "partially-paid",
+  "paid",
+  "voided",
+  "refunded",
+]);
+export type BillingInvoiceStatus = z.infer<typeof billingInvoiceStatusSchema>;
+export const billingPaymentMethodSchema = z.enum([
+  "cash",
+  "card",
+  "bank-transfer",
+  "other",
+]);
+export type BillingPaymentMethod = z.infer<typeof billingPaymentMethodSchema>;
+export const billingPaymentStatusSchema = z.enum([
+  "posted",
+  "voided",
+  "refunded",
+]);
+export type BillingPaymentStatus = z.infer<typeof billingPaymentStatusSchema>;
+export const billingPackageStatusSchema = z.enum(["active", "archived"]);
+export type BillingPackageStatus = z.infer<typeof billingPackageStatusSchema>;
+export const billingPackageItemInputSchema = z.object({
+  serviceId: opaqueIdSchema,
+  quantity: z.number().int().positive().max(100),
+});
+export type BillingPackageItemInput = z.infer<
+  typeof billingPackageItemInputSchema
+>;
+export const billingPackageInputSchema = z.object({
+  code: z.string().trim().min(1).max(40),
+  nameEn: z.string().trim().min(1).max(160),
+  nameAr: z.string().trim().max(160).optional(),
+  priceEgp: z.number().int().nonnegative(),
+  validityDays: z.number().int().positive().max(3650).optional(),
+  items: z.array(billingPackageItemInputSchema).min(1).max(100),
+});
+export type BillingPackageInput = z.infer<typeof billingPackageInputSchema>;
+export const billingPackageItemSchema = billingPackageItemInputSchema.extend({
+  serviceNameEn: z.string().trim().min(1).max(160),
+});
+export type BillingPackageItem = z.infer<typeof billingPackageItemSchema>;
+export const billingPackageSchema = billingPackageInputSchema
+  .omit({ items: true })
+  .extend({
+    id: opaqueIdSchema,
+    status: billingPackageStatusSchema,
+    items: z.array(billingPackageItemSchema),
+    createdAt: isoDateTimeSchema,
+    createdByUserId: opaqueIdSchema,
+    updatedAt: isoDateTimeSchema,
+    updatedByUserId: opaqueIdSchema,
+    version: z.number().int().positive(),
+  });
+export type BillingPackage = z.infer<typeof billingPackageSchema>;
+const billingInvoiceLineBaseSchema = z.object({
+  serviceId: opaqueIdSchema.optional(),
+  packageId: opaqueIdSchema.optional(),
+  quantity: z.number().int().positive().max(100),
+  descriptionEn: z.string().trim().min(1).max(240).optional(),
+});
+export const billingInvoiceLineInputSchema =
+  billingInvoiceLineBaseSchema.refine(
+    (value) => Boolean(value.serviceId) !== Boolean(value.packageId),
+    {
+      message:
+        "Each invoice line must reference exactly one service or package",
+    },
+  );
+export type BillingInvoiceLineInput = z.infer<
+  typeof billingInvoiceLineInputSchema
+>;
+export const billingInvoiceCreateInputSchema = z.object({
+  patientId: patientIdSchema,
+  appointmentId: opaqueIdSchema.optional(),
+  lines: z.array(billingInvoiceLineInputSchema).min(1).max(100),
+  discountEgp: z.number().int().nonnegative().default(0),
+  discountReason: z.string().trim().min(3).max(500).optional(),
+});
+export type BillingInvoiceCreateInput = z.infer<
+  typeof billingInvoiceCreateInputSchema
+>;
+export const billingInvoiceLineSchema = billingInvoiceLineBaseSchema.extend({
+  id: opaqueIdSchema,
+  descriptionEn: z.string().trim().min(1).max(240),
+  unitPriceEgp: z.number().int().nonnegative(),
+  lineTotalEgp: z.number().int().nonnegative(),
+});
+export type BillingInvoiceLine = z.infer<typeof billingInvoiceLineSchema>;
+export const billingInvoiceSchema = z.object({
+  id: opaqueIdSchema,
+  invoiceNumber: z.string().regex(/^EL-INV-\d{6}$/),
+  patientId: patientIdSchema,
+  appointmentId: opaqueIdSchema.optional(),
+  currency: z.literal("EGP"),
+  status: billingInvoiceStatusSchema,
+  subtotalEgp: z.number().int().nonnegative(),
+  discountEgp: z.number().int().nonnegative(),
+  totalEgp: z.number().int().nonnegative(),
+  paidEgp: z.number().int().nonnegative(),
+  balanceEgp: z.number().int().nonnegative(),
+  lines: z.array(billingInvoiceLineSchema),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+  updatedAt: isoDateTimeSchema,
+  updatedByUserId: opaqueIdSchema,
+  version: z.number().int().positive(),
+});
+export type BillingInvoice = z.infer<typeof billingInvoiceSchema>;
+export const billingPaymentInputSchema = z.object({
+  invoiceId: opaqueIdSchema,
+  amountEgp: z.number().int().positive(),
+  method: billingPaymentMethodSchema,
+  reference: z.string().trim().max(160).optional(),
+});
+export type BillingPaymentInput = z.infer<typeof billingPaymentInputSchema>;
+export const billingPaymentSchema = billingPaymentInputSchema.extend({
+  id: opaqueIdSchema,
+  status: billingPaymentStatusSchema,
+  receivedAt: isoDateTimeSchema,
+  receivedByUserId: opaqueIdSchema,
+  version: z.number().int().positive(),
+});
+export type BillingPayment = z.infer<typeof billingPaymentSchema>;
+export const billingRefundInputSchema = z.object({
+  paymentId: opaqueIdSchema,
+  amountEgp: z.number().int().positive(),
+  reason: z.string().trim().min(3).max(500),
+});
+export type BillingRefundInput = z.infer<typeof billingRefundInputSchema>;
+export const billingRefundSchema = billingRefundInputSchema.extend({
+  id: opaqueIdSchema,
+  status: z.enum(["posted", "voided"]),
+  refundedAt: isoDateTimeSchema,
+  refundedByUserId: opaqueIdSchema,
+});
+export type BillingRefund = z.infer<typeof billingRefundSchema>;
+export const billingReceiptSchema = z.object({
+  id: opaqueIdSchema,
+  receiptNumber: z.string().regex(/^EL-REC-\d{6}$/),
+  invoiceId: opaqueIdSchema,
+  paymentId: opaqueIdSchema,
+  amountEgp: z.number().int().positive(),
+  issuedAt: isoDateTimeSchema,
+  issuedByUserId: opaqueIdSchema,
+  status: z.enum(["issued", "voided"]),
+});
+export type BillingReceipt = z.infer<typeof billingReceiptSchema>;
+
 export const scheduleInputSchema = z.object({
   doctorId: opaqueIdSchema,
   departmentId: opaqueIdSchema,

@@ -45,6 +45,14 @@ import type {
   Icd10Code,
   Icd10CodeInput,
   AppointmentStatusUpdate,
+  BillingInvoice,
+  BillingInvoiceCreateInput,
+  BillingPackage,
+  BillingPayment,
+  BillingPaymentInput,
+  BillingReceipt,
+  BillingRefund,
+  BillingRefundInput,
   Schedule,
   ScheduleInput,
   ScheduleException,
@@ -572,6 +580,59 @@ const eliteApi = {
         id,
         input,
       ) as Promise<Appointment>,
+  },
+  billing: {
+    listPackages: (token: string) =>
+      ipcRenderer.invoke("billing:packages", token) as Promise<
+        readonly BillingPackage[]
+      >,
+    createPackage: (token: string, input: unknown) =>
+      ipcRenderer.invoke(
+        "billing:package-create",
+        token,
+        input,
+      ) as Promise<BillingPackage>,
+    archivePackage: (token: string, packageId: string, reason: string) =>
+      ipcRenderer.invoke(
+        "billing:package-archive",
+        token,
+        packageId,
+        reason,
+      ) as Promise<void>,
+    listInvoices: (token: string, patientId?: string) =>
+      ipcRenderer.invoke("billing:invoices", token, patientId) as Promise<
+        readonly BillingInvoice[]
+      >,
+    createInvoice: (token: string, input: BillingInvoiceCreateInput) =>
+      ipcRenderer.invoke(
+        "billing:invoice-create",
+        token,
+        input,
+      ) as Promise<BillingInvoice>,
+    getInvoice: (token: string, invoiceId: string) =>
+      ipcRenderer.invoke(
+        "billing:invoice-get",
+        token,
+        invoiceId,
+      ) as Promise<BillingInvoice>,
+    postPayment: (
+      token: string,
+      input: BillingPaymentInput,
+    ): Promise<{
+      payment: BillingPayment;
+      receipt: BillingReceipt;
+      invoice: BillingInvoice;
+    }> =>
+      ipcRenderer.invoke("billing:payment-post", token, input) as Promise<{
+        payment: BillingPayment;
+        receipt: BillingReceipt;
+        invoice: BillingInvoice;
+      }>,
+    postRefund: (token: string, input: BillingRefundInput) =>
+      ipcRenderer.invoke("billing:refund-post", token, input) as Promise<{
+        refund: BillingRefund;
+        invoice: BillingInvoice;
+      }>,
   },
   sync: {
     registerDevice: (
