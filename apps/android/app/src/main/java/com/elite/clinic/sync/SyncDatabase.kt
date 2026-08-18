@@ -35,6 +35,9 @@ interface SyncDao {
     @Query("SELECT * FROM sync_connection_profiles WHERE deviceId = :deviceId LIMIT 1")
     suspend fun getConnectionProfile(deviceId: String): SyncConnectionProfileEntity?
 
+    @Query("SELECT * FROM sync_connection_profiles ORDER BY updatedAt DESC")
+    suspend fun getConnectionProfiles(): List<SyncConnectionProfileEntity>
+
     @Query("UPDATE sync_connection_profiles SET state = :state, updatedAt = :updatedAt WHERE deviceId = :deviceId")
     suspend fun updateConnectionProfileState(deviceId: String, state: String, updatedAt: String): Int
 

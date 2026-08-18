@@ -9,9 +9,19 @@ class SyncConnectionProfileRepository(
     suspend fun getActive(
         deviceId: String,
         now: Instant = Instant.now(),
+    ): ActiveSyncConnectionProfile? = toActive(dao.getConnectionProfile(deviceId), now)
+
+    suspend fun getActiveProfiles(
+        now: Instant = Instant.now(),
+    ): List<ActiveSyncConnectionProfile> = dao.getConnectionProfiles().mapNotNull {
+        toActive(it, now)
+    }
+
+    private fun toActive(
+        entity: SyncConnectionProfileEntity?,
+        now: Instant,
     ): ActiveSyncConnectionProfile? {
-        val entity = dao.getConnectionProfile(deviceId) ?: return null
-        if (entity.state != "active") return null
+        if (entity == null || entity.state != "active") return null
         val expiresAt = parseInstant(entity.expiresAt) ?: return null
         val offlineAccessUntil = parseInstant(entity.offlineAccessUntil) ?: return null
         if (!expiresAt.isAfter(now) || !offlineAccessUntil.isAfter(now)) return null

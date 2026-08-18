@@ -20,7 +20,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val application = application as EliteApplication
         setContent {
-            FoundationScreen(databaseReady = application.database != null)
+            if (application.database != null) {
+                DoctorDocumentWorkspace(application)
+            } else {
+                FoundationScreen(databaseReady = false)
+            }
         }
     }
 }

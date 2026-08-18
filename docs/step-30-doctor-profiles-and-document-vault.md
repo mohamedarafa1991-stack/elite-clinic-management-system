@@ -1,6 +1,6 @@
 # Step 30: Doctor Profiles and Secure Local Document Vault
 
-**Status:** Source implementation complete; Android Gradle and physical-device verification pending.  
+**Status:** Source implementation complete, including the Android document workspace; Android Gradle and physical-device verification pending.
 **Scope:** Doctor profiles, professional documents, encrypted Windows storage, role-based editing, LAN-only Android viewing/upload, versioning, and auditability.
 
 ## Product behavior
@@ -40,6 +40,10 @@ Android receives document bytes only in memory. The `DoctorDocumentStreamParser`
 
 Android viewing and uploading require an active secure LAN connection to the Windows Hub. They intentionally do not work while the device is offline or disconnected from the Hub, because the requirement is that document files must not persist on Android. Android uploads are streamed directly to the Hub and the response contains metadata only.
 
+The Android UI now exposes a secure document workspace. It discovers active encrypted enrollment profiles from the existing Room connection-profile table, lets the user select a Hub session, accepts a document ID for one-shot viewing, and provides an `OpenDocument` file picker restricted to PDF, JPEG, PNG, and WebP. The picker reads the selected URI into a bounded in-memory byte array, rejects empty or oversized files, and clears the array after upload, cancellation, or activity disposal. The upload form sends only the contract fields required by the Hub: doctor ID, document type, display name, filename, MIME type, and Base64 content.
+
+The temporary viewer decodes images in memory and renders the first PDF page through `PdfRenderer` backed by an in-memory file descriptor. It provides no save, share, download, or external-viewer action. The viewer clears the document byte array and recycles decoded bitmaps when closed or disposed. The Android screen does not cache doctor profiles or document metadata; the current Hub protocol authorizes document retrieval by document ID, so the desktop Doctor Profiles workspace remains the source for discovering document IDs.
+
 ## Database migration
 
 Migration 21 adds:
@@ -75,10 +79,10 @@ Prettier formatting: passed
 Git whitespace check: passed
 ```
 
-Android Kotlin compilation, Android JVM tests, APK assembly, and physical-device viewing/upload remain pending because the current sandbox has no Android SDK, Gradle toolchain, Kotlin compiler, or connected devices.
+Android Kotlin compilation, Android JVM tests, APK assembly, and physical-device viewing/upload remain pending because the current sandbox has no Android SDK, Gradle toolchain, Kotlin compiler, or connected devices. The source-level UI and file-picker workflow are implemented, but they must be compiled and exercised on an Android workstation before release claims can be made.
 
 ## Release gates still required
 
-The Android workstation must verify Room/database compatibility with the new repository state, Kotlin compilation of the new `SecureSession` and in-memory document-stream classes, and installation on API 29 and newer devices. Physical testing must verify Admin/doctor/nurse/receptionist permissions, correct and incorrect trust anchors, LAN-only view/upload behavior, no Android file creation, process death, session expiry, oversized-file rejection, corrupted-content rejection, and Hub restart.
+The Android workstation must verify Room/database compatibility with the new repository state, Kotlin compilation of the new Compose document workspace, repository active-profile lookup, secure-session and in-memory document-stream classes, and installation on API 29 and newer devices. Physical testing must verify Admin/doctor/nurse/receptionist permissions, correct and incorrect trust anchors, LAN-only view/upload behavior, OpenDocument MIME and size rejection, no Android file creation, no share/download affordances, viewer byte clearing, process death, session expiry, oversized-file rejection, corrupted-content rejection, and Hub restart.
 
 The clinic should also confirm whether document viewing by nurses and receptionists should expose all ordinary document types or only a smaller subset. The implementation currently allows ordinary non-sensitive documents and hides sensitive documents from users without the sensitive-read capability.
