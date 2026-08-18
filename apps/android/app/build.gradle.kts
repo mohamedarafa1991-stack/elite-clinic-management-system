@@ -5,6 +5,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.generateKotlin", "true")
+    arg("room.incremental", "true")
+}
+
 android {
     namespace = "com.elite.clinic"
     compileSdk = 36
