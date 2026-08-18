@@ -48,18 +48,24 @@ The renderer communicates only through the typed preload bridge. It does not acc
 
 ## Verification
 
-The Step 29 synthetic tests cover package-permission boundaries, invoice creation, price snapshots, discount handling, partial payments, receipt numbering, payment-over-balance rejection, refunds, receipt voiding, and invoice reconciliation. The database foundation test verifies migration 19 and the billing tables.
+The Step 29 synthetic tests cover package-permission boundaries, invoice creation, price snapshots, discount handling, partial payments, receipt numbering, payment-over-balance rejection, refunds, receipt voiding, and invoice reconciliation. The database foundation test verifies migrations 19 and 20, the billing tables, and the billing-summary scope constraint. The synchronization tests verify billing-summary capability enforcement, cursor replay, EGP totals, and payload minimization.
 
-The available workspace gate passed: all TypeScript tests, TypeScript typechecking, desktop production build, formatting, and whitespace checks.
+The available workspace gate passed: TypeScript tests, TypeScript typechecking, desktop production build, formatting, and whitespace checks. Android Gradle execution remains workstation-gated.
 
-## Remaining Step 29 gate
+## Android billing-summary synchronization
 
-Android billing UI and a dedicated `billing-summary` synchronization scope are not yet enabled. This is intentional: the Android build and physical-device gates from Steps 27–28 remain workstation-dependent, and adding a new synchronized scope requires coordinated updates to the cross-platform scope contracts, desktop sync cursors and resource-version constraints, Android scope parsing, Android local projections, and conflict/outbox behavior. The next billing increment should add that coordinated cross-platform scope before exposing financial records on Android.
+The cross-platform protocol now recognizes a sixth `billing-summary` scope and the `BillingInvoice` resource type. Desktop migration 20 rebuilds the scope-constrained synchronization tables without changing prior migration checksums and preserves existing records. The Hub emits only a minimum financial summary: invoice number, patient ID, EGP totals, discount amount, status, paid amount, balance, and timestamps. It excludes invoice lines, discount reasons, payment IDs, payment references, and refund reasons.
+
+Android Room version 6 adds the encrypted `sync_billing_summaries` projection. `SyncRepository` verifies EGP currency, nonnegative totals, discount bounds, and the balance equation before transactionally storing a summary. Redacted or deleted invoice changes remove the local typed projection. The generic metadata and cursor records remain written alongside the typed projection for auditability and replay safety.
+
+## Remaining physical-device gate
+
+Android billing UI is not yet exposed. The next Android workstation run must verify Room migration 5→6, secure-session negotiation with all six scopes, a billing-summary delta, payload rejection for invalid currency or inconsistent totals, cursor replay, redaction removal, and offline retention. Physical-device testing remains required before financial records are treated as release-verified.
 
 Before production use, the clinic must confirm the authority thresholds for discounts and refunds, whether packages are prepaid or visit-based, package expiration behavior, and the approved payment-method policy. The current implementation records these actions and requires reasons but does not yet add a configurable monetary approval threshold.
 
 ## References
 
-[1]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/9139caf/packages/contracts/src/index.ts "Elite Clinic contracts and synchronization model"
-[2]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/9139caf/packages/database/src/index.ts "Elite Clinic database migrations"
-[3]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/9139caf/packages/auth/src/billing-service.ts "Elite Clinic billing service"
+[1]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/packages/contracts/src/index.ts "Elite Clinic contracts and synchronization model"
+[2]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/packages/database/src/index.ts "Elite Clinic database migrations"
+[3]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/packages/auth/src/billing-service.ts "Elite Clinic billing service"

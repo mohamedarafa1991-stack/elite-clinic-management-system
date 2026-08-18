@@ -15,6 +15,9 @@ interface SyncDao {
     suspend fun upsertResourceMetadata(metadata: SyncResourceMetadataEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBillingSummary(summary: BillingSummaryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImportEvent(event: SyncImportEventEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -43,6 +46,15 @@ interface SyncDao {
 
     @Query("SELECT * FROM sync_resource_metadata WHERE deviceId = :deviceId AND scope = :scope ORDER BY updatedAt DESC")
     fun observeResources(deviceId: String, scope: String): Flow<List<SyncResourceMetadataEntity>>
+
+    @Query("SELECT * FROM sync_billing_summaries WHERE deviceId = :deviceId ORDER BY updatedAt DESC")
+    fun observeBillingSummaries(deviceId: String): Flow<List<BillingSummaryEntity>>
+
+    @Query("DELETE FROM sync_billing_summaries WHERE deviceId = :deviceId AND invoiceId = :invoiceId")
+    suspend fun deleteBillingSummary(deviceId: String, invoiceId: String): Int
+
+    @Query("DELETE FROM sync_billing_summaries WHERE deviceId = :deviceId")
+    suspend fun deleteBillingSummaries(deviceId: String)
 
     @Query("DELETE FROM sync_resource_metadata WHERE deviceId = :deviceId AND scope = :scope")
     suspend fun deleteScope(deviceId: String, scope: String)

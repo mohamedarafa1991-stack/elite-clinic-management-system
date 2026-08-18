@@ -55,7 +55,7 @@ function addMilliseconds(iso: string, milliseconds: number): string {
 }
 
 function parseScopes(value: string): SyncScope[] {
-  const parsed = syncScopeSchema.array().max(5).safeParse(JSON.parse(value));
+  const parsed = syncScopeSchema.array().max(6).safeParse(JSON.parse(value));
   if (!parsed.success) {
     throw new Error(
       "ELITE_ENROLLMENT_POLICY_INVALID: stored scopes are invalid",

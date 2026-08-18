@@ -58,7 +58,7 @@ function requireReason(reason: string): string {
 
 function parseScopes(value: string): readonly SyncScope[] {
   const parsed = JSON.parse(value) as unknown;
-  const result = syncScopeSchema.array().max(5).safeParse(parsed);
+  const result = syncScopeSchema.array().max(6).safeParse(parsed);
   if (!result.success) {
     throw new Error(
       "ELITE_SYNC_POLICY_CORRUPT: allowed synchronization scopes are invalid",
@@ -589,6 +589,53 @@ export class SynchronizationService {
         ),
       );
     }
+    if (scope === "billing-summary") {
+      if (!context.capabilities.includes("billing.read")) {
+        throw new Error(
+          "ELITE_SYNC_SCOPE_DENIED: billing summary requires billing-read capability",
+        );
+      }
+      const rows = this.database.raw
+        .prepare(
+          `SELECT i.id, i.invoice_number AS invoiceNumber, patients.patient_id AS patientId,
+                  i.currency, i.status, i.subtotal_egp AS subtotalEgp,
+                  i.discount_egp AS discountEgp, i.total_egp AS totalEgp,
+                  i.created_at AS createdAt, i.updated_at AS updatedAt, i.version,
+                  MAX(0, COALESCE((SELECT SUM(amount_egp) FROM billing_payments
+                    WHERE invoice_id = i.id AND status IN ('posted', 'refunded')), 0)
+                    - COALESCE((SELECT SUM(r.amount_egp) FROM billing_refunds r
+                      JOIN billing_payments p ON p.id = r.payment_id
+                      WHERE p.invoice_id = i.id AND r.status = 'posted'), 0)) AS paidEgp
+           FROM billing_invoices i
+           INNER JOIN patients ON patients.id = i.patient_id
+           WHERE patients.status = 'active'
+           ORDER BY i.updated_at ASC LIMIT ?`,
+        )
+        .all(limit) as Row[];
+      return rows.map((row) => {
+        const paidEgp = Number(row.paidEgp);
+        const totalEgp = Number(row.totalEgp);
+        return this.change(
+          "BillingInvoice",
+          String(row.id),
+          Number(row.version),
+          String(row.updatedAt),
+          {
+            invoiceNumber: row.invoiceNumber,
+            patientId: row.patientId,
+            currency: row.currency,
+            status: row.status,
+            subtotalEgp: Number(row.subtotalEgp),
+            discountEgp: Number(row.discountEgp),
+            totalEgp,
+            paidEgp,
+            balanceEgp: Math.max(0, totalEgp - paidEgp),
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          },
+        );
+      });
+    }
     if (scope === "export-governance") {
       const rows = this.database.raw
         .prepare(
@@ -617,7 +664,12 @@ export class SynchronizationService {
   }
 
   private change(
-    resourceType: "Appointment" | "Patient" | "Encounter" | "ExportPackage",
+    resourceType:
+      | "Appointment"
+      | "Patient"
+      | "Encounter"
+      | "ExportPackage"
+      | "BillingInvoice",
     resourceId: string,
     version: number,
     updatedAt: string,

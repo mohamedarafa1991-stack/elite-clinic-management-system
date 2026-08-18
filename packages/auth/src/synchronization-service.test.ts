@@ -120,6 +120,46 @@ function syntheticPatientAndAppointment(
     );
 }
 
+function syntheticBillingInvoice(
+  database: ReturnType<typeof openDatabase>,
+  userId: string,
+): void {
+  const timestamp = "2030-03-02T02:00:00.000Z";
+  database.raw
+    .prepare(
+      `INSERT INTO billing_invoices
+       (id, invoice_number, patient_id, currency, status, subtotal_egp, discount_egp, discount_reason, total_egp, created_at, created_by_user_id, updated_at, updated_by_user_id, version)
+       VALUES (?, ?, ?, 'EGP', 'partially-paid', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      "sync-billing-invoice",
+      "EL-INV-000042",
+      "sync-patient-row",
+      1000,
+      100,
+      "Synthetic billing discount",
+      900,
+      timestamp,
+      userId,
+      timestamp,
+      userId,
+      4,
+    );
+  database.raw
+    .prepare(
+      `INSERT INTO billing_payments
+       (id, invoice_id, amount_egp, method, reference, status, received_at, received_by_user_id, version)
+       VALUES (?, ?, ?, 'cash', NULL, 'posted', ?, ?, 1)`,
+    )
+    .run(
+      "sync-billing-payment",
+      "sync-billing-invoice",
+      300,
+      timestamp,
+      userId,
+    );
+}
+
 describe("SynchronizationService", () => {
   it("authorizes scopes and emits minimum-necessary appointment deltas", async () => {
     const database = openDatabase({ filename: ":memory:", mode: "test" });
@@ -196,6 +236,113 @@ describe("SynchronizationService", () => {
         requestedAt: "2030-03-02T10:00:00.000Z",
       });
       expect(replay.changes).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("emits minimized billing summaries, advances cursors, and enforces billing-read access", async () => {
+    const database = openDatabase({ filename: ":memory:", mode: "test" });
+    try {
+      const auth = new AuthService(database);
+      const bootstrap = await auth.bootstrapInitialAdmins(bootstrapInput);
+      const admin = await auth.login({
+        username: bootstrapInput.admins[0]!.username,
+        password: bootstrapInput.admins[0]!.password,
+        deviceId: bootstrap.hubDeviceId,
+      });
+      androidDevice(database, admin.userId);
+      syntheticPatientAndAppointment(database, admin.userId);
+      syntheticBillingInvoice(database, admin.userId);
+      const service = new SynchronizationService(
+        database,
+        syntheticSigner(),
+        () => "2030-03-02T10:00:00.000Z",
+      );
+      const mobile = androidContext(admin);
+      service.registerDevice(admin, {
+        deviceId: "sync-android-device",
+        enrollmentId: "sync-enrollment-billing",
+        organizationId: "elite-clinic",
+        ownerUserId: admin.userId,
+        policyVersion: 1,
+        allowedScopes: ["billing-summary"],
+      });
+      const capabilities = service.getCapabilities(mobile, {
+        protocolVersion: 1,
+        organizationId: "elite-clinic",
+        deviceId: "sync-android-device",
+        enrollmentId: "sync-enrollment-billing",
+        userId: admin.userId,
+        clientVersion: "0.1.0-test",
+        requestedScopes: ["billing-summary"],
+        requestNonce: "nonce-billing-cap-0001",
+        requestedAt: "2030-03-02T10:00:00.000Z",
+      });
+      expect(capabilities.supportedScopes).toEqual(["billing-summary"]);
+      const delta = service.getDelta(mobile, {
+        protocolVersion: 1,
+        organizationId: "elite-clinic",
+        deviceId: "sync-android-device",
+        userId: admin.userId,
+        syncSessionId: "sync-session-billing-1",
+        scope: "billing-summary",
+        clientBaseVersion: 0,
+        knownPolicyVersion: 1,
+        requestNonce: "nonce-billing-delta-0001",
+        requestedAt: "2030-03-02T10:00:00.000Z",
+      });
+      expect(delta.changes).toHaveLength(1);
+      expect(delta.changes[0]).toMatchObject({
+        resourceType: "BillingInvoice",
+        resourceId: "sync-billing-invoice",
+        version: 4,
+      });
+      expect(delta.changes[0]?.payload).toMatchObject({
+        invoiceNumber: "EL-INV-000042",
+        patientId: "EL-00042",
+        currency: "EGP",
+        totalEgp: 900,
+        paidEgp: 300,
+        balanceEgp: 600,
+      });
+      expect(delta.changes[0]?.payload).not.toHaveProperty("discountReason");
+      expect(delta.changes[0]?.payload).not.toHaveProperty("reference");
+      expect(delta.changes[0]?.payload).not.toHaveProperty("paymentId");
+      const replay = service.getDelta(mobile, {
+        protocolVersion: 1,
+        organizationId: "elite-clinic",
+        deviceId: "sync-android-device",
+        userId: admin.userId,
+        syncSessionId: "sync-session-billing-1",
+        scope: "billing-summary",
+        cursor: delta.nextCursor,
+        clientBaseVersion: 0,
+        knownPolicyVersion: 1,
+        requestNonce: "nonce-billing-delta-0002",
+        requestedAt: "2030-03-02T10:00:00.000Z",
+      });
+      expect(replay.changes).toEqual([]);
+      const withoutBillingRead = {
+        ...mobile,
+        capabilities: mobile.capabilities.filter(
+          (capability) => capability !== "billing.read",
+        ),
+      };
+      expect(() =>
+        service.getDelta(withoutBillingRead, {
+          protocolVersion: 1,
+          organizationId: "elite-clinic",
+          deviceId: "sync-android-device",
+          userId: admin.userId,
+          syncSessionId: "sync-session-billing-2",
+          scope: "billing-summary",
+          clientBaseVersion: 0,
+          knownPolicyVersion: 1,
+          requestNonce: "nonce-billing-denied-01",
+          requestedAt: "2030-03-02T10:00:00.000Z",
+        }),
+      ).toThrow("billing summary requires billing-read capability");
     } finally {
       database.close();
     }

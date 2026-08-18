@@ -16,6 +16,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import com.elite.clinic.security.DeviceKeyStore
+import com.elite.clinic.sync.BillingSummaryEntity
 import com.elite.clinic.sync.SyncConnectionProfileEntity
 import com.elite.clinic.sync.SyncCursorEntity
 import com.elite.clinic.sync.SyncDao
@@ -144,9 +145,10 @@ interface LocalFoundationDao {
         SyncHealthEntity::class,
         SyncCursorEntity::class,
         SyncResourceMetadataEntity::class,
+        BillingSummaryEntity::class,
         SyncImportEventEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class EliteDatabase : RoomDatabase() {
@@ -264,6 +266,35 @@ abstract class EliteDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sync_billing_summaries (
+                        deviceId TEXT NOT NULL,
+                        invoiceId TEXT NOT NULL,
+                        invoiceNumber TEXT NOT NULL,
+                        patientId TEXT NOT NULL,
+                        currency TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        subtotalEgp INTEGER NOT NULL,
+                        discountEgp INTEGER NOT NULL,
+                        totalEgp INTEGER NOT NULL,
+                        paidEgp INTEGER NOT NULL,
+                        balanceEgp INTEGER NOT NULL,
+                        createdAt TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        payloadHash TEXT NOT NULL,
+                        PRIMARY KEY(deviceId, invoiceId)
+                    )
+                    """.trimIndent(),
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sync_billing_summaries_deviceId_updatedAt ON sync_billing_summaries(deviceId, updatedAt)",
+                )
+            }
+        }
         fun create(
             context: Context,
             deviceKeyStore: DeviceKeyStore,
@@ -278,7 +309,7 @@ abstract class EliteDatabase : RoomDatabase() {
             check(deviceKeyStore != null) { "Device key store is required" }
             return Room.databaseBuilder(context, EliteDatabase::class.java, "elite-local.db")
                 .openHelperFactory(encryptedFactory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigrationOnDowngrade(false)
                 .build()
         }

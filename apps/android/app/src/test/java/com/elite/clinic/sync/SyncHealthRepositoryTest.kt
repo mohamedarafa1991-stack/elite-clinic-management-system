@@ -79,6 +79,7 @@ class SyncHealthRepositoryTest {
 
         override suspend fun upsertCursor(cursor: SyncCursorEntity) = Unit
         override suspend fun upsertResourceMetadata(metadata: SyncResourceMetadataEntity) = Unit
+        override suspend fun upsertBillingSummary(summary: BillingSummaryEntity) = Unit
         override suspend fun insertImportEvent(event: SyncImportEventEntity) = Unit
         override suspend fun upsertConnectionProfile(profile: SyncConnectionProfileEntity) = Unit
         override suspend fun upsertHealth(health: SyncHealthEntity) {
@@ -98,6 +99,9 @@ class SyncHealthRepositoryTest {
             deviceId: String,
             scope: String,
         ): Flow<List<SyncResourceMetadataEntity>> = flowOf(emptyList())
+        override fun observeBillingSummaries(deviceId: String): Flow<List<BillingSummaryEntity>> = flowOf(emptyList())
+        override suspend fun deleteBillingSummary(deviceId: String, invoiceId: String): Int = 0
+        override suspend fun deleteBillingSummaries(deviceId: String) = Unit
         override suspend fun deleteScope(deviceId: String, scope: String) = Unit
     }
 }

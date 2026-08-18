@@ -175,6 +175,7 @@ export const syncScopeSchema = z.enum([
   "encounter-summary",
   "clinical-notes",
   "export-governance",
+  "billing-summary",
 ]);
 export type SyncScope = z.infer<typeof syncScopeSchema>;
 
@@ -185,6 +186,7 @@ export const syncResourceTypeSchema = z.enum([
   "Composition",
   "Condition",
   "ExportPackage",
+  "BillingInvoice",
 ]);
 export type SyncResourceType = z.infer<typeof syncResourceTypeSchema>;
 
@@ -215,7 +217,7 @@ export const syncCapabilityRequestSchema = z.object({
   userId: opaqueIdSchema,
   clientVersion: z.string().trim().min(1).max(64),
   lastAcceptedStatusSequence: z.number().int().nonnegative().optional(),
-  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestedScopes: z.array(syncScopeSchema).min(1).max(6),
   requestNonce: z.string().trim().min(16).max(128),
   requestedAt: isoDateTimeSchema,
 });
@@ -248,7 +250,7 @@ export const syncDeviceRegistrationInputSchema = z.object({
   organizationId: opaqueIdSchema,
   ownerUserId: opaqueIdSchema,
   policyVersion: z.number().int().positive(),
-  allowedScopes: z.array(syncScopeSchema).min(1).max(5),
+  allowedScopes: z.array(syncScopeSchema).min(1).max(6),
   patientScope: z.record(z.string(), z.unknown()).optional(),
 });
 export type SyncDeviceRegistrationInput = z.infer<
@@ -261,7 +263,7 @@ export const syncDevicePolicySchema = z.object({
   organizationId: opaqueIdSchema,
   ownerUserId: opaqueIdSchema,
   policyVersion: z.number().int().positive(),
-  allowedScopes: z.array(syncScopeSchema).max(5),
+  allowedScopes: z.array(syncScopeSchema).max(6),
   patientScope: z.record(z.string(), z.unknown()).optional(),
   state: z.enum(["active", "suspended", "revoked"]),
 });
@@ -1828,7 +1830,7 @@ export const enrollmentChallengeDescriptorSchema = z.object({
   intendedUserId: opaqueIdSchema,
   intendedRole: userRoleSchema,
   requestedPolicyVersion: step22PositiveIntSchema,
-  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestedScopes: z.array(syncScopeSchema).min(1).max(6),
   issuedAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema,
   responseNonce: step22NonceSchema,
@@ -1884,7 +1886,7 @@ export const enrollmentResponseDescriptorSchema = z.object({
   deviceName: z.string().trim().min(1).max(120),
   devicePublicKeyFingerprint: step22Sha256FingerprintSchema,
   policyVersion: step22PositiveIntSchema,
-  allowedScopes: z.array(syncScopeSchema).min(1).max(5),
+  allowedScopes: z.array(syncScopeSchema).min(1).max(6),
   patientScope: z.record(z.string(), z.unknown()).optional(),
   responseNonce: step22NonceSchema,
   issuedAt: isoDateTimeSchema,
@@ -1937,7 +1939,7 @@ export const sessionInitDescriptorSchema = z.object({
   deviceIdentityKeyFingerprint: step22Sha256FingerprintSchema,
   deviceEphemeralPublicKeySpkiBase64: step22Base64TextSchema,
   deviceEphemeralKeyFingerprint: step22Sha256FingerprintSchema,
-  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestedScopes: z.array(syncScopeSchema).min(1).max(6),
   requestedAt: isoDateTimeSchema,
 });
 export type SessionInitDescriptor = z.infer<typeof sessionInitDescriptorSchema>;
@@ -1960,7 +1962,7 @@ export const sessionGrantDescriptorSchema = z.object({
   clientCounter: z.number().int().nonnegative(),
   serverEphemeralPublicKeySpkiBase64: step22Base64TextSchema,
   serverEphemeralKeyFingerprint: step22Sha256FingerprintSchema,
-  grantedScopes: z.array(syncScopeSchema).min(1).max(5),
+  grantedScopes: z.array(syncScopeSchema).min(1).max(6),
   issuedAt: isoDateTimeSchema,
   validUntil: isoDateTimeSchema,
   transcriptHash: step22Sha256FingerprintSchema,
@@ -2012,7 +2014,7 @@ export const enrollmentChallengeCreateInputSchema = z.object({
   intendedUserId: opaqueIdSchema,
   intendedRole: userRoleSchema,
   requestedPolicyVersion: step22PositiveIntSchema,
-  requestedScopes: z.array(syncScopeSchema).min(1).max(5),
+  requestedScopes: z.array(syncScopeSchema).min(1).max(6),
   validitySeconds: z.number().int().min(60).max(86_400).default(86_400),
 });
 export type EnrollmentChallengeCreateInput = z.input<
@@ -2030,7 +2032,7 @@ export const enrollmentStateSummarySchema = z.object({
   deviceName: z.string().trim().min(1).max(120),
   state: enrollmentStateSchema,
   policyVersion: step22PositiveIntSchema,
-  allowedScopes: z.array(syncScopeSchema).max(5),
+  allowedScopes: z.array(syncScopeSchema).max(6),
   issuedAt: isoDateTimeSchema.optional(),
   expiresAt: isoDateTimeSchema.optional(),
   offlineAccessUntil: isoDateTimeSchema.optional(),

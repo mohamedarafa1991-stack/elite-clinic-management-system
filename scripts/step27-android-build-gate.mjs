@@ -112,10 +112,10 @@ run(gradleCommand, [
   "lintDebug",
   "assembleDebug",
 ]);
-const schemaV5 = join(appRoot, "schemas", "5.json");
-if (!report("Room schema v5", existsSync(schemaV5), schemaV5)) {
+const schemaV6 = join(appRoot, "schemas", "6.json");
+if (!report("Room schema v6", existsSync(schemaV6), schemaV6)) {
   console.error(
-    "\nThe Android build completed but did not export the expected Room schema version 5.",
+    "\nThe Android build completed but did not export the expected Room schema version 6.",
   );
   process.exit(3);
 }

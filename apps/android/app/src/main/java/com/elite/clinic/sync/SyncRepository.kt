@@ -16,6 +16,9 @@ class SyncRepository(
     fun observeScope(deviceId: String, scope: String): Flow<List<SyncResourceMetadataEntity>> =
         database.syncDao().observeResources(deviceId, scope)
 
+    fun observeBillingSummaries(deviceId: String): Flow<List<BillingSummaryEntity>> =
+        database.syncDao().observeBillingSummaries(deviceId)
+
     suspend fun applyDelta(
         responseJson: String,
         expectedOrganizationId: String,
@@ -45,19 +48,29 @@ class SyncRepository(
             for (index in 0 until changes.length()) {
                 val change = changes.getJSONObject(index)
                 val payload = change.optJSONObject("payload")
+                val resourceType = change.getString("resourceType")
+                val resourceId = change.getString("resourceId")
+                val operation = change.getString("operation")
                 dao.upsertResourceMetadata(
                     SyncResourceMetadataEntity(
                         deviceId = verification.deviceId,
                         scope = verification.scope,
-                        resourceType = change.getString("resourceType"),
-                        resourceId = change.getString("resourceId"),
+                        resourceType = resourceType,
+                        resourceId = resourceId,
                         version = change.getLong("version"),
                         updatedAt = change.getString("updatedAt"),
                         payloadHash = change.getString("payloadHash"),
-                        operation = change.getString("operation"),
-                        redacted = change.getString("operation") == "redact" || payload == null,
+                        operation = operation,
+                        redacted = operation == "redact" || payload == null,
                     ),
                 )
+                if (verification.scope == "billing-summary" && resourceType == "BillingInvoice") {
+                    if (operation == "delete" || operation == "redact" || payload == null) {
+                        dao.deleteBillingSummary(verification.deviceId, resourceId)
+                    } else {
+                        dao.upsertBillingSummary(parseBillingSummary(verification.deviceId, resourceId, change, payload))
+                    }
+                }
             }
             dao.upsertCursor(
                 SyncCursorEntity(
@@ -84,4 +97,37 @@ class SyncRepository(
         return verification
     }
 
+    private fun parseBillingSummary(
+        deviceId: String,
+        invoiceId: String,
+        change: JSONObject,
+        payload: JSONObject,
+    ): BillingSummaryEntity {
+        require(payload.getString("currency") == "EGP") { "SYNC_BILLING_CURRENCY_INVALID" }
+        val subtotalEgp = payload.getLong("subtotalEgp")
+        val discountEgp = payload.getLong("discountEgp")
+        val totalEgp = payload.getLong("totalEgp")
+        val paidEgp = payload.getLong("paidEgp")
+        val balanceEgp = payload.getLong("balanceEgp")
+        require(subtotalEgp >= 0 && discountEgp >= 0 && totalEgp >= 0) { "SYNC_BILLING_AMOUNT_INVALID" }
+        require(discountEgp <= subtotalEgp && paidEgp >= 0 && balanceEgp >= 0) { "SYNC_BILLING_TOTAL_INVALID" }
+        require(balanceEgp == maxOf(0L, totalEgp - paidEgp)) { "SYNC_BILLING_BALANCE_INVALID" }
+        return BillingSummaryEntity(
+            deviceId = deviceId,
+            invoiceId = invoiceId,
+            invoiceNumber = payload.getString("invoiceNumber"),
+            patientId = payload.getString("patientId"),
+            currency = "EGP",
+            status = payload.getString("status"),
+            subtotalEgp = subtotalEgp,
+            discountEgp = discountEgp,
+            totalEgp = totalEgp,
+            paidEgp = paidEgp,
+            balanceEgp = balanceEgp,
+            createdAt = payload.getString("createdAt"),
+            updatedAt = payload.getString("updatedAt"),
+            version = change.getLong("version"),
+            payloadHash = change.getString("payloadHash"),
+        )
+    }
 }

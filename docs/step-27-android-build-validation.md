@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Step 27 converts the Android implementation from source-reviewed to workstation-verified. The Android project targets API 36, supports Android API 29 and newer, uses JDK 17, and depends on Room KSP generation, SQLCipher, WorkManager, Compose, and the Android Keystore integration. The repository now exports Room schemas to `apps/android/app/schemas` during the KSP build so the v4→v5 migration can be inspected as a build artifact.
+Step 27 converts the Android implementation from source-reviewed to workstation-verified. The Android project targets API 36, supports Android API 29 and newer, uses JDK 17, and depends on Room KSP generation, SQLCipher, WorkManager, Compose, and the Android Keystore integration. The repository now exports Room schemas to `apps/android/app/schemas` during the KSP build so the v4→v5 and v5→v6 migrations can be inspected as build artifacts.
 
 > The Android build gate is a release requirement. Passing the TypeScript and desktop checks does not substitute for Kotlin compilation, Room code generation, Android packaging, or device execution.
 
@@ -62,18 +62,19 @@ The combined repository helper can run the same gate from the repository root:
 node scripts/step27-android-build-gate.mjs --run
 ```
 
-A successful build must produce the debug APK and a Room schema export containing version `5`. The schema output must be reviewed to confirm the `local_outbox` lease and failure columns, the device/state/time index, and the `sync_health` attempt and lifecycle timestamp columns.
+A successful build must produce the debug APK and a Room schema export containing version `6`. The schema output must be reviewed to confirm the `local_outbox` lease and failure columns, the device/state/time index, the `sync_health` attempt and lifecycle timestamp columns, and the `sync_billing_summaries` encrypted projection.
 
 ## Required Android test matrix
 
 | Category                  | Required checks                                                                                                                                                                                                      |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Build and code generation | Kotlin compilation, Compose compilation, KSP Room implementation generation, SQLCipher linkage, debug APK assembly, and lint.                                                                                        |
-| Room migration            | Open a representative encrypted v4 database, apply migration 4→5, verify all new columns and defaults, confirm the fairness index, and confirm existing rows remain readable.                                        |
+| Room migration            | Open representative encrypted v4 and v5 databases, apply migrations 4→5 and 5→6, verify all new columns and defaults, confirm the fairness index and billing projection, and confirm existing rows remain readable.  |
 | Canonical protocol        | Canonical JSON vectors, sparse-array and floating-point edge cases, session-key derivation, encrypted-frame vectors, nonce/counter enforcement, and key-confirmation behavior.                                       |
 | Failure behavior          | Retryable I/O, TLS failures, terminal security failures, cancellation preservation, safe reason-code fallback, and WorkManager retry/failure mapping.                                                                |
 | Health behavior           | Running, ready, retry-scheduled, and blocked transitions; attempt increments; last failure, terminal, and completion timestamps; retry-now operation; and persistence across process restart.                        |
 | Outbox behavior           | Device-scoped ordering, two-minute lease boundary, stale-claim recovery, cancellation release, claim-token mismatch rejection, lost-claim detection, finalization, transient release, and idempotent acknowledgment. |
+| Billing synchronization   | Six-scope secure-session negotiation, minimized BillingInvoice delta, EGP invariant validation, cursor replay, redaction removal, offline retention, and rejection of inconsistent totals.                           |
 | Security                  | Android Keystore identity key, encrypted Room opening, no cleartext transport, certificate/trust-anchor validation, offline expiry, inactivity lock, and protected backup behavior.                                  |
 | Packaging                 | Debug APK installation, release build configuration, signing and checksum process, upgrade path, rollback path, and minimum API 29 device compatibility.                                                             |
 
@@ -89,6 +90,6 @@ The sandbox has no Kotlin compiler, Android SDK, Gradle wrapper, or system Gradl
 
 ## References
 
-[1]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/6c2d9f8/apps/android/app/build.gradle.kts "Elite Clinic Android Gradle configuration"
-[2]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/6c2d9f8/apps/android/README.md "Elite Clinic Android README"
-[3]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/6c2d9f8/apps/android/app/src/main/java/com/elite/clinic/data/EliteDatabase.kt "Elite Clinic Room database and migrations"
+[1]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/apps/android/app/build.gradle.kts "Elite Clinic Android Gradle configuration"
+[2]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/apps/android/README.md "Elite Clinic Android README"
+[3]: https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/blob/cb22ae3/apps/android/app/src/main/java/com/elite/clinic/data/EliteDatabase.kt "Elite Clinic Room database and migrations"

@@ -31,6 +31,28 @@ data class SyncResourceMetadataEntity(
     val redacted: Boolean,
 )
 
+@Entity(
+    tableName = "sync_billing_summaries",
+    primaryKeys = ["deviceId", "invoiceId"],
+)
+data class BillingSummaryEntity(
+    val deviceId: String,
+    val invoiceId: String,
+    val invoiceNumber: String,
+    val patientId: String,
+    val currency: String,
+    val status: String,
+    val subtotalEgp: Long,
+    val discountEgp: Long,
+    val totalEgp: Long,
+    val paidEgp: Long,
+    val balanceEgp: Long,
+    val createdAt: String,
+    val updatedAt: String,
+    val version: Long,
+    val payloadHash: String,
+)
+
 @Entity(tableName = "sync_import_events")
 data class SyncImportEventEntity(
     @androidx.room.PrimaryKey val id: String,

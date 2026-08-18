@@ -25,6 +25,7 @@ object LanSyncRequestFactory {
         "encounter-summary",
         "clinical-notes",
         "export-governance",
+        "billing-summary",
     )
     private val supportedResourceTypes = setOf(
         "Appointment",
@@ -33,6 +34,7 @@ object LanSyncRequestFactory {
         "Composition",
         "Condition",
         "ExportPackage",
+        "BillingInvoice",
     )
     private val supportedOperations = setOf(
         "appointment-acknowledge",
