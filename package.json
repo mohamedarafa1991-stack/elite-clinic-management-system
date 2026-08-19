@@ -20,13 +20,18 @@
     "desktop:dev": "pnpm --filter @elite/desktop dev",
     "desktop:build": "pnpm --filter @elite/desktop build",
     "desktop:native-rebuild": "electron-rebuild --force --module-dir apps/desktop",
+    "desktop:package:dir": "node scripts/package-desktop.mjs --dir",
+    "desktop:package:win": "node scripts/package-desktop.mjs --win",
+    "desktop:package:verify": "node scripts/verify-desktop-package.mjs",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"
   },
   "devDependencies": {
+    "@electron/asar": "4.3.0",
     "@electron/rebuild": "4.2.0",
     "@types/node": "^22.13.0",
     "@vitest/coverage-v8": "3.2.7",
+    "electron-builder": "26.15.3",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

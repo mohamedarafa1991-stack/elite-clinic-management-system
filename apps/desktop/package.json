@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Elite Clinic Management System Windows desktop and local Hub application.",
+  "author": "Elite Clinic Management System",
   "main": "dist/main/index.js",
   "type": "module",
   "scripts": {
@@ -17,7 +18,6 @@
     "@elite/contracts": "workspace:*",
     "@elite/database": "workspace:*",
     "@types/pdfkit": "^0.17.6",
-    "electron": "^43.4.0",
     "pdfkit": "^0.19.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
@@ -26,6 +26,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
+    "electron": "43.4.0",
     "vite": "^7.1.3"
   }
 }

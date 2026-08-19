@@ -1,0 +1,37 @@
+appId: com.eliteclinic.managementsystem
+productName: Elite Clinic Management System
+artifactName: "${productName}-${version}-${arch}.${ext}"
+# Keep the local Hub database and DPAPI-wrapped key under Electron userData.
+# The NSIS uninstall policy deliberately does not remove that user data.
+compression: maximum
+# Native modules are rebuilt explicitly before deployment by package-desktop.mjs.
+npmRebuild: false
+asar: true
+asarUnpack:
+  - "node_modules/**/*.node"
+  - "node_modules/**/better-sqlite3-multiple-ciphers/**"
+files:
+  - "dist/**"
+  - "node_modules/**"
+  - "package.json"
+extraMetadata:
+  main: dist/main/index.js
+directories:
+  output: ../../release
+  buildResources: ../../apps/desktop/build
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: false
+  deleteAppDataOnUninstall: false
+publish: null
