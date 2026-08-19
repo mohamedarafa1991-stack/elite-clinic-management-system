@@ -6878,6 +6878,162 @@ function DoctorWorkspace({
   );
 }
 
+interface ShellNavigationItem {
+  id: string;
+  label: string;
+  detail: string;
+  visible: boolean;
+}
+
+function AppShell({
+  session,
+  onLogout,
+  children,
+}: {
+  session: SessionSummary;
+  onLogout: () => Promise<void>;
+  children: ReactElement;
+}): ReactElement {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [activeSection, setActiveSection] = useState("workspace-overview");
+  const navigation: ShellNavigationItem[] = [
+    {
+      id: "workspace-overview",
+      label: "Overview",
+      detail: "Today and clinic status",
+      visible: true,
+    },
+    {
+      id: "workspace-patients",
+      label: "Patients",
+      detail: "Search and patient records",
+      visible: session.capabilities.includes("patient.read"),
+    },
+    {
+      id: "workspace-care",
+      label: "Care & schedule",
+      detail: "Appointments and encounters",
+      visible: session.capabilities.includes("appointment.read"),
+    },
+    {
+      id: "workspace-billing",
+      label: "Billing",
+      detail: "Invoices, receipts, and packages",
+      visible: session.capabilities.includes("billing.read"),
+    },
+    {
+      id: "workspace-doctors",
+      label: "Doctors",
+      detail: "Profiles and secure documents",
+      visible: session.capabilities.includes("doctor.profile.read"),
+    },
+    {
+      id: "workspace-governance",
+      label: "Governance",
+      detail: "Exports, audit, and Admin controls",
+      visible:
+        session.capabilities.includes("export.manage") ||
+        session.capabilities.includes("device.manage"),
+    },
+  ].filter((item) => item.visible);
+
+  return (
+    <div className={`app-shell${isCollapsed ? " is-collapsed" : ""}`}>
+      <aside className="app-sidebar" aria-label="Primary navigation">
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true">
+            E
+          </span>
+          <span className="brand-copy">
+            <strong>Elite Clinic</strong>
+            <small>ايليت · Cairo branch</small>
+          </span>
+        </div>
+        <button
+          className="sidebar-toggle"
+          type="button"
+          aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+          aria-expanded={!isCollapsed}
+          onClick={() => setIsCollapsed((current) => !current)}
+        >
+          <span aria-hidden="true">{isCollapsed ? "→" : "←"}</span>
+          <span className="visually-hidden">
+            {isCollapsed ? "Expand navigation" : "Collapse navigation"}
+          </span>
+        </button>
+        <nav className="sidebar-nav">
+          <p className="sidebar-label">Workspace</p>
+          {navigation.map((item) => (
+            <a
+              className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
+              href={`#${item.id}`}
+              key={item.id}
+              aria-current={activeSection === item.id ? "page" : undefined}
+              onClick={() => setActiveSection(item.id)}
+            >
+              <span className="sidebar-link-icon" aria-hidden="true">
+                {item.label.slice(0, 1)}
+              </span>
+              <span className="sidebar-link-copy">
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </span>
+            </a>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <span className="local-status-dot" aria-hidden="true" />
+          <span className="sidebar-link-copy">
+            <strong>Working locally</strong>
+            <small>Encrypted clinic store</small>
+          </span>
+        </div>
+      </aside>
+      <div className="app-main">
+        <header className="app-topbar">
+          <div className="topbar-heading">
+            <span className="topbar-kicker">
+              Elite Clinic Management System
+            </span>
+            <strong>Clinic workspace</strong>
+          </div>
+          <div className="topbar-actions">
+            <span className="topbar-status">
+              <span className="local-status-dot" aria-hidden="true" />
+              Local-first
+            </span>
+            <span className="role-chip">{session.role}</span>
+            <button
+              className="button ghost small"
+              type="button"
+              onClick={() => void onLogout()}
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+        <main className="app-content" aria-label="Clinic workspace">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceSection({
+  id,
+  children,
+}: {
+  id: string;
+  children: ReactElement;
+}): ReactElement {
+  return (
+    <section id={id} className="workspace-section">
+      {children}
+    </section>
+  );
+}
+
 function AuthenticatedView({
   token,
   session,
@@ -6898,82 +7054,99 @@ function AuthenticatedView({
   };
 
   return (
-    <section className="card auth-card" aria-labelledby="session-title">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Authenticated session</p>
-          <h2 id="session-title">Welcome, {session.username}</h2>
-        </div>
-        <span className="status ok">{session.role}</span>
-      </div>
-      <ErrorMessage message={error} />
-      <dl className="status-grid">
-        <div>
-          <dt>Device</dt>
-          <dd>{session.deviceId}</dd>
-        </div>
-        <div>
-          <dt>Session expires</dt>
-          <dd>{new Date(session.expiresAt).toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt>Capabilities</dt>
-          <dd>{session.capabilities.length}</dd>
-        </div>
-        <div>
-          <dt>Clinical approval</dt>
-          <dd>
-            {session.capabilities.includes("clinical.approve")
-              ? "Doctor capability"
-              : "Not assigned"}
-          </dd>
-        </div>
-      </dl>
-      <div className="capability-list">
-        <strong>Active capabilities</strong>
-        <span>{session.capabilities.join(" · ")}</span>
-      </div>
-      {session.role === "admin" &&
-      session.capabilities.includes("device.manage") ? (
-        <DevicePanel token={token} />
-      ) : null}
-      {session.capabilities.includes("patient.read") ? (
-        <PatientWorkspace token={token} session={session} />
-      ) : null}
-      {session.capabilities.includes("billing.read") ? (
-        <BillingWorkspace token={token} session={session} />
-      ) : null}
-      {session.capabilities.includes("doctor.profile.read") ? (
-        <DoctorWorkspace token={token} session={session} />
-      ) : null}
-      {session.capabilities.includes("appointment.read") ? (
-        <ClinicalWorkflowWorkspace
-          token={token}
-          canManage={session.capabilities.includes("module.manage")}
-          canWriteClinical={session.capabilities.includes("clinical.write")}
-          canSignClinical={session.capabilities.includes("clinical.sign")}
-          canApproveClinical={session.capabilities.includes("clinical.approve")}
-          canRecordDiagnosis={
-            session.role === "doctor" &&
-            session.capabilities.includes("clinical.write")
-          }
-          canExport={session.capabilities.includes("export.manage")}
-          canSensitiveExport={session.capabilities.includes("export.sensitive")}
-          canRevoke={session.capabilities.includes("export.revoke")}
-        />
-      ) : null}
-      {session.role === "admin" &&
-      session.capabilities.includes("patient.merge") ? (
-        <MergeReviewQueue token={token} />
-      ) : null}
-      <button
-        className="button secondary"
-        type="button"
-        onClick={() => void logout()}
-      >
-        Sign out
-      </button>
-    </section>
+    <AppShell session={session} onLogout={logout}>
+      <section className="workspace-stack" aria-labelledby="session-title">
+        <section id="workspace-overview" className="workspace-overview">
+          <div className="overview-header">
+            <div>
+              <p className="eyebrow">Authenticated session</p>
+              <h2 id="session-title">Welcome, {session.username}</h2>
+            </div>
+            <span className="role-chip">{session.role}</span>
+          </div>
+          <p className="overview-description">
+            Your clinic workspace is ready. Start with today’s queue, search a
+            patient, or open a role-specific operational area.
+          </p>
+          <ErrorMessage message={error} />
+          <dl className="status-grid overview-metrics">
+            <div>
+              <dt>Device</dt>
+              <dd>{session.deviceId}</dd>
+            </div>
+            <div>
+              <dt>Session expires</dt>
+              <dd>{new Date(session.expiresAt).toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Capabilities</dt>
+              <dd>{session.capabilities.length}</dd>
+            </div>
+            <div>
+              <dt>Clinical approval</dt>
+              <dd>
+                {session.capabilities.includes("clinical.approve")
+                  ? "Doctor capability"
+                  : "Not assigned"}
+              </dd>
+            </div>
+          </dl>
+          <div className="capability-list overview-capabilities">
+            <strong>Access profile</strong>
+            <span>{session.capabilities.length} enabled capabilities</span>
+          </div>
+        </section>
+        {session.role === "admin" &&
+        session.capabilities.includes("device.manage") ? (
+          <WorkspaceSection id="workspace-governance">
+            <DevicePanel token={token} />
+          </WorkspaceSection>
+        ) : null}
+        {session.capabilities.includes("patient.read") ? (
+          <WorkspaceSection id="workspace-patients">
+            <PatientWorkspace token={token} session={session} />
+          </WorkspaceSection>
+        ) : null}
+        {session.capabilities.includes("billing.read") ? (
+          <WorkspaceSection id="workspace-billing">
+            <BillingWorkspace token={token} session={session} />
+          </WorkspaceSection>
+        ) : null}
+        {session.capabilities.includes("doctor.profile.read") ? (
+          <WorkspaceSection id="workspace-doctors">
+            <DoctorWorkspace token={token} session={session} />
+          </WorkspaceSection>
+        ) : null}
+        {session.capabilities.includes("appointment.read") ? (
+          <WorkspaceSection id="workspace-care">
+            <ClinicalWorkflowWorkspace
+              token={token}
+              canManage={session.capabilities.includes("module.manage")}
+              canWriteClinical={session.capabilities.includes("clinical.write")}
+              canSignClinical={session.capabilities.includes("clinical.sign")}
+              canApproveClinical={session.capabilities.includes(
+                "clinical.approve",
+              )}
+              canRecordDiagnosis={
+                session.role === "doctor" &&
+                session.capabilities.includes("clinical.write")
+              }
+              canExport={session.capabilities.includes("export.manage")}
+              canSensitiveExport={session.capabilities.includes(
+                "export.sensitive",
+              )}
+              canRevoke={session.capabilities.includes("export.revoke")}
+            />
+          </WorkspaceSection>
+        ) : null}
+        {session.role === "admin" &&
+        session.capabilities.includes("patient.merge") ? (
+          <WorkspaceSection id="workspace-governance">
+            <MergeReviewQueue token={token} />
+          </WorkspaceSection>
+        ) : null}
+      </section>
+    </AppShell>
   );
 }
 
