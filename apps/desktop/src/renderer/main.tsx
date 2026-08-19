@@ -76,11 +76,9 @@ import type {
   RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "@elite/auth";
+import { AppShell } from "./app-shell.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
-import {
-  getTodayAppointmentMetrics,
-  sortAppointmentsByStart,
-} from "./workspace-model.js";
+import { TodayWorkspace } from "./today-workspace.js";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -434,21 +432,6 @@ function formatStatusLabel(
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatRoleLabel(
-  role: SessionSummary["role"],
-  locale: InterfaceLocale,
-): string {
-  if (locale === "ar-EG") {
-    return {
-      admin: "مدير",
-      doctor: "طبيب",
-      nurse: "تمريض",
-      receptionist: "استقبال",
-    }[role];
-  }
-  return role;
 }
 
 function ErrorMessage({
@@ -7193,403 +7176,6 @@ function DoctorWorkspace({
   );
 }
 
-function OverviewToday({
-  token,
-  session,
-  locale,
-}: {
-  token: string;
-  session: SessionSummary;
-  locale: InterfaceLocale;
-}): ReactElement {
-  const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = async (): Promise<void> => {
-    setIsLoading(true);
-    setError(null);
-    const today = new Date();
-    const start = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
-    );
-    const end = addCalendarDays(start, 1);
-    try {
-      const nextAppointments = await window.elite.clinical.listAppointments(
-        token,
-        start.toISOString(),
-        end.toISOString(),
-      );
-      setAppointments(sortAppointmentsByStart(nextAppointments));
-    } catch (reason: unknown) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Unable to load today’s appointments",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void refresh();
-  }, [token]);
-
-  const { waitingCount, completedCount, nextAppointment } =
-    getTodayAppointmentMetrics(appointments);
-  const roleFocus: Record<SessionSummary["role"], string> =
-    locale === "ar-EG"
-      ? {
-          admin: "راجع حالة العيادة وحوكمة الموظفين وعناصر التحكم المعلقة.",
-          doctor: "حافظ على ظهور سياق المريض أثناء متابعة الرعاية اليوم.",
-          nurse:
-            "انقل المرضى من الوصول إلى تجهيز الغرفة مع إبقاء القائمة ظاهرة.",
-          receptionist: "سجّل وصول المريض التالي وعالج تحذيرات الهوية مبكراً.",
-        }
-      : {
-          admin:
-            "Review the clinic’s status, staff governance, and pending controls.",
-          doctor:
-            "Keep today’s patient context visible while you move through care.",
-          nurse:
-            "Move patients from arrival to rooming with the queue in view.",
-          receptionist:
-            "Check in the next patient and resolve identity warnings early.",
-        };
-
-  return (
-    <section id="workspace-overview" className="today-workspace">
-      <div className="today-hero">
-        <div>
-          <p className="eyebrow">{copy(locale, "todayEyebrow")}</p>
-          <h1>
-            {locale === "ar-EG"
-              ? copy(locale, "todayWorkspace")
-              : `Good day, ${session.username}`}
-          </h1>
-          <p className="today-date">
-            {formatLocalizedDate(new Date(), locale, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
-        </div>
-        <div className="today-actions">
-          <button
-            className="button primary"
-            type="button"
-            onClick={() =>
-              document
-                .getElementById("workspace-patients")
-                ?.scrollIntoView({ behavior: "smooth", block: "start" })
-            }
-          >
-            {copy(locale, "findPatient")}
-          </button>
-          <button
-            className="button ghost"
-            type="button"
-            onClick={() => void refresh()}
-            disabled={isLoading}
-          >
-            {isLoading
-              ? copy(locale, "refreshing")
-              : copy(locale, "refreshToday")}
-          </button>
-        </div>
-      </div>
-      <div className="today-metrics" aria-label="Today summary">
-        <div className="today-metric">
-          <span>{copy(locale, "appointments")}</span>
-          <strong>{isLoading ? "—" : appointments.length}</strong>
-          <small>{copy(locale, "scheduledToday")}</small>
-        </div>
-        <div className="today-metric">
-          <span>{copy(locale, "waiting")}</span>
-          <strong>{isLoading ? "—" : waitingCount}</strong>
-          <small>{copy(locale, "arrivedNotCompleted")}</small>
-        </div>
-        <div className="today-metric">
-          <span>{copy(locale, "completed")}</span>
-          <strong>{isLoading ? "—" : completedCount}</strong>
-          <small>{copy(locale, "closedVisits")}</small>
-        </div>
-        <div className="today-metric metric-accent">
-          <span>{copy(locale, "nextPatient")}</span>
-          <strong>
-            {nextAppointment ? (
-              <BidiValue direction="ltr">{nextAppointment.patientId}</BidiValue>
-            ) : (
-              "—"
-            )}
-          </strong>
-          <small>
-            {nextAppointment
-              ? formatLocalizedTime(nextAppointment.scheduledStart, locale)
-              : copy(locale, "noUpcomingVisit")}
-          </small>
-        </div>
-      </div>
-      <div className="today-grid">
-        <section
-          className="today-card"
-          aria-labelledby="today-appointments-title"
-        >
-          <div className="today-card-heading">
-            <div>
-              <p className="eyebrow">{copy(locale, "clinicQueue")}</p>
-              <h2 id="today-appointments-title">
-                {copy(locale, "todaysAppointments")}
-              </h2>
-            </div>
-            <span className="status ok">{copy(locale, "localData")}</span>
-          </div>
-          {error ? <ErrorMessage message={error} /> : null}
-          {isLoading ? (
-            <p className="muted">{copy(locale, "loadingAppointments")}</p>
-          ) : appointments.length === 0 ? (
-            <div className="today-empty-state">
-              <strong>{copy(locale, "noAppointments")}</strong>
-              <p>{copy(locale, "queueDescription")}</p>
-            </div>
-          ) : (
-            <div className="today-appointment-list" aria-live="polite">
-              {appointments.map((appointment) => (
-                <article className="today-appointment-row" key={appointment.id}>
-                  <time dateTime={appointment.scheduledStart}>
-                    {formatLocalizedTime(appointment.scheduledStart, locale)}
-                  </time>
-                  <div className="today-appointment-main">
-                    <strong>
-                      <BidiValue direction="ltr">
-                        {appointment.patientId}
-                      </BidiValue>
-                    </strong>
-                    <span>
-                      {appointment.visitType} · {appointment.durationMinutes}{" "}
-                      min
-                    </span>
-                  </div>
-                  <span
-                    className={`status ${
-                      appointment.status === "completed"
-                        ? "ok"
-                        : appointment.status === "cancelled"
-                          ? "error"
-                          : appointment.status === "arrived"
-                            ? "warn"
-                            : "info"
-                    }`}
-                  >
-                    {formatStatusLabel(appointment.status, locale)}
-                  </span>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        <section
-          className="today-card today-focus-card"
-          aria-labelledby="today-focus-title"
-        >
-          <div className="today-card-heading">
-            <div>
-              <p className="eyebrow">{copy(locale, "yourFocus")}</p>
-              <h2 id="today-focus-title">{copy(locale, "calmNextAction")}</h2>
-            </div>
-            <span className="today-focus-mark" aria-hidden="true">
-              E
-            </span>
-          </div>
-          <p>{roleFocus[session.role]}</p>
-          <div className="today-focus-list">
-            <div>
-              <strong>{copy(locale, "patientIdentityFirst")}</strong>
-              <span>{copy(locale, "patientIdentityFirstDetail")}</span>
-            </div>
-            <div>
-              <strong>{copy(locale, "offlineValid")}</strong>
-              <span>{copy(locale, "offlineValidDetail")}</span>
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-}
-
-interface ShellNavigationItem {
-  id: string;
-  label: InterfaceCopyKey;
-  detail: InterfaceCopyKey;
-  visible: boolean;
-}
-
-function AppShell({
-  session,
-  locale,
-  onLocaleChange,
-  onLogout,
-  children,
-}: {
-  session: SessionSummary;
-  locale: InterfaceLocale;
-  onLocaleChange: (locale: InterfaceLocale) => void;
-  onLogout: () => Promise<void>;
-  children: ReactElement;
-}): ReactElement {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [activeSection, setActiveSection] = useState("workspace-overview");
-  const navigation = (
-    [
-      {
-        id: "workspace-overview",
-        label: "overview",
-        detail: "overviewDetail",
-        visible: true,
-      },
-      {
-        id: "workspace-patients",
-        label: "patients",
-        detail: "patientsDetail",
-        visible: session.capabilities.includes("patient.read"),
-      },
-      {
-        id: "workspace-care",
-        label: "careSchedule",
-        detail: "careScheduleDetail",
-        visible: session.capabilities.includes("appointment.read"),
-      },
-      {
-        id: "workspace-billing",
-        label: "billing",
-        detail: "billingDetail",
-        visible: session.capabilities.includes("billing.read"),
-      },
-      {
-        id: "workspace-doctors",
-        label: "doctors",
-        detail: "doctorsDetail",
-        visible: session.capabilities.includes("doctor.profile.read"),
-      },
-      {
-        id: "workspace-governance",
-        label: "governance",
-        detail: "governanceDetail",
-        visible:
-          session.capabilities.includes("export.manage") ||
-          session.capabilities.includes("device.manage"),
-      },
-    ] as ShellNavigationItem[]
-  ).filter((item) => item.visible);
-
-  return (
-    <div
-      className={`app-shell${isCollapsed ? " is-collapsed" : ""}`}
-      dir={localeDirection(locale)}
-      lang={locale}
-    >
-      <aside className="app-sidebar" aria-label="Primary navigation">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">
-            E
-          </span>
-          <span className="brand-copy">
-            <strong>{copy(locale, "appName")}</strong>
-            <small>ايليت · Cairo branch</small>
-          </span>
-        </div>
-        <button
-          className="sidebar-toggle"
-          type="button"
-          aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
-          aria-expanded={!isCollapsed}
-          onClick={() => setIsCollapsed((current) => !current)}
-        >
-          <span aria-hidden="true">{isCollapsed ? "→" : "←"}</span>
-          <span className="visually-hidden">
-            {isCollapsed ? "Expand navigation" : "Collapse navigation"}
-          </span>
-        </button>
-        <nav className="sidebar-nav">
-          <p className="sidebar-label">Workspace</p>
-          {navigation.map((item) => (
-            <a
-              className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
-              href={`#${item.id}`}
-              key={item.id}
-              aria-current={activeSection === item.id ? "page" : undefined}
-              onClick={() => setActiveSection(item.id)}
-            >
-              <span className="sidebar-link-icon" aria-hidden="true">
-                {copy(locale, item.label).slice(0, 1)}
-              </span>
-              <span className="sidebar-link-copy">
-                <strong>{copy(locale, item.label)}</strong>
-                <small>{copy(locale, item.detail)}</small>
-              </span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <span className="local-status-dot" aria-hidden="true" />
-          <span className="sidebar-link-copy">
-            <strong>{copy(locale, "workingLocally")}</strong>
-            <small>{copy(locale, "encryptedStore")}</small>
-          </span>
-        </div>
-      </aside>
-      <div className="app-main">
-        <header className="app-topbar">
-          <div className="topbar-heading">
-            <span className="topbar-kicker">{copy(locale, "appName")}</span>
-            <strong>{copy(locale, "clinicWorkspace")}</strong>
-          </div>
-          <div className="topbar-actions">
-            <label className="locale-control">
-              <span className="visually-hidden">
-                {copy(locale, "interfaceLanguage")}
-              </span>
-              <select
-                aria-label={copy(locale, "interfaceLanguage")}
-                value={locale}
-                onChange={(event) =>
-                  onLocaleChange(event.target.value as InterfaceLocale)
-                }
-              >
-                <option value="en-EG">English</option>
-                <option value="ar-EG">العربية</option>
-              </select>
-            </label>
-            <span className="topbar-status">
-              <span className="local-status-dot" aria-hidden="true" />
-              {copy(locale, "localFirst")}
-            </span>
-            <span className="role-chip">
-              {formatRoleLabel(session.role, locale)}
-            </span>
-            <button
-              className="button ghost small"
-              type="button"
-              onClick={() => void onLogout()}
-            >
-              {copy(locale, "signOut")}
-            </button>
-          </div>
-        </header>
-        <main className="app-content" aria-label="Clinic workspace">
-          {children}
-        </main>
-      </div>
-    </div>
-  );
-}
-
 function WorkspaceSection({
   id,
   children,
@@ -7631,12 +7217,87 @@ function AuthenticatedView({
     <AppShell
       session={session}
       locale={locale}
+      labels={{
+        appName: copy(locale, "appName"),
+        clinicWorkspace: copy(locale, "clinicWorkspace"),
+        localFirst: copy(locale, "localFirst"),
+        workingLocally: copy(locale, "workingLocally"),
+        encryptedStore: copy(locale, "encryptedStore"),
+        interfaceLanguage: copy(locale, "interfaceLanguage"),
+        signOut: copy(locale, "signOut"),
+        workspaceLabel: locale === "ar-EG" ? "مساحة العمل" : "Workspace",
+        primaryNavigationLabel:
+          locale === "ar-EG" ? "التنقل الرئيسي" : "Primary navigation",
+        expandNavigation:
+          locale === "ar-EG" ? "توسيع التنقل" : "Expand navigation",
+        collapseNavigation:
+          locale === "ar-EG" ? "طيّ التنقل" : "Collapse navigation",
+        overview: copy(locale, "overview"),
+        overviewDetail: copy(locale, "overviewDetail"),
+        patients: copy(locale, "patients"),
+        patientsDetail: copy(locale, "patientsDetail"),
+        careSchedule: copy(locale, "careSchedule"),
+        careScheduleDetail: copy(locale, "careScheduleDetail"),
+        billing: copy(locale, "billing"),
+        billingDetail: copy(locale, "billingDetail"),
+        doctors: copy(locale, "doctors"),
+        doctorsDetail: copy(locale, "doctorsDetail"),
+        governance: copy(locale, "governance"),
+        governanceDetail: copy(locale, "governanceDetail"),
+      }}
       onLocaleChange={onLocaleChange}
       onLogout={logout}
     >
       <section className="workspace-stack" aria-label="Clinic workspaces">
         <ErrorMessage message={error} />
-        <OverviewToday token={token} session={session} locale={locale} />
+        <TodayWorkspace
+          token={token}
+          session={session}
+          locale={locale}
+          labels={{
+            todayEyebrow: copy(locale, "todayEyebrow"),
+            todayWorkspace: copy(locale, "todayWorkspace"),
+            greeting: locale === "ar-EG" ? "" : "Good day",
+            findPatient: copy(locale, "findPatient"),
+            refreshToday: copy(locale, "refreshToday"),
+            refreshing: copy(locale, "refreshing"),
+            appointments: copy(locale, "appointments"),
+            waiting: copy(locale, "waiting"),
+            completed: copy(locale, "completed"),
+            nextPatient: copy(locale, "nextPatient"),
+            scheduledToday: copy(locale, "scheduledToday"),
+            arrivedNotCompleted: copy(locale, "arrivedNotCompleted"),
+            closedVisits: copy(locale, "closedVisits"),
+            noUpcomingVisit: copy(locale, "noUpcomingVisit"),
+            clinicQueue: copy(locale, "clinicQueue"),
+            todaysAppointments: copy(locale, "todaysAppointments"),
+            localData: copy(locale, "localData"),
+            loadingAppointments: copy(locale, "loadingAppointments"),
+            noAppointments: copy(locale, "noAppointments"),
+            queueDescription: copy(locale, "queueDescription"),
+            yourFocus: copy(locale, "yourFocus"),
+            calmNextAction: copy(locale, "calmNextAction"),
+            patientIdentityFirst: copy(locale, "patientIdentityFirst"),
+            patientIdentityFirstDetail: copy(
+              locale,
+              "patientIdentityFirstDetail",
+            ),
+            offlineValid: copy(locale, "offlineValid"),
+            offlineValidDetail: copy(locale, "offlineValidDetail"),
+            minuteShort: locale === "ar-EG" ? "دقيقة" : "min",
+            unableToLoadAppointments: "Unable to load today’s appointments",
+          }}
+          formatDate={(value, options) =>
+            formatLocalizedDate(value, locale, options)
+          }
+          formatTime={(value) => formatLocalizedTime(value, locale)}
+          formatStatusLabel={(value) => formatStatusLabel(value, locale)}
+          onFindPatient={() =>
+            document
+              .getElementById("workspace-patients")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        />
         {session.role === "admin" &&
         session.capabilities.includes("device.manage") ? (
           <WorkspaceSection id="workspace-governance">
