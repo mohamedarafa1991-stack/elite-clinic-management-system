@@ -44,6 +44,18 @@
       "deviceIdentityFingerprint": "sanitized-or-approved-label",
       "cameraPresent": true,
       "notes": "Use a sanitized hardware label unless the clinic approves the identifier."
+    },
+    {
+      "label": "android-second-sync-device",
+      "manufacturerModel": "replace",
+      "apiLevel": 29,
+      "securityPatchLevel": "replace",
+      "appVersion": "replace",
+      "apkSha256": "replace",
+      "enrollmentLabel": "replace",
+      "deviceIdentityFingerprint": "sanitized-or-approved-label",
+      "cameraPresent": true,
+      "notes": "Required for fairness, concurrent sync, revocation, and re-enrollment scenarios."
     }
   ],
   "scenarios": [
@@ -58,11 +70,81 @@
       "defectIds": []
     },
     {
+      "id": "WIN-INSTALL-002",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Packaged upgrade preserves synthetic records, migration integrity, audit history, and the approved retained-data policy.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-INSTALL-003",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Uninstall and reinstall behavior follows the approved retention policy without losing protected encrypted data or native-module compatibility.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-DB-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "The packaged Hub reopens the encrypted database with the approved OS-backed key and fails closed for an invalid or missing key.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-SEC-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "IPC, navigation, logging, local-storage, and privilege boundaries fail closed without exposing sensitive data.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-LAN-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "The Windows Hub LAN endpoint, firewall rule, TLS certificate, and enrolled-device connectivity operate only through the approved trust boundary.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-BACKUP-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Admin-controlled encrypted removable-media backup produces an integrity manifest without plaintext database, vault, or key artifacts.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
       "id": "WIN-RESTORE-001",
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Verified encrypted backup restores to a separate Hub directory with matching migration, counts, and vault hashes.",
+      "expected": "A replacement Hub restores the encrypted backup with matching schema, counts, hashes, vault contents, and Admin approval.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-RECOVERY-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "An interrupted upgrade rolls back without losing patient sequence, audit trail, document metadata, catalog version, or encrypted data.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -72,7 +154,37 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Both Android device classes install the approved APK and complete Admin-approved enrollment.",
+      "expected": "The approved APK installs on floor and current devices and completes Admin-approved enrollment with correct device binding and scopes.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-BOOT-002",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "The app starts and operates according to offline policy without internet or LAN, and inactivity lock behaves as configured.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-BOOT-003",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "The configured thirty-day offline-access boundary expires correctly and follows the documented recovery or re-enrollment path.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-KEY-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Unavailable or invalid Android Keystore identity material fails closed without silently creating a replacement identity or exposing data.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -82,7 +194,7 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "SQLCipher Room opens and migrations 1 through 6 preserve synthetic data after process death.",
+      "expected": "SQLCipher Room opens and migrations 1 through 6 preserve synthetic data without destructive fallback, including after process death.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -92,7 +204,17 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "All six approved synchronization scopes negotiate, verify, and apply the minimum-necessary payload.",
+      "expected": "All six approved synchronization scopes negotiate, verify, and apply minimum-necessary payloads; unauthorized scopes are rejected.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-SYNC-002",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Two Android devices demonstrate durable device-scoped claims, fairness, conflict recovery, and stale-claim recovery without duplicate application.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -102,27 +224,17 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Wrong trust anchors and permanent security failures fail closed; transient outage recovers with retry-now and safe sync health.",
+      "expected": "Wrong trust anchors and permanent security failures fail closed; transient outage recovers through retry-now and safe sync health.",
       "observed": null,
       "evidence": [],
       "defectIds": []
     },
     {
-      "id": "AND-DOC-001",
+      "id": "AND-SYNC-004",
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Authorized Android view/upload works through the Hub vault; unauthorized roles are denied; Android persistence inventory is clean.",
-      "observed": null,
-      "evidence": [],
-      "defectIds": []
-    },
-    {
-      "id": "AND-DOC-002",
-      "status": "pending",
-      "startedAt": null,
-      "completedAt": null,
-      "expected": "FLAG_SECURE and viewer cleanup behavior are observed for screenshots, recents, recording, rotation, and process death.",
+      "expected": "Process death during synchronization recovers without losing queued work, duplicating claims, or weakening session security.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -132,7 +244,37 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Android receives and validates a minimized EGP billing summary without enabling Android billing writes.",
+      "expected": "Android receives and validates only the minimized EGP billing summary, rejects malformed payloads, and cannot perform unauthorized billing writes.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DOC-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Authorized Android view/upload works through the Hub vault, unauthorized roles are denied, and Android persistence inventory is clean.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DOC-002",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "FLAG_SECURE and viewer cleanup are observed for screenshots, recents, recording, rotation, cancellation, and process death.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DOC-003",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Picker MIME, size, cancellation, unreadable-provider, and camera-optional behavior pass on the supported device classes.",
       "observed": null,
       "evidence": [],
       "defectIds": []
@@ -142,7 +284,7 @@
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
-      "expected": "Signed APK installation, upgrade, rollback, checksum/signature verification, and device revocation/re-enrollment pass.",
+      "expected": "Signed APK checksum/signature, installation, upgrade, rollback, device revocation, and re-enrollment pass.",
       "observed": null,
       "evidence": [],
       "defectIds": []

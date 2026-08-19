@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This document is the execution order for the first physical validation rehearsal. It complements the detailed [workstation and device validation matrix](workstation-and-device-validation-matrix.md), the [operator checklist](templates/physical-device-validation-checklist.md), and the [synthetic recovery runbook](synthetic-pilot-rehearsal-and-recovery-runbook.md). The order is deliberately conservative: later synchronization and recovery tests must not begin until the local package, encryption, and trust boundaries have passed.
+This document is the execution order for the first physical validation rehearsal. It complements the detailed [workstation and device validation matrix](workstation-and-device-validation-matrix.md), the [operator checklist](templates/physical-device-validation-checklist.md), the [operator command sheet](physical-pilot-operator-commands.md), and the [synthetic recovery runbook](synthetic-pilot-rehearsal-and-recovery-runbook.md). The order is deliberately conservative: later synchronization and recovery tests must not begin until the local package, encryption, and trust boundaries have passed.
 
 > **Stop rule:** A failed or unavailable prerequisite leaves the dependent gates `blocked` or `pending`. Do not convert a source-level assertion, a sandbox result, or an operator assumption into physical-device evidence.
 
@@ -42,6 +42,14 @@ pnpm pilot:evidence -- --clean --require-artifacts
 
 The evidence-pack command writes to the ignored `artifacts/pilot-evidence-pack/` directory. It records the repository commit, runtime versions, report hashes, available `app.asar` and APK hashes, and copies the approved evidence templates. It does not copy plaintext databases, plaintext documents, passwords, or OS key material. The manifest must have `syntheticOnly: true` and `pendingHardwareSignoff: true` before the operator begins.
 
+After copying the record template, create the run-specific JSON record and validate its structure before using it:
+
+```bash
+pnpm pilot:validate-record -- --record artifacts/pilot-evidence-pack/physical-device-validation-record.json --output artifacts/pilot-evidence-pack/physical-record-validation.json
+```
+
+The validator requires all 23 physical scenario IDs, rejects duplicate or unknown scenarios, requires evidence and timestamps for passed scenarios, requires defect references for failed scenarios, and requires two Admin labels before an approved record can be accepted. Use `--allow-template` only to check the untouched template; it never constitutes pilot evidence.
+
 ## Execution sequence
 
 | Phase                           | Gates                                                                             | Required result before continuing                                                                                                                                                                  | Stop conditions                                                                                                                                                             |
@@ -58,11 +66,19 @@ The evidence-pack command writes to the ignored `artifacts/pilot-evidence-pack/`
 
 ## Evidence handling
 
-The operator creates one validation record before Phase 1 and updates it after each phase. Every scenario must include the commit, artifact hashes, device labels, API/security-patch metadata, trust-anchor version, scenario result, evidence paths, and unresolved blockers. Use sanitized labels rather than personal device identifiers whenever possible.
+The operator creates one validation record containing all 23 matrix scenarios before Phase 1 and updates it after each phase. Every scenario must include the commit, artifact hashes, device labels, API/security-patch metadata, trust-anchor version, scenario result, evidence paths, and unresolved blockers. Use sanitized labels rather than personal device identifiers whenever possible. Run `pnpm pilot:validate-record` after every phase update and before either Admin signs the record.
 
 A failed scenario receives `failed` and a defect reference. An unavailable device, missing signer, unavailable recovery media, or absent approved key procedure receives `blocked`, not `passed`. A scenario may be `not-applicable` only when an Admin records the reason and confirms that it does not affect the release scope.
 
-At close-out, hash the completed record and checklist, preserve only synthetic evidence, remove temporary plaintext files, and keep the final pack read-only. Update the unified readiness report only after the evidence has been reviewed; do not manually edit a gate from `pending` to `passed` without its corresponding record.
+At close-out, hash the completed record and checklist, preserve only synthetic evidence, remove temporary plaintext files, and keep the final pack read-only. Validate the final record, then generate a status-aware readiness report from it:
+
+```bash
+ELITE_PHYSICAL_RECORD=artifacts/pilot-evidence-pack/physical-device-validation-record.json \
+ELITE_READINESS_REPORT=artifacts/release-readiness/physical-signoff-gates.json \
+pnpm release:readiness
+```
+
+Use `pnpm release:readiness -- --fail-on-blocked` for the final strict decision after every required scenario is passed or formally approved as not applicable. Do not manually edit a gate from `pending` to `passed` without its corresponding record.
 
 ## Final release decision
 

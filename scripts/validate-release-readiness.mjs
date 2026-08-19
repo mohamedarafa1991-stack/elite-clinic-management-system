@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PHYSICAL_GATES } from "./physical-gate-catalog.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const reportArgument =
@@ -12,139 +13,8 @@ const reportPath = resolve(root, reportArgument);
 const failOnBlocked = process.argv.includes("--fail-on-blocked");
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const results = [];
-const physicalGates = [
-  {
-    id: "WIN-INSTALL-001",
-    status: "pending",
-    detail: "Requires packaged Windows 10/11 clean-install evidence.",
-  },
-  {
-    id: "WIN-INSTALL-002",
-    status: "pending",
-    detail: "Requires packaged Windows upgrade and migration evidence.",
-  },
-  {
-    id: "WIN-INSTALL-003",
-    status: "pending",
-    detail:
-      "Requires uninstall/reinstall evidence preserving encrypted data, audit history, and native-module compatibility.",
-  },
-  {
-    id: "WIN-DB-001",
-    status: "pending",
-    detail: "Requires production OS-backed key-provider behavior on Windows.",
-  },
-  {
-    id: "WIN-SEC-001",
-    status: "pending",
-    detail:
-      "Requires Windows security-boundary evidence for least-privilege operation, redacted logs, and protected local storage.",
-  },
-  {
-    id: "WIN-BACKUP-001",
-    status: "pending",
-    detail:
-      "Requires Admin-controlled encrypted removable-media backup evidence.",
-  },
-  {
-    id: "WIN-RESTORE-001",
-    status: "pending",
-    detail:
-      "Requires replacement-Hub restore with the approved production key.",
-  },
-  {
-    id: "WIN-RECOVERY-001",
-    status: "pending",
-    detail: "Requires interrupted-upgrade rollback evidence on Windows.",
-  },
-  {
-    id: "AND-BOOT-001",
-    status: "pending",
-    detail:
-      "Requires Android floor/current device installation and enrollment evidence.",
-  },
-  {
-    id: "AND-BOOT-002",
-    status: "pending",
-    detail:
-      "Requires offline start, inactivity-lock, and no-cloud-dependency evidence.",
-  },
-  {
-    id: "AND-BOOT-003",
-    status: "pending",
-    detail:
-      "Requires configured thirty-day offline-access expiry and documented recovery evidence.",
-  },
-  {
-    id: "AND-KEY-001",
-    status: "pending",
-    detail:
-      "Requires invalid or unavailable Keystore identity-key failure-closed and recovery evidence.",
-  },
-  {
-    id: "AND-DB-001",
-    status: "pending",
-    detail:
-      "Requires SQLCipher Room startup and migration evidence on hardware.",
-  },
-  {
-    id: "WIN-LAN-001",
-    status: "pending",
-    detail:
-      "Requires Windows Hub LAN discovery, firewall, TLS endpoint, and enrolled-device connectivity evidence.",
-  },
-  {
-    id: "AND-SYNC-001",
-    status: "pending",
-    detail:
-      "Requires six-scope LAN synchronization with a Windows Hub and device.",
-  },
-  {
-    id: "AND-SYNC-002",
-    status: "pending",
-    detail: "Requires two-device durable-claim and fairness evidence.",
-  },
-  {
-    id: "AND-SYNC-003",
-    status: "pending",
-    detail:
-      "Requires Android TLS failure, retry-now, and Hub restart evidence.",
-  },
-  {
-    id: "AND-SYNC-004",
-    status: "pending",
-    detail: "Requires process-death recovery evidence on Android hardware.",
-  },
-  {
-    id: "AND-DOC-001",
-    status: "pending",
-    detail:
-      "Requires LAN document upload/view and Android persistence inventory.",
-  },
-  {
-    id: "AND-DOC-002",
-    status: "pending",
-    detail:
-      "Requires FLAG_SECURE, recents, recording, and viewer cleanup observation.",
-  },
-  {
-    id: "AND-DOC-003",
-    status: "pending",
-    detail: "Requires picker MIME/size/camera-optional behavior on devices.",
-  },
-  {
-    id: "AND-BILL-001",
-    status: "pending",
-    detail:
-      "Requires Android billing-summary projection and malformed-payload evidence.",
-  },
-  {
-    id: "AND-RELEASE-001",
-    status: "pending",
-    detail:
-      "Requires signed APK install, upgrade, rollback, and revocation evidence.",
-  },
-];
+const physicalRecordArgument = process.env["ELITE_PHYSICAL_RECORD"];
+const physicalGates = PHYSICAL_GATES.map((gate) => ({ ...gate }));
 
 function hash(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -205,6 +75,49 @@ function writeReport(summary) {
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
   console.log(`RELEASE_READINESS_REPORT: ${reportPath}`);
+}
+
+function applyPhysicalRecord() {
+  if (!physicalRecordArgument) return;
+  const physicalRecordPath = resolve(root, physicalRecordArgument);
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        join(root, "scripts/validate-physical-device-record.mjs"),
+        "--record",
+        physicalRecordPath,
+      ],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const physicalRecord = JSON.parse(readFileSync(physicalRecordPath, "utf8"));
+    if (
+      physicalRecord.syntheticOnly !== true ||
+      !Array.isArray(physicalRecord.scenarios)
+    ) {
+      throw new Error("physical record must be syntheticOnly with scenarios");
+    }
+    const scenarios = new Map(
+      physicalRecord.scenarios.map((scenario) => [scenario.id, scenario]),
+    );
+    for (const gate of physicalGates) {
+      const scenario = scenarios.get(gate.id);
+      if (!scenario) throw new Error(`missing scenario ${gate.id}`);
+      gate.status = scenario.status;
+      gate.detail = `${gate.detail} Observed record status: ${scenario.status}.`;
+    }
+    record(
+      "LOCAL-PHYSICAL-RECORD-001",
+      "passed",
+      `Validated and applied physical record ${physicalRecordArgument}.`,
+    );
+  } catch (error) {
+    record(
+      "LOCAL-PHYSICAL-RECORD-001",
+      "failed",
+      `Physical record validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const packageDirectory =
@@ -273,6 +186,7 @@ run(
   "LOCAL-GIT-001",
   "Git whitespace validation passes.",
 );
+applyPhysicalRecord();
 
 const failedLocal = results.filter((result) => result.status === "failed");
 const blockedLocal = results.filter((result) => result.status === "blocked");
@@ -298,12 +212,17 @@ const summary = {
     localFailed: failedLocal.length,
     physicalPending: physicalGates.filter((gate) => gate.status === "pending")
       .length,
+    physicalBlocked: physicalGates.filter((gate) => gate.status === "blocked")
+      .length,
+    physicalFailed: physicalGates.filter((gate) => gate.status === "failed")
+      .length,
   },
   overallStatus:
     failedLocal.length > 0
       ? "failed"
-      : physicalGates.some((gate) => gate.status === "pending") ||
-          blockedLocal.length > 0
+      : physicalGates.some((gate) =>
+            ["pending", "blocked", "failed"].includes(gate.status),
+          ) || blockedLocal.length > 0
         ? "blocked"
         : "passed",
   reportContentSha256: null,
@@ -313,7 +232,11 @@ writeReport(summary);
 
 if (
   failedLocal.length > 0 ||
-  (failOnBlocked && (blockedLocal.length > 0 || physicalGates.length > 0))
+  (failOnBlocked &&
+    (blockedLocal.length > 0 ||
+      physicalGates.some((gate) =>
+        ["pending", "blocked", "failed"].includes(gate.status),
+      )))
 ) {
   process.exitCode = 1;
 } else {

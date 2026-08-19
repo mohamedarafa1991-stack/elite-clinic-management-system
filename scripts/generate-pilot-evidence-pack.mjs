@@ -12,6 +12,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PHYSICAL_GATE_IDS } from "./physical-gate-catalog.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsRoot = join(root, "artifacts");
@@ -20,8 +21,18 @@ const outputArgument = process.env["ELITE_EVIDENCE_OUTPUT"] ?? defaultOutput;
 const outputPath = resolve(root, outputArgument);
 const requireArtifacts = process.argv.includes("--require-artifacts");
 const cleanOutput = process.argv.includes("--clean");
+const allowDevelopmentWorktree =
+  process.env["ELITE_EVIDENCE_ALLOW_WORKTREE"] === "true";
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const failures = [];
+const physicalRecordTemplatePath = join(
+  root,
+  "docs/templates/physical-device-validation-record.json",
+);
+const validationMatrixPath = join(
+  root,
+  "docs/workstation-and-device-validation-matrix.md",
+);
 
 function repositoryRelative(path) {
   return relative(root, path).replaceAll("\\", "/");
@@ -109,9 +120,7 @@ const preflight = [
   ),
   check(
     "PREFLIGHT-005",
-    existsSync(
-      join(root, "docs/templates/physical-device-validation-record.json"),
-    ),
+    existsSync(physicalRecordTemplatePath),
     "Physical-device JSON evidence template is present",
   ),
   check(
@@ -123,13 +132,56 @@ const preflight = [
   ),
   check(
     "PREFLIGHT-007",
-    existsSync(join(root, "docs/workstation-and-device-validation-matrix.md")),
+    existsSync(validationMatrixPath),
     "Workstation/device validation matrix is present",
   ),
   check(
     "PREFLIGHT-008",
     existsSync(join(root, "scripts/validate-release-readiness.mjs")),
     "Unified release-readiness harness is present",
+  ),
+  check(
+    "PREFLIGHT-009",
+    (() => {
+      try {
+        const template = JSON.parse(
+          readFileSync(physicalRecordTemplatePath, "utf8"),
+        );
+        const ids = Array.isArray(template.scenarios)
+          ? template.scenarios.map((scenario) => scenario?.id)
+          : [];
+        return (
+          ids.length === PHYSICAL_GATE_IDS.length &&
+          ids.every((id, index) => id === PHYSICAL_GATE_IDS[index])
+        );
+      } catch {
+        return false;
+      }
+    })(),
+    `Physical-device record template contains all ${PHYSICAL_GATE_IDS.length} canonical scenarios`,
+  ),
+  check(
+    "PREFLIGHT-010",
+    (() => {
+      try {
+        const matrix = readFileSync(validationMatrixPath, "utf8");
+        return PHYSICAL_GATE_IDS.every((id) => matrix.includes(`\`${id}\``));
+      } catch {
+        return false;
+      }
+    })(),
+    `Validation matrix contains all ${PHYSICAL_GATE_IDS.length} canonical scenarios`,
+  ),
+  check(
+    "PREFLIGHT-011",
+    allowDevelopmentWorktree ||
+      worktreeStatus
+        .split("\n")
+        .filter(Boolean)
+        .every((line) => line.startsWith("?? .github/")),
+    allowDevelopmentWorktree
+      ? "Development worktree explicitly allowed for local evidence-pack verification"
+      : "No unexpected source changes are present; protected local .github/ is the only allowed worktree exception",
   ),
 ];
 
@@ -202,10 +254,7 @@ for (const [source, destination] of [
     join(root, "docs/templates/physical-device-validation-checklist.md"),
     "physical-device-validation-checklist.md",
   ],
-  [
-    join(root, "docs/workstation-and-device-validation-matrix.md"),
-    "workstation-and-device-validation-matrix.md",
-  ],
+  [validationMatrixPath, "workstation-and-device-validation-matrix.md"],
 ].filter(([source]) => source)) {
   const copied = copyApprovedFile(source, destination);
   if (copied) copiedFiles.push(copied);

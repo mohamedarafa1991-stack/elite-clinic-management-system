@@ -31,6 +31,7 @@
     "android:release-check": "pnpm android:unit && pnpm android:lint && pnpm android:assemble && pnpm android:verify -- --artifacts",
     "pilot:rehearsal": "pnpm build:packages && node scripts/synthetic-pilot-rehearsal.mjs",
     "pilot:evidence": "node scripts/generate-pilot-evidence-pack.mjs",
+    "pilot:validate-record": "node scripts/validate-physical-device-record.mjs",
     "release:readiness": "node scripts/validate-release-readiness.mjs",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"
