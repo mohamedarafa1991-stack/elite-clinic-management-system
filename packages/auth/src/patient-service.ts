@@ -67,28 +67,59 @@ export interface PatientSearchFilters {
   limit?: number;
 }
 
+export const patientSearchFiltersSchema = z
+  .object({
+    query: z.string().trim().max(160).optional(),
+    includeArchived: z.boolean().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  })
+  .transform((value): PatientSearchFilters => ({
+    ...(value.query !== undefined ? { query: value.query } : {}),
+    ...(value.includeArchived !== undefined
+      ? { includeArchived: value.includeArchived }
+      : {}),
+    ...(value.limit !== undefined ? { limit: value.limit } : {}),
+  }));
+
 export interface PatientIdentityServiceOptions {
   now?: () => string;
 }
 
 const SCORE_THRESHOLDS = { high: 60, possible: 35 } as const;
-const relatedPersonInputSchema = z.object({
-  displayNameEn: z.string().trim().min(1).max(160),
-  displayNameAr: z.string().trim().max(160).optional(),
-  relationship: z.string().trim().min(1).max(80),
-  phoneNumbers: z.array(z.string().trim().min(3).max(32)).min(1).max(10),
-  nationalId: z.string().trim().max(64).optional(),
-  isGuardian: z.boolean(),
-  isAuthorizedToConsent: z.boolean(),
-  isAuthorizedToContact: z.boolean(),
-  verificationStatus: z
-    .enum(["unverified", "verified", "rejected"])
-    .default("unverified"),
-  preferredContactMethod: z
-    .enum(["phone", "sms", "whatsapp", "email", "none"])
-    .optional(),
-});
-const relatedPersonLinkInputSchema = z.object({
+export const relatedPersonInputSchema = z
+  .object({
+    displayNameEn: z.string().trim().min(1).max(160),
+    displayNameAr: z.string().trim().max(160).optional(),
+    relationship: z.string().trim().min(1).max(80),
+    phoneNumbers: z.array(z.string().trim().min(3).max(32)).min(1).max(10),
+    nationalId: z.string().trim().max(64).optional(),
+    isGuardian: z.boolean(),
+    isAuthorizedToConsent: z.boolean(),
+    isAuthorizedToContact: z.boolean(),
+    verificationStatus: z
+      .enum(["unverified", "verified", "rejected"])
+      .default("unverified"),
+    preferredContactMethod: z
+      .enum(["phone", "sms", "whatsapp", "email", "none"])
+      .optional(),
+  })
+  .transform((value): RelatedPersonInput => ({
+    displayNameEn: value.displayNameEn,
+    ...(value.displayNameAr !== undefined
+      ? { displayNameAr: value.displayNameAr }
+      : {}),
+    relationship: value.relationship,
+    phoneNumbers: value.phoneNumbers,
+    ...(value.nationalId !== undefined ? { nationalId: value.nationalId } : {}),
+    isGuardian: value.isGuardian,
+    isAuthorizedToConsent: value.isAuthorizedToConsent,
+    isAuthorizedToContact: value.isAuthorizedToContact,
+    verificationStatus: value.verificationStatus,
+    ...(value.preferredContactMethod !== undefined
+      ? { preferredContactMethod: value.preferredContactMethod }
+      : {}),
+  }));
+export const relatedPersonLinkInputSchema = z.object({
   relationshipRole: z.string().trim().min(1).max(80),
   isPrimary: z.boolean(),
   consentAuthority: z.enum(["none", "inform", "consent"]),

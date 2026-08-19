@@ -28,19 +28,19 @@ import {
 import type { EliteDatabase } from "@elite/database";
 import { requireCapability, type SessionContext } from "./index.js";
 
-const specialtyInputSchema = z.object({
+export const specialtyInputSchema = z.object({
   code: z.string().trim().min(1).max(40),
   nameEn: z.string().trim().min(1).max(160),
   nameAr: z.string().trim().max(160).optional(),
   sortOrder: z.number().int().default(0),
 });
-const departmentInputSchema = z.object({
+export const departmentInputSchema = z.object({
   specialtyId: z.string().min(8).max(128),
   code: z.string().trim().min(1).max(40),
   nameEn: z.string().trim().min(1).max(160),
   nameAr: z.string().trim().max(160).optional(),
 });
-const serviceInputSchema = z.object({
+export const serviceInputSchema = z.object({
   departmentId: z.string().min(8).max(128),
   code: z.string().trim().min(1).max(40),
   nameEn: z.string().trim().min(1).max(160),

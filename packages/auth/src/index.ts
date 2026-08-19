@@ -800,8 +800,18 @@ export type {
   RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "./patient-service.js";
+export {
+  patientSearchFiltersSchema,
+  relatedPersonInputSchema,
+  relatedPersonLinkInputSchema,
+} from "./patient-service.js";
 
 export { ClinicalWorkflowService } from "./clinical-service.js";
+export {
+  departmentInputSchema,
+  serviceInputSchema,
+  specialtyInputSchema,
+} from "./clinical-service.js";
 export { BillingService } from "./billing-service.js";
 export {
   DoctorProfileService,

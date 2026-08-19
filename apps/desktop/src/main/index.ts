@@ -16,6 +16,15 @@ import {
   hashExportPayload,
   verifyExportPackage,
   requireCapability,
+  bootstrapInputSchema,
+  departmentInputSchema,
+  enrollmentInputSchema,
+  loginInputSchema,
+  patientSearchFiltersSchema,
+  relatedPersonInputSchema,
+  relatedPersonLinkInputSchema,
+  serviceInputSchema,
+  specialtyInputSchema,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import {
@@ -24,6 +33,7 @@ import {
   dialog,
   ipcMain,
   safeStorage,
+  type IpcMainInvokeEvent,
   session,
 } from "electron";
 import { dirname, join } from "node:path";
@@ -38,15 +48,57 @@ import {
 } from "./lan-sync-status.js";
 import type { LanSyncStatus } from "../preload/index.js";
 import {
+  appointmentCreateInputSchema,
+  appointmentStatusUpdateSchema,
+  billingInvoiceCreateInputSchema,
+  billingPackageInputSchema,
+  billingPaymentInputSchema,
+  billingRefundInputSchema,
+  departmentSchema,
+  diagnosisInputSchema,
+  doctorDocumentUploadInputSchema,
+  doctorDocumentViewRequestSchema,
+  doctorProfileUpdateInputSchema,
+  encounterAmendmentInputSchema,
+  encounterInputSchema,
+  enrollmentAcknowledgmentSchema,
+  enrollmentChallengeCreateInputSchema,
+  enrollmentDeviceRequestSchema,
+  exportConsentEvidenceCreateInputSchema,
+  exportDisclosureDecisionSchema,
+  exportDisclosureRequestSchema,
   exportPackageSchema,
+  exportRecipientCreateInputSchema,
+  exportRegistryListInputSchema,
+  exportRegistryTransitionInputSchema,
+  exportSigningKeyRecoveryBundleSchema,
+  exportVerificationInputSchema,
+  fhirProfileBundleSchema,
+  icd10CodeInputSchema,
+  medicalHistoryInputSchema,
+  orgSettingsInputSchema,
   patientExportInputSchema,
+  patientMergeFieldDecisionsSchema,
+  patientMergeRequestSchema,
+  patientRegistrationInputSchema,
+  patientRelationLinkInputSchema,
+  patientUpdateInputSchema,
+  projectionSnapshotInputSchema,
+  scheduleExceptionInputSchema,
+  scheduleInputSchema,
   signedExportManifestSchema,
+  syncCapabilityRequestSchema,
+  syncDeltaRequestSchema,
+  syncDeviceRegistrationInputSchema,
+  syncOutboxAcknowledgmentSchema,
+  syncOutboxInputSchema,
   type ExportPackage,
   type PatientExportInput,
 } from "@elite/contracts";
 import { ElectronExportSigner } from "./export-signer.js";
 import { renderPatientExportPdf } from "./export-pdf.js";
 import { FileSystemDoctorDocumentVault } from "./doctor-document-vault.js";
+import { assertTrustedIpcSender } from "./ipc-security.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -323,19 +375,51 @@ function requireExportSigner(): ElectronExportSigner {
   return exportSigner;
 }
 
+type IpcHandler<Args extends unknown[] = unknown[]> = (
+  event: IpcMainInvokeEvent,
+  ...args: Args
+) => unknown;
+
+function registerIpcHandler<Args extends unknown[]>(
+  channel: string,
+  handler: IpcHandler<Args>,
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedIpcSender(event, mainWindow, {
+      isPackaged: app.isPackaged,
+      developmentRendererUrl:
+        process.env["ELITE_RENDERER_URL"] ?? "http://localhost:5173",
+    });
+    return handler(event, ...(args as Args));
+  });
+}
+
+function parseIpcInput<T>(
+  schema: { parse(input: unknown): T },
+  input: unknown,
+): T {
+  return schema.parse(input);
+}
+
+const patientDuplicateInputSchema = patientRegistrationInputSchema.or(
+  patientUpdateInputSchema,
+);
+
 function registerIpc(): void {
-  ipcMain.handle(
+  registerIpcHandler(
     "enrollment:challenge-create",
     (_event, token: string, input: unknown) =>
       requireAndroidEnrollmentService().createChallenge(
         serviceContext(token),
-        input as never,
+        parseIpcInput(enrollmentChallengeCreateInputSchema, input),
       ),
   );
-  ipcMain.handle("enrollment:request-submit", (_event, input: unknown) =>
-    requireAndroidEnrollmentService().submitDeviceRequest(input as never),
+  registerIpcHandler("enrollment:request-submit", (_event, input: unknown) =>
+    requireAndroidEnrollmentService().submitDeviceRequest(
+      parseIpcInput(enrollmentDeviceRequestSchema, input),
+    ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "enrollment:request-approve",
     (_event, token: string, requestId: string, offlineAccessDays?: number) =>
       requireAndroidEnrollmentService().approveDeviceRequest(
@@ -344,10 +428,12 @@ function registerIpc(): void {
         offlineAccessDays,
       ),
   );
-  ipcMain.handle("enrollment:acknowledge", (_event, input: unknown) =>
-    requireAndroidEnrollmentService().acknowledgeEnrollment(input as never),
+  registerIpcHandler("enrollment:acknowledge", (_event, input: unknown) =>
+    requireAndroidEnrollmentService().acknowledgeEnrollment(
+      parseIpcInput(enrollmentAcknowledgmentSchema, input),
+    ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "enrollment:revoke",
     (_event, token: string, enrollmentId: string, reason: string) =>
       requireAndroidEnrollmentService().revokeEnrollment(
@@ -356,7 +442,7 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "enrollment:summary",
     (_event, token: string, enrollmentId: string) => {
       const context = serviceContext(token);
@@ -371,15 +457,15 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  registerIpcHandler(
     "sync:device-register",
     (_event, token: string, input: unknown) =>
       requireSynchronizationService().registerDevice(
         serviceContext(token),
-        input as never,
+        parseIpcInput(syncDeviceRegistrationInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "sync:device-policy",
     (_event, token: string, deviceId: string) =>
       requireSynchronizationService().getDevicePolicy(
@@ -387,31 +473,37 @@ function registerIpc(): void {
         deviceId,
       ),
   );
-  ipcMain.handle("sync:capabilities", (_event, token: string, input: unknown) =>
-    requireSynchronizationService().getCapabilities(
-      serviceContext(token),
-      input as never,
-    ),
+  registerIpcHandler(
+    "sync:capabilities",
+    (_event, token: string, input: unknown) =>
+      requireSynchronizationService().getCapabilities(
+        serviceContext(token),
+        parseIpcInput(syncCapabilityRequestSchema, input),
+      ),
   );
-  ipcMain.handle("sync:delta", (_event, token: string, input: unknown) =>
+  registerIpcHandler("sync:delta", (_event, token: string, input: unknown) =>
     requireSynchronizationService().getDelta(
       serviceContext(token),
-      input as never,
+      parseIpcInput(syncDeltaRequestSchema, input),
     ),
   );
-  ipcMain.handle("sync:outbox-queue", (_event, token: string, input: unknown) =>
-    requireSynchronizationService().queueOutbox(
-      serviceContext(token),
-      input as never,
-    ),
+  registerIpcHandler(
+    "sync:outbox-queue",
+    (_event, token: string, input: unknown) =>
+      requireSynchronizationService().queueOutbox(
+        serviceContext(token),
+        parseIpcInput(syncOutboxInputSchema, input),
+      ),
   );
-  ipcMain.handle("sync:outbox-ack", (_event, token: string, input: unknown) =>
-    requireSynchronizationService().recordOutboxAcknowledgment(
-      serviceContext(token),
-      input as never,
-    ),
+  registerIpcHandler(
+    "sync:outbox-ack",
+    (_event, token: string, input: unknown) =>
+      requireSynchronizationService().recordOutboxAcknowledgment(
+        serviceContext(token),
+        parseIpcInput(syncOutboxAcknowledgmentSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "sync:outbox-list",
     (_event, token: string, deviceId: string) =>
       requireSynchronizationService().listPendingOutbox(
@@ -420,7 +512,7 @@ function registerIpc(): void {
       ),
   );
 
-  ipcMain.handle("app:security-status", () => ({
+  registerIpcHandler("app:security-status", () => ({
     electronVersion: process.versions.electron,
     chromiumVersion: process.versions.chrome,
     nodeVersion: process.versions.node,
@@ -436,60 +528,64 @@ function registerIpc(): void {
     lanSync: lanSyncStatus,
   }));
 
-  ipcMain.handle("app:lan-sync-restart", async (_event, token: string) => {
+  registerIpcHandler("app:lan-sync-restart", async (_event, token: string) => {
     requireCapability(serviceContext(token), "device.manage");
     return restartLanSyncServer();
   });
 
-  ipcMain.handle("auth:status", () => {
+  registerIpcHandler("auth:status", () => {
     const service = requireAuthService();
     return service.bootstrapStatus();
   });
 
-  ipcMain.handle("auth:bootstrap", async (_event, input: unknown) => {
+  registerIpcHandler("auth:bootstrap", async (_event, input: unknown) => {
     const service = requireAuthService();
-    return service.bootstrapInitialAdmins(input as never);
+    return service.bootstrapInitialAdmins(
+      parseIpcInput(bootstrapInputSchema, input),
+    );
   });
 
-  ipcMain.handle("auth:login", async (_event, input: unknown) => {
+  registerIpcHandler("auth:login", async (_event, input: unknown) => {
     const service = requireAuthService();
-    const sessionContext = await service.login(input as never);
+    const sessionContext = await service.login(
+      parseIpcInput(loginInputSchema, input),
+    );
     return {
       token: sessionContext.token,
       session: service.sessionSummary(sessionContext.token),
     };
   });
 
-  ipcMain.handle("auth:session", (_event, token: string) => {
+  registerIpcHandler("auth:session", (_event, token: string) => {
     return requireAuthService().sessionSummary(token);
   });
 
-  ipcMain.handle("auth:logout", (_event, token: string) => {
+  registerIpcHandler("auth:logout", (_event, token: string) => {
     requireAuthService().logout(token);
   });
 
-  ipcMain.handle("auth:devices", (_event, token: string) => {
+  registerIpcHandler("auth:devices", (_event, token: string) => {
     const service = requireAuthService();
     return service.listDevices(service.getSession(token));
   });
 
-  ipcMain.handle("auth:enrollment-requests", (_event, token: string) => {
+  registerIpcHandler("auth:enrollment-requests", (_event, token: string) => {
     const service = requireAuthService();
     return service.listEnrollmentRequests(service.getSession(token));
   });
 
-  ipcMain.handle(
+  registerIpcHandler(
     "auth:device-request",
     (_event, token: string, input: unknown) => {
       const service = requireAuthService();
       return service.requestDeviceEnrollment(
         service.getSession(token),
-        input as never,
+        parseIpcInput(enrollmentInputSchema, input),
       );
     },
   );
 
-  ipcMain.handle(
+  registerIpcHandler(
     "auth:device-approve",
     (_event, token: string, requestId: string) => {
       const service = requireAuthService();
@@ -497,7 +593,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  registerIpcHandler(
     "auth:device-reject",
     (_event, token: string, requestId: string, reason: string) => {
       const service = requireAuthService();
@@ -505,7 +601,7 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  registerIpcHandler(
     "auth:device-revoke",
     (_event, token: string, deviceId: string, reason: string) => {
       const service = requireAuthService();
@@ -513,31 +609,40 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:search",
     (_event, token: string, filters: unknown) => {
       const service = requirePatientService();
-      return service.searchPatients(serviceContext(token), filters as never);
+      return service.searchPatients(
+        serviceContext(token),
+        parseIpcInput(patientSearchFiltersSchema, filters),
+      );
     },
   );
-  ipcMain.handle("patient:get", (_event, token: string, patientId: string) => {
-    return requirePatientService().getPatient(serviceContext(token), patientId);
-  });
-  ipcMain.handle(
+  registerIpcHandler(
+    "patient:get",
+    (_event, token: string, patientId: string) => {
+      return requirePatientService().getPatient(
+        serviceContext(token),
+        patientId,
+      );
+    },
+  );
+  registerIpcHandler(
     "medical-history:list",
     (_event, token: string, patientId: string) =>
       requireMedicalHistoryService().list(serviceContext(token), patientId),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "medical-history:create",
     (_event, token: string, patientId: string, input: unknown) =>
       requireMedicalHistoryService().create(
         serviceContext(token),
         patientId,
-        input as never,
+        parseIpcInput(medicalHistoryInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "medical-history:update",
     (
       _event,
@@ -551,11 +656,11 @@ function registerIpc(): void {
         serviceContext(token),
         patientId,
         entryId,
-        input as never,
+        parseIpcInput(medicalHistoryInputSchema, input),
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "medical-history:archive",
     (
       _event,
@@ -573,36 +678,36 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:duplicates",
     (_event, token: string, input: unknown, excludePatientId?: string) => {
       return requirePatientService().findDuplicateCandidates(
         serviceContext(token),
-        input as never,
+        parseIpcInput(patientDuplicateInputSchema, input),
         excludePatientId,
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:create",
     (_event, token: string, input: unknown, decisionReason?: string) => {
       return requirePatientService().registerPatient(
         serviceContext(token),
-        input as never,
+        parseIpcInput(patientRegistrationInputSchema, input),
         decisionReason,
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "related-person:create",
     (_event, token: string, input: unknown) => {
       return requirePatientService().createRelatedPerson(
         serviceContext(token),
-        input as never,
+        parseIpcInput(relatedPersonInputSchema, input),
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "related-person:list",
     (_event, token: string, patientId: string) => {
       return requirePatientService().listRelatedPersons(
@@ -611,7 +716,7 @@ function registerIpc(): void {
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "related-person:update",
     (
       _event,
@@ -623,12 +728,12 @@ function registerIpc(): void {
       return requirePatientService().updateRelatedPerson(
         serviceContext(token),
         relatedPersonId,
-        input as never,
+        parseIpcInput(relatedPersonInputSchema, input),
         expectedVersion,
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:related-links",
     (_event, token: string, patientId: string) => {
       return requirePatientService().listPatientRelatedLinks(
@@ -637,7 +742,7 @@ function registerIpc(): void {
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:related-link",
     (
       _event,
@@ -650,11 +755,11 @@ function registerIpc(): void {
         serviceContext(token),
         patientId,
         relatedPersonId,
-        input as never,
+        parseIpcInput(relatedPersonLinkInputSchema, input),
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:related-link-update",
     (
       _event,
@@ -667,11 +772,11 @@ function registerIpc(): void {
         serviceContext(token),
         patientId,
         relatedPersonId,
-        input as never,
+        parseIpcInput(relatedPersonLinkInputSchema, input),
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:related-link-unlink",
     (
       _event,
@@ -688,7 +793,7 @@ function registerIpc(): void {
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:update",
     (
       _event,
@@ -701,13 +806,13 @@ function registerIpc(): void {
       return requirePatientService().updatePatient(
         serviceContext(token),
         patientId,
-        input as never,
+        parseIpcInput(patientUpdateInputSchema, input),
         expectedVersion,
         decisionReason,
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:archive",
     (_event, token: string, patientId: string, reason: string) => {
       requirePatientService().archivePatient(serviceContext(token), {
@@ -716,7 +821,7 @@ function registerIpc(): void {
       });
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:unarchive",
     (_event, token: string, patientId: string, reason: string) => {
       requirePatientService().unarchivePatient(
@@ -726,19 +831,19 @@ function registerIpc(): void {
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:merge-request",
     (_event, token: string, input: unknown) => {
       return requirePatientService().requestMerge(
         serviceContext(token),
-        input as never,
+        parseIpcInput(patientMergeRequestSchema, input),
       );
     },
   );
-  ipcMain.handle("patient:merge-list", (_event, token: string) => {
+  registerIpcHandler("patient:merge-list", (_event, token: string) => {
     return requirePatientService().listMergeCases(serviceContext(token));
   });
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:merge-review",
     (
       _event,
@@ -753,11 +858,11 @@ function registerIpc(): void {
         caseId,
         decision,
         reason,
-        fieldDecisions,
+        parseIpcInput(patientMergeFieldDecisionsSchema, fieldDecisions),
       );
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "patient:merge-execute",
     (_event, token: string, caseId: string) => {
       return requirePatientService().executeMerge(
@@ -766,18 +871,18 @@ function registerIpc(): void {
       );
     },
   );
-  ipcMain.handle("clinical:icd10", (_event, token: string) =>
+  registerIpcHandler("clinical:icd10", (_event, token: string) =>
     requireEncounterService().listIcd10Codes(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:icd10-create",
     (_event, token: string, input: unknown) =>
       requireEncounterService().createIcd10Code(
         serviceContext(token),
-        input as never,
+        parseIpcInput(icd10CodeInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:encounter-by-appointment",
     (_event, token: string, appointmentId: string) =>
       requireEncounterService().getEncounterForAppointment(
@@ -785,7 +890,7 @@ function registerIpc(): void {
         appointmentId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:encounter-effective-by-appointment",
     (_event, token: string, appointmentId: string) =>
       requireEncounterService().getEffectiveEncounterForAppointment(
@@ -793,16 +898,16 @@ function registerIpc(): void {
         appointmentId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:encounter-create",
     (_event, token: string, appointmentId: string, input: unknown) =>
       requireEncounterService().createEncounter(
         serviceContext(token),
         appointmentId,
-        input as never,
+        parseIpcInput(encounterInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:encounter-update",
     (
       _event,
@@ -814,11 +919,11 @@ function registerIpc(): void {
       requireEncounterService().updateEncounter(
         serviceContext(token),
         encounterId,
-        input as never,
+        parseIpcInput(encounterInputSchema, input),
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:encounter-sign",
     (_event, token: string, encounterId: string, expectedVersion: number) =>
       requireEncounterService().signEncounter(
@@ -827,7 +932,7 @@ function registerIpc(): void {
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendment-diffs",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listAmendmentDiffs(
@@ -835,16 +940,16 @@ function registerIpc(): void {
         encounterId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:projection-snapshot-create",
     (_event, token: string, encounterId: string, input: unknown) =>
       requireEncounterService().createProjectionSnapshot(
         serviceContext(token),
         encounterId,
-        input as never,
+        parseIpcInput(projectionSnapshotInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:projection-snapshots",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listProjectionSnapshots(
@@ -852,7 +957,7 @@ function registerIpc(): void {
         encounterId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:create",
     async (_event, token: string, input: unknown) => {
       const parsed = patientExportInputSchema.parse(
@@ -969,10 +1074,10 @@ function registerIpc(): void {
       };
     },
   );
-  ipcMain.handle("export:verify", (_event, input: unknown) =>
-    verifyExportPackage(input as never),
+  registerIpcHandler("export:verify", (_event, input: unknown) =>
+    verifyExportPackage(parseIpcInput(exportVerificationInputSchema, input)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:create-zip",
     async (_event, token: string, input: unknown) => {
       const parsed = patientExportInputSchema.parse(
@@ -1038,12 +1143,12 @@ function registerIpc(): void {
       };
     },
   );
-  ipcMain.handle("export:verify-zip", (_event, archiveBase64: string) =>
+  registerIpcHandler("export:verify-zip", (_event, archiveBase64: string) =>
     requirePatientExportService().verifyZipPackage(
       Buffer.from(archiveBase64, "base64"),
     ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:fhir-validate",
     (_event, token: string, input: unknown) => {
       try {
@@ -1080,7 +1185,7 @@ function registerIpc(): void {
       }
     },
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:revoke",
     (_event, token: string, packageId: string, reason: string) =>
       requirePatientExportService().revokeExport(
@@ -1089,22 +1194,26 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle("export:revocations", (_event, token: string) =>
+  registerIpcHandler("export:revocations", (_event, token: string) =>
     requirePatientExportService().listRevocations(serviceContext(token)),
   );
-  ipcMain.handle("export:registry", (_event, token: string, input: unknown) =>
-    requirePatientExportService().listExportPackages(
-      serviceContext(token),
-      input as never,
-    ),
+  registerIpcHandler(
+    "export:registry",
+    (_event, token: string, input: unknown) =>
+      requirePatientExportService().listExportPackages(
+        serviceContext(token),
+        parseIpcInput(exportRegistryListInputSchema, input),
+      ),
   );
-  ipcMain.handle("export:lifecycle", (_event, token: string, input: unknown) =>
-    requirePatientExportService().transitionExportPackage(
-      serviceContext(token),
-      input as never,
-    ),
+  registerIpcHandler(
+    "export:lifecycle",
+    (_event, token: string, input: unknown) =>
+      requirePatientExportService().transitionExportPackage(
+        serviceContext(token),
+        parseIpcInput(exportRegistryTransitionInputSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:lifecycle-events",
     (_event, token: string, packageId: string) =>
       requirePatientExportService().listExportPackageLifecycle(
@@ -1112,16 +1221,18 @@ function registerIpc(): void {
         packageId,
       ),
   );
-  ipcMain.handle("export:key-list", (_event, token: string) =>
+  registerIpcHandler("export:key-list", (_event, token: string) =>
     requirePatientExportService().listSigningKeys(serviceContext(token)),
   );
-  ipcMain.handle("export:key-rotate", (_event, token: string, reason: string) =>
-    requirePatientExportService().rotateSigningKey(
-      serviceContext(token),
-      reason,
-    ),
+  registerIpcHandler(
+    "export:key-rotate",
+    (_event, token: string, reason: string) =>
+      requirePatientExportService().rotateSigningKey(
+        serviceContext(token),
+        reason,
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:key-recovery-export",
     (_event, token: string, passphrase: string) =>
       requirePatientExportService().exportSigningKeyRecoveryBundle(
@@ -1129,27 +1240,27 @@ function registerIpc(): void {
         passphrase,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:key-recovery-import",
     (_event, token: string, bundle: unknown, passphrase: string) =>
       requirePatientExportService().restoreSigningKeyRecoveryBundle(
         serviceContext(token),
-        bundle as never,
+        parseIpcInput(exportSigningKeyRecoveryBundleSchema, bundle),
         passphrase,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:recipient-create",
     (_event, token: string, input: unknown) =>
       requireExportGovernanceService().createRecipient(
         serviceContext(token),
-        input as never,
+        parseIpcInput(exportRecipientCreateInputSchema, input),
       ),
   );
-  ipcMain.handle("export:recipients", (_event, token: string) =>
+  registerIpcHandler("export:recipients", (_event, token: string) =>
     requireExportGovernanceService().listRecipients(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:recipient-verify",
     (
       _event,
@@ -1165,15 +1276,15 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:evidence-create",
     (_event, token: string, input: unknown) =>
       requireExportGovernanceService().recordConsentEvidence(
         serviceContext(token),
-        input as never,
+        parseIpcInput(exportConsentEvidenceCreateInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:evidence-list",
     (_event, token: string, patientId?: string) =>
       requireExportGovernanceService().listConsentEvidence(
@@ -1181,7 +1292,7 @@ function registerIpc(): void {
         patientId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:evidence-review",
     (
       _event,
@@ -1197,26 +1308,26 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:disclosure-request",
     (_event, token: string, input: unknown) =>
       requireExportGovernanceService().requestDisclosure(
         serviceContext(token),
-        input as never,
+        parseIpcInput(exportDisclosureRequestSchema, input),
       ),
   );
-  ipcMain.handle("export:disclosures", (_event, token: string) =>
+  registerIpcHandler("export:disclosures", (_event, token: string) =>
     requireExportGovernanceService().listDisclosures(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:disclosure-decision",
     (_event, token: string, input: unknown) =>
       requireExportGovernanceService().decideDisclosure(
         serviceContext(token),
-        input as never,
+        parseIpcInput(exportDisclosureDecisionSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:disclosure-send",
     (_event, token: string, disclosureId: string, reason: string) =>
       requireExportGovernanceService().sendDisclosure(
@@ -1225,7 +1336,7 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:receipt-issue",
     (_event, token: string, disclosureId: string) =>
       requireExportGovernanceService().issueReceipt(
@@ -1233,7 +1344,7 @@ function registerIpc(): void {
         disclosureId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "export:receipt-acknowledge",
     (_event, token: string, receiptId: string, reason: string) =>
       requireExportGovernanceService().acknowledgeReceipt(
@@ -1242,33 +1353,33 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle("export:receipts", (_event, token: string) =>
+  registerIpcHandler("export:receipts", (_event, token: string) =>
     requireExportGovernanceService().listReceipts(serviceContext(token)),
   );
-  ipcMain.handle("settings:org-get", (_event, token: string) =>
+  registerIpcHandler("settings:org-get", (_event, token: string) =>
     requirePatientExportService().getOrgSettings(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "settings:org-update",
     (_event, token: string, input: unknown) =>
       requirePatientExportService().updateOrgSettings(
         serviceContext(token),
-        input as never,
+        parseIpcInput(orgSettingsInputSchema, input),
       ),
   );
 
-  ipcMain.handle("settings:fhir-profiles", (_event, token: string) =>
+  registerIpcHandler("settings:fhir-profiles", (_event, token: string) =>
     requirePatientExportService().listFhirProfileBundles(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "settings:fhir-profile-install",
     (_event, token: string, input: unknown) =>
       requirePatientExportService().installFhirProfileBundle(
         serviceContext(token),
-        input as never,
+        parseIpcInput(fhirProfileBundleSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendments",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listAmendments(
@@ -1276,16 +1387,16 @@ function registerIpc(): void {
         encounterId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendment-create",
     (_event, token: string, encounterId: string, input: unknown) =>
       requireEncounterService().createAmendment(
         serviceContext(token),
         encounterId,
-        input as never,
+        parseIpcInput(encounterAmendmentInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendment-review",
     (
       _event,
@@ -1303,7 +1414,7 @@ function registerIpc(): void {
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendment-resolve",
     (
       _event,
@@ -1321,7 +1432,7 @@ function registerIpc(): void {
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:amendment-apply",
     (_event, token: string, amendmentId: string, expectedVersion: number) =>
       requireEncounterService().applyAmendment(
@@ -1330,7 +1441,7 @@ function registerIpc(): void {
         expectedVersion,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:diagnoses",
     (_event, token: string, encounterId: string) =>
       requireEncounterService().listDiagnoses(
@@ -1338,16 +1449,16 @@ function registerIpc(): void {
         encounterId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:diagnosis-create",
     (_event, token: string, encounterId: string, input: unknown) =>
       requireEncounterService().createDiagnosis(
         serviceContext(token),
         encounterId,
-        input as never,
+        parseIpcInput(diagnosisInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:diagnosis-approve",
     (
       _event,
@@ -1365,15 +1476,18 @@ function registerIpc(): void {
         expectedVersion,
       ),
   );
-  ipcMain.handle("clinical:specialties", (_event, token: string) =>
+  registerIpcHandler("clinical:specialties", (_event, token: string) =>
     requireClinicalService().listSpecialties(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:specialty-create",
     (_event, token: string, input: unknown) =>
-      requireClinicalService().createSpecialty(serviceContext(token), input),
+      requireClinicalService().createSpecialty(
+        serviceContext(token),
+        parseIpcInput(specialtyInputSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:specialty-archive",
     (_event, token: string, id: string, reason: string) =>
       requireClinicalService().archiveSpecialty(
@@ -1382,35 +1496,40 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle("clinical:departments", (_event, token: string) =>
+  registerIpcHandler("clinical:departments", (_event, token: string) =>
     requireClinicalService().listDepartments(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:department-create",
     (_event, token: string, input: unknown) =>
-      requireClinicalService().createDepartment(serviceContext(token), input),
+      requireClinicalService().createDepartment(
+        serviceContext(token),
+        parseIpcInput(departmentInputSchema, input),
+      ),
   );
-  ipcMain.handle("clinical:services", (_event, token: string) =>
+  registerIpcHandler("clinical:services", (_event, token: string) =>
     requireClinicalService().listServices(serviceContext(token)),
   );
-  ipcMain.handle("clinical:doctors", (_event, token: string) =>
+  registerIpcHandler("clinical:doctors", (_event, token: string) =>
     requireClinicalService().listDoctors(serviceContext(token)),
   );
-  ipcMain.handle("doctor:profiles", (_event, token: string) =>
+  registerIpcHandler("doctor:profiles", (_event, token: string) =>
     requireDoctorProfileService().listProfiles(serviceContext(token)),
   );
-  ipcMain.handle("doctor:profile", (_event, token: string, doctorId: string) =>
-    requireDoctorProfileService().getProfile(serviceContext(token), doctorId),
+  registerIpcHandler(
+    "doctor:profile",
+    (_event, token: string, doctorId: string) =>
+      requireDoctorProfileService().getProfile(serviceContext(token), doctorId),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "doctor:profile-update",
     (_event, token: string, input: unknown) =>
       requireDoctorProfileService().updateProfile(
         serviceContext(token),
-        input as never,
+        parseIpcInput(doctorProfileUpdateInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "doctor:documents",
     (_event, token: string, doctorId: string, includeArchived?: boolean) =>
       requireDoctorProfileService().listDocuments(
@@ -1419,23 +1538,23 @@ function registerIpc(): void {
         includeArchived,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "doctor:document-upload",
     (_event, token: string, input: unknown) =>
       requireDoctorProfileService().uploadDocument(
         serviceContext(token),
-        input as never,
+        parseIpcInput(doctorDocumentUploadInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "doctor:document-view",
     (_event, token: string, input: unknown) =>
       requireDoctorProfileService().viewDocument(
         serviceContext(token),
-        input as never,
+        parseIpcInput(doctorDocumentViewRequestSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "doctor:document-archive",
     (_event, token: string, documentId: string) =>
       requireDoctorProfileService().archiveDocument(
@@ -1443,15 +1562,18 @@ function registerIpc(): void {
         documentId,
       ),
   );
-  ipcMain.handle("billing:packages", (_event, token: string) =>
+  registerIpcHandler("billing:packages", (_event, token: string) =>
     requireBillingService().listPackages(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:package-create",
     (_event, token: string, input: unknown) =>
-      requireBillingService().createPackage(serviceContext(token), input),
+      requireBillingService().createPackage(
+        serviceContext(token),
+        parseIpcInput(billingPackageInputSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:package-archive",
     (_event, token: string, packageId: string, reason: string) =>
       requireBillingService().archivePackage(
@@ -1460,54 +1582,63 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:invoices",
     (_event, token: string, patientId?: string) =>
       requireBillingService().listInvoices(serviceContext(token), patientId),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:invoice-create",
     (_event, token: string, input: unknown) =>
       requireBillingService().createInvoice(
         serviceContext(token),
-        input as never,
+        parseIpcInput(billingInvoiceCreateInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:invoice-get",
     (_event, token: string, invoiceId: string) =>
       requireBillingService().getInvoice(serviceContext(token), invoiceId),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:payment-post",
     (_event, token: string, input: unknown) =>
-      requireBillingService().postPayment(serviceContext(token), input),
+      requireBillingService().postPayment(
+        serviceContext(token),
+        parseIpcInput(billingPaymentInputSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "billing:refund-post",
     (_event, token: string, input: unknown) =>
-      requireBillingService().refundPayment(serviceContext(token), input),
+      requireBillingService().refundPayment(
+        serviceContext(token),
+        parseIpcInput(billingRefundInputSchema, input),
+      ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:service-create",
     (_event, token: string, input: unknown) =>
-      requireClinicalService().createService(serviceContext(token), input),
+      requireClinicalService().createService(
+        serviceContext(token),
+        parseIpcInput(serviceInputSchema, input),
+      ),
   );
-  ipcMain.handle("clinical:schedules", (_event, token: string) =>
+  registerIpcHandler("clinical:schedules", (_event, token: string) =>
     requireClinicalService().listSchedules(serviceContext(token)),
   );
-  ipcMain.handle("clinical:exceptions", (_event, token: string) =>
+  registerIpcHandler("clinical:exceptions", (_event, token: string) =>
     requireClinicalService().listScheduleExceptions(serviceContext(token)),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:schedule-create",
     (_event, token: string, input: unknown) =>
       requireClinicalService().createSchedule(
         serviceContext(token),
-        input as never,
+        parseIpcInput(scheduleInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:schedule-delete",
     (_event, token: string, id: string, reason: string) =>
       requireClinicalService().deleteSchedule(
@@ -1516,15 +1647,15 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:exception-create",
     (_event, token: string, input: unknown) =>
       requireClinicalService().createScheduleException(
         serviceContext(token),
-        input as never,
+        parseIpcInput(scheduleExceptionInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:exception-delete",
     (_event, token: string, id: string, reason: string) =>
       requireClinicalService().deleteScheduleException(
@@ -1533,7 +1664,7 @@ function registerIpc(): void {
         reason,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:appointments",
     (_event, token: string, from?: string, to?: string, doctorId?: string) =>
       requireClinicalService().listAppointments(
@@ -1543,21 +1674,21 @@ function registerIpc(): void {
         doctorId,
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:appointment-create",
     (_event, token: string, input: unknown) =>
       requireClinicalService().createAppointment(
         serviceContext(token),
-        input as never,
+        parseIpcInput(appointmentCreateInputSchema, input),
       ),
   );
-  ipcMain.handle(
+  registerIpcHandler(
     "clinical:appointment-status",
     (_event, token: string, id: string, input: unknown) =>
       requireClinicalService().updateAppointmentStatus(
         serviceContext(token),
         id,
-        input as never,
+        parseIpcInput(appointmentStatusUpdateSchema, input),
       ),
   );
 }
