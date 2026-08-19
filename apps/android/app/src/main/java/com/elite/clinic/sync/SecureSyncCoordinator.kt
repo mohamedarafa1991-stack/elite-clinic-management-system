@@ -17,8 +17,8 @@ interface SecureSession {
 
     suspend fun requestDelta(request: JSONObject): JSONObject
 
-    /** Returns a streamed document response to an in-memory viewer; callers must not persist it. */
-    suspend fun requestDoctorDocument(documentId: String): JSONObject
+    /** Returns the decrypted document response bytes for a scoped in-memory parser. */
+    suspend fun requestDoctorDocumentBytes(documentId: String): ByteArray
 
     suspend fun submitOutbox(event: LocalOutboxEvent): SecureOperationResult
 

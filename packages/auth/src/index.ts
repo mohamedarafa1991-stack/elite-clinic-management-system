@@ -14,6 +14,17 @@ import type { EliteDatabase } from "@elite/database";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+const DUMMY_PASSWORD_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$tyFsg8waP8IXdYD59mxs9A$+78IbiH0ar5kGt6IE+rHMJER+8UIvZflEkcRqZM0x7M";
+
+type PasswordVerifier = (
+  passwordHash: string,
+  password: string,
+) => Promise<boolean>;
+
+export interface AuthServiceOptions {
+  passwordVerifier?: PasswordVerifier;
+}
 
 const usernameSchema = z
   .string()
@@ -219,7 +230,16 @@ function assertNotLocked(lockedUntil: string | null): void {
 }
 
 export class AuthService {
-  public constructor(private readonly database: EliteDatabase) {}
+  private readonly passwordVerifier: PasswordVerifier;
+
+  public constructor(
+    private readonly database: EliteDatabase,
+    options: AuthServiceOptions = {},
+  ) {
+    this.passwordVerifier =
+      options.passwordVerifier ??
+      ((passwordHash, password) => argon2.verify(passwordHash, password));
+  }
 
   public bootstrapStatus(): BootstrapStatus {
     const countRow = this.database.raw
@@ -361,13 +381,19 @@ export class AuthService {
         }
       | undefined;
 
+    if (user?.is_active === 1) {
+      assertNotLocked(user.locked_until);
+    }
+
+    const valid = await this.passwordVerifier(
+      user?.is_active === 1 ? user.password_hash : DUMMY_PASSWORD_HASH,
+      parsed.password,
+    );
     if (!user || user.is_active !== 1) {
       throw new Error(
         "ELITE_AUTH_INVALID_CREDENTIALS: username or password is invalid",
       );
     }
-
-    assertNotLocked(user.locked_until);
 
     const device = this.database.raw
       .prepare("SELECT id, status FROM devices WHERE id = ?")
@@ -385,7 +411,6 @@ export class AuthService {
       );
     }
 
-    const valid = await argon2.verify(user.password_hash, parsed.password);
     if (!valid) {
       const nextAttempts = user.failed_attempts + 1;
       const lockedUntil =

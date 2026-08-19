@@ -77,6 +77,40 @@ describe("Elite Step 2 authentication", () => {
     }
   });
 
+  it("performs password verification for an unknown username", async () => {
+    const database = createDatabase();
+    const calls: Array<{ passwordHash: string; password: string }> = [];
+    try {
+      const service = new AuthService(database, {
+        passwordVerifier: async (passwordHash, password) => {
+          calls.push({ passwordHash, password });
+          return false;
+        },
+      });
+      const result = await service.bootstrapInitialAdmins(bootstrapInput);
+
+      await expect(
+        service.login({
+          username: "missing.synthetic",
+          password: "Synthetic-Missing-Password-2026!",
+          deviceId: result.hubDeviceId,
+        }),
+      ).rejects.toThrow("ELITE_AUTH_INVALID_CREDENTIALS");
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.password).toBe("Synthetic-Missing-Password-2026!");
+      expect(calls[0]!.passwordHash).toMatch(
+        /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/,
+      );
+      const storedPassword = database.raw
+        .prepare("SELECT password_hash FROM auth_credentials WHERE user_id = ?")
+        .get(result.adminUserIds[0]) as { password_hash: string };
+      expect(calls[0]!.passwordHash).not.toBe(storedPassword.password_hash);
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects an unauthorized capability", () => {
     const doctorContext: SessionContext = {
       sessionId: "synthetic-session",

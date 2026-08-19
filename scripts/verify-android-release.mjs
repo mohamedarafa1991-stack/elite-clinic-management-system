@@ -193,6 +193,36 @@ if (
 } else {
   fail("PDF preview must delete its ephemeral rendering file");
 }
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/DoctorDocumentStream.kt",
+  "fun parse(payload: ByteArray)",
+  "document parser accepts decrypted response bytes",
+);
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/DoctorDocumentStream.kt",
+  "DocumentJsonReader(payload)",
+  "document parser reads decrypted response bytes without JSONObject content parsing",
+);
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/LanSyncHttpSession.kt",
+  "requestDoctorDocumentBytes",
+  "LAN document transport exposes the raw-byte response path",
+);
+const encryptedRoomFactory = source(
+  "apps/android/app/src/main/java/com/elite/clinic/security/EncryptedRoomFactory.kt",
+);
+if (
+  encryptedRoomFactory.includes("passphrase.copyOf()") &&
+  encryptedRoomFactory.includes("passphrase.fill(0)")
+) {
+  pass(
+    "SQLCipher factory receives a copy while the caller-owned passphrase is cleared",
+  );
+} else {
+  fail(
+    "SQLCipher factory must copy and clear the caller-owned database passphrase",
+  );
+}
 for (const forbidden of ["getExternalFilesDir", "openFileOutput", "filesDir"]) {
   if (!documentScreen.includes(forbidden))
     pass(

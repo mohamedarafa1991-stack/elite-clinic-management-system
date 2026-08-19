@@ -256,10 +256,14 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             clearViewedDocument()
                             isViewingDocument = true
                             try {
-                                val response = withContext(Dispatchers.IO) {
+                                val responseBytes = withContext(Dispatchers.IO) {
                                     application.requestDoctorDocument(profile.entity.deviceId, documentId.trim())
                                 }
-                                viewedDocument = DoctorDocumentStreamParser.parse(response)
+                                try {
+                                    viewedDocument = DoctorDocumentStreamParser.parse(responseBytes)
+                                } finally {
+                                    responseBytes.fill(0)
+                                }
                                 operationMessage = "Document loaded temporarily. Close the viewer when finished."
                             } catch (error: CancellationException) {
                                 throw error

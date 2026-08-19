@@ -98,7 +98,7 @@ class EliteApplication : Application() {
         )
     }
 
-    suspend fun requestDoctorDocument(deviceId: String, documentId: String): JSONObject {
+    suspend fun requestDoctorDocument(deviceId: String, documentId: String): ByteArray {
         val encryptedDatabase = requireNotNull(database) {
             "ELITE_ANDROID_SYNC_DATABASE_REQUIRED: encrypted local database is required"
         }
@@ -113,7 +113,7 @@ class EliteApplication : Application() {
             outboxScopeResolver = LanSyncRequestFactory::scopeForEvent,
         ).createSession()
         return try {
-            session.requestDoctorDocument(documentId)
+            session.requestDoctorDocumentBytes(documentId)
         } finally {
             session.close()
         }

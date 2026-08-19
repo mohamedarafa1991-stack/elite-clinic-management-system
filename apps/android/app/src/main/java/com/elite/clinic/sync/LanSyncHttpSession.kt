@@ -67,20 +67,16 @@ class LanSyncHttpSession(
             }
         }
 
-    override suspend fun requestDoctorDocument(documentId: String): JSONObject =
+    override suspend fun requestDoctorDocumentBytes(documentId: String): ByteArray =
         withSyncFailureClassification(
             securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
             retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
         ) {
             withContext(Dispatchers.IO) {
-                val envelope = postEncrypted(
+                postEncryptedPayload(
                     "document-request",
                     JSONObject().put("documentId", documentId),
                 )
-                // The response is intentionally returned only to the caller's
-                // in-memory viewer. It must not be written to Room, files, logs,
-                // WorkManager input, or the outbox.
-                envelope.optJSONObject("response") ?: envelope
             }
         }
 
@@ -109,7 +105,12 @@ class LanSyncHttpSession(
         }
     }
 
-    private fun postEncrypted(messageType: String, request: JSONObject): JSONObject {
+    private fun postEncrypted(messageType: String, request: JSONObject): JSONObject =
+        withZeroizedBytes(postEncryptedPayload(messageType, request)) { bytes ->
+            JSONObject(String(bytes, StandardCharsets.UTF_8))
+        }
+
+    private fun postEncryptedPayload(messageType: String, request: JSONObject): ByteArray {
         ensureUsable()
         val requestPlaintext = JSONObject()
             .put("request", request)
@@ -173,10 +174,7 @@ class LanSyncHttpSession(
                 val responseFrame = withZeroizedBytes(responseFrameBytes) { bytes ->
                     JSONObject(String(bytes, StandardCharsets.UTF_8))
                 }
-                val plaintext = frameCodec.decrypt(responseFrame)
-                return withZeroizedBytes(plaintext) { bytes ->
-                    JSONObject(String(bytes, StandardCharsets.UTF_8))
-                }
+                return frameCodec.decrypt(responseFrame)
             } finally {
                 responseFrameBytes.fill(0)
             }
