@@ -76,6 +76,11 @@ import type {
   RelatedPersonLinkInput,
   RelatedPersonSummary,
 } from "@elite/auth";
+import { PatientContextBanner } from "./patient-context-banner.js";
+import {
+  getTodayAppointmentMetrics,
+  sortAppointmentsByStart,
+} from "./workspace-model.js";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -405,20 +410,6 @@ function BidiValue({
       {children}
     </span>
   );
-}
-
-function getPatientAge(dob: string | undefined): number | null {
-  if (!dob) return null;
-  const birthDate = new Date(`${dob}T00:00:00`);
-  if (Number.isNaN(birthDate.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const beforeBirthday =
-    today.getMonth() < birthDate.getMonth() ||
-    (today.getMonth() === birthDate.getMonth() &&
-      today.getDate() < birthDate.getDate());
-  if (beforeBirthday) age -= 1;
-  return age >= 0 ? age : null;
 }
 
 function formatStatusLabel(
@@ -1501,6 +1492,16 @@ function PatientWorkspace({
         <PatientContextBanner
           patient={selectedPatient}
           locale={locale}
+          labels={{
+            context: copy(locale, "patientContext"),
+            patientId: copy(locale, "patientId"),
+            phone: copy(locale, "phone"),
+            age: copy(locale, "age"),
+            status: copy(locale, "status"),
+            clear: copy(locale, "clearContext"),
+            notRecorded: locale === "ar-EG" ? "غير مسجل" : "Not recorded",
+          }}
+          statusLabel={formatStatusLabel(selectedPatient.status, locale)}
           onClear={clearSelectedPatient}
         />
       ) : null}
@@ -7192,87 +7193,6 @@ function DoctorWorkspace({
   );
 }
 
-function PatientContextBanner({
-  patient,
-  locale,
-  onClear,
-}: {
-  patient: Patient;
-  locale: InterfaceLocale;
-  onClear: () => void;
-}): ReactElement {
-  const primaryName =
-    locale === "ar-EG" && patient.nameAr?.trim()
-      ? patient.nameAr
-      : patient.nameEn;
-  const secondaryName =
-    locale === "ar-EG" && patient.nameAr?.trim()
-      ? patient.nameEn
-      : patient.nameAr;
-  const age = getPatientAge(patient.dob);
-  const statusClass = patient.status === "active" ? "ok" : "warn";
-
-  return (
-    <section
-      className="patient-context-banner"
-      aria-labelledby="patient-context-title"
-      aria-live="polite"
-    >
-      <div className="patient-context-identity">
-        <span className="patient-context-avatar" aria-hidden="true">
-          {primaryName.trim().slice(0, 1).toUpperCase() || "P"}
-        </span>
-        <div>
-          <p className="eyebrow">{copy(locale, "patientContext")}</p>
-          <h3 id="patient-context-title">
-            <BidiValue direction="auto">{primaryName}</BidiValue>
-          </h3>
-          {secondaryName ? (
-            <p className="patient-context-secondary">
-              <BidiValue direction="auto">{secondaryName}</BidiValue>
-            </p>
-          ) : null}
-        </div>
-      </div>
-      <dl className="patient-context-facts">
-        <div>
-          <dt>{copy(locale, "patientId")}</dt>
-          <dd>
-            <BidiValue direction="ltr">{patient.patientId}</BidiValue>
-          </dd>
-        </div>
-        <div>
-          <dt>{copy(locale, "phone")}</dt>
-          <dd>
-            <BidiValue direction="ltr">{patient.phone}</BidiValue>
-          </dd>
-        </div>
-        <div>
-          <dt>{copy(locale, "age")}</dt>
-          <dd>
-            {age === null
-              ? locale === "ar-EG"
-                ? "غير مسجل"
-                : "Not recorded"
-              : new Intl.NumberFormat(locale).format(age)}
-          </dd>
-        </div>
-        <div>
-          <dt>{copy(locale, "status")}</dt>
-          <dd>
-            <span className={`status ${statusClass}`}>
-              {formatStatusLabel(patient.status, locale)}
-            </span>
-          </dd>
-        </div>
-      </dl>
-      <button className="button ghost small" type="button" onClick={onClear}>
-        {copy(locale, "clearContext")}
-      </button>
-    </section>
-  );
-}
-
 function OverviewToday({
   token,
   session,
@@ -7302,13 +7222,7 @@ function OverviewToday({
         start.toISOString(),
         end.toISOString(),
       );
-      setAppointments(
-        [...nextAppointments].sort(
-          (left, right) =>
-            new Date(left.scheduledStart).getTime() -
-            new Date(right.scheduledStart).getTime(),
-        ),
-      );
+      setAppointments(sortAppointmentsByStart(nextAppointments));
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -7324,18 +7238,8 @@ function OverviewToday({
     void refresh();
   }, [token]);
 
-  const waitingCount = appointments.filter(
-    (appointment) => appointment.status === "arrived",
-  ).length;
-  const completedCount = appointments.filter(
-    (appointment) => appointment.status === "completed",
-  ).length;
-  const nextAppointment = appointments.find(
-    (appointment) =>
-      appointment.status !== "completed" &&
-      appointment.status !== "cancelled" &&
-      new Date(appointment.scheduledStart).getTime() >= Date.now(),
-  );
+  const { waitingCount, completedCount, nextAppointment } =
+    getTodayAppointmentMetrics(appointments);
   const roleFocus: Record<SessionSummary["role"], string> =
     locale === "ar-EG"
       ? {
