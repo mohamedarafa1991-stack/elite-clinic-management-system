@@ -150,6 +150,11 @@ runPnpm(
   "LOCAL-DESKTOP-002",
   "Centralized IPC sender validation, registration, and safe-error policy tests pass.",
 );
+runPnpm(
+  ["windows:pilot:verify"],
+  "LOCAL-WINDOWS-SCRIPT-001",
+  "Windows local-pilot runner safety controls and physical-scenario safeguards pass.",
+);
 if (existsSync(desktopArchive)) {
   runPnpm(
     ["desktop:package:verify"],

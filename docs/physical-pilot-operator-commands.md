@@ -49,7 +49,51 @@ pnpm pilot:evidence -- --clean --require-artifacts
 Remove-Item Env:ELITE_EVIDENCE_ALLOW_WORKTREE
 ```
 
-## 2. Android device inventory
+## 2. Run the Windows-local automation
+
+The repository includes a Windows-only runner for deterministic local checks, package creation, archive verification, synthetic rehearsal, evidence-pack generation, and formatting/whitespace validation. First verify the runner’s safety controls, then execute it:
+
+```powershell
+pnpm windows:pilot:verify
+pnpm windows:pilot
+```
+
+The runner stops at the first failure and writes:
+
+- `artifacts/windows-local-pilot/windows-local-pilot.log`
+- `artifacts/windows-local-pilot/windows-local-pilot-report.json`
+
+For a dry run that prints the commands without executing them:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run-windows-local-pilot.ps1 `
+  -WhatIf
+```
+
+Useful switches are:
+
+```powershell
+# Use a specific checkout and evidence directory.
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run-windows-local-pilot.ps1 `
+  -RepoPath C:\path\to\elite-clinic-management-system `
+  -EvidenceRoot artifacts\windows-local-pilot
+
+# Skip the Windows NSIS package build when an approved package already exists.
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run-windows-local-pilot.ps1 `
+  -SkipWindowsPackage
+
+# Development-only run with source changes; never use this for sign-off.
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/run-windows-local-pilot.ps1 `
+  -AllowDirtyWorktree
+```
+
+The runner does **not** uninstall applications, delete user data, interrupt upgrades, invalidate production keys, or claim physical scenarios as passed. `WIN-INSTALL-001/002/003`, `WIN-DB-001`, `WIN-SEC-001`, `WIN-LAN-001`, `WIN-BACKUP-001`, `WIN-RESTORE-001`, and `WIN-RECOVERY-001` still require the human-observed procedures described below. Use the generated report as evidence that local preparation completed, not as a replacement for physical sign-off.
+
+## 3. Android device inventory
 
 Connect the floor, current-supported, and second synchronization device. Use sanitized labels in the record rather than serial numbers unless the clinic has explicitly approved retaining those identifiers.
 
@@ -64,7 +108,7 @@ adb -s <device-id> shell settings get secure android_id
 
 Do not copy the raw Android ID into the evidence record. Record only the approved sanitized identity label or an approved one-way fingerprint.
 
-## 3. APK installation and lifecycle
+## 4. APK installation and lifecycle
 
 Verify the signed APK outside the application before installing. The signing certificate and SHA-256 value must match the Admin-owned release record.
 
@@ -78,13 +122,13 @@ adb -s <device-id> shell monkey -p com.elite.clinic 1
 
 For upgrade and rollback, retain the previous approved APK checksum and record the installed version before and after each operation. A downgrade or revoked-device test is not passed merely because installation succeeds; the application must enforce the documented version, enrollment, and revocation policy.
 
-## 4. Offline and LAN boundary tests
+## 5. Offline and LAN boundary tests
 
 For offline scenarios, disable both Wi-Fi and mobile data on the device and disconnect the Hub from the test LAN. Record the start time, policy version, observed lock/expiry state, and recovery result. The application must not require cloud access for approved offline behavior.
 
 For LAN scenarios, use an isolated synthetic network. Test the approved certificate, an incorrect trust anchor, a stopped Hub, and a restarted Hub. Record only sanitized error codes, retryability, timestamps, certificate labels, and Hub restart evidence. Never paste access tokens, private keys, session frames, or document contents into logs or the evidence record.
 
-## 5. Doctor-document persistence inventory
+## 6. Doctor-document persistence inventory
 
 After synthetic upload, view, close, cancellation, rotation, and process-death scenarios, inspect only approved application locations. The expected result is no persisted doctor-document content in Room, app files, external files, WorkManager input, logs, downloads, recents, screenshots, or recording output.
 
@@ -98,13 +142,13 @@ The `run-as` command may return no useful files on a release build or may be res
 
 Verify `FLAG_SECURE` by attempting a screenshot, screen recording, and recents-thumbnail inspection while the doctor-document viewer is active. Do not retain screenshots containing document content. Record only whether capture was prevented and the sanitized evidence path.
 
-## 6. Backup and replacement-Hub restore
+## 7. Backup and replacement-Hub restore
 
 Use the approved encrypted USB media and its independently verified second copy. Create the backup from synthetic data, record the manifest checksum and media label, then restore to a separate replacement-Hub directory or replacement workstation. Do not overwrite the source Hub during the first restore attempt.
 
 The restore is passed only when the approved key opens the database, migration and integrity checks pass, table counts reconcile, vault hashes match, audit history remains intact, and the Admin explicitly approves replacement. Any plaintext artifact, key mismatch, unexplained count difference, or source mutation is a stop condition.
 
-## 7. Status-aware readiness report
+## 8. Status-aware readiness report
 
 After all scenario records are updated and the record validator passes, generate the final status-aware report from the same record:
 
