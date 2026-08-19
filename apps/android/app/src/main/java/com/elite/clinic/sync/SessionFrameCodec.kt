@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -44,7 +44,7 @@ class SessionFrameCodec(
         val counter = sendCounter
         val nonce = deriveNonce(noncePrefix, counter)
         try {
-            val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
+            val nonceBase64 = Base64.getEncoder().encodeToString(nonce)
             val unsigned = JSONObject()
                 .put("protocolVersion", 1)
                 .put("messageType", messageType)
@@ -69,8 +69,8 @@ class SessionFrameCodec(
                     try {
                         val frame = JSONObject(unsigned.toString())
                             .put("aadHash", sha256Hex(aad))
-                            .put("ciphertextBase64", Base64.encodeToString(ciphertext, Base64.NO_WRAP))
-                            .put("tagBase64", Base64.encodeToString(tag, Base64.NO_WRAP))
+                            .put("ciphertextBase64", Base64.getEncoder().encodeToString(ciphertext))
+                            .put("tagBase64", Base64.getEncoder().encodeToString(tag))
                         sendCounter += 1
                         return frame
                     } finally {
@@ -115,7 +115,7 @@ class SessionFrameCodec(
         }
         val nonce = deriveNonce(noncePrefix, counter)
         try {
-            val nonceBase64 = Base64.encodeToString(nonce, Base64.NO_WRAP)
+            val nonceBase64 = Base64.getEncoder().encodeToString(nonce)
             if (frame.getString("nonceBase64") != nonceBase64) throw IllegalArgumentException(
                 "ELITE_SESSION_NONCE_MISMATCH: frame nonce is invalid",
             )
@@ -131,9 +131,9 @@ class SessionFrameCodec(
                 if (sha256Hex(aad) != frame.getString("aadHash")) throw IllegalArgumentException(
                     "ELITE_SESSION_AAD_TAMPERED: frame AAD hash is invalid",
                 )
-                val ciphertext = Base64.decode(frame.getString("ciphertextBase64"), Base64.DEFAULT)
+                val ciphertext = Base64.getDecoder().decode(frame.getString("ciphertextBase64"))
                 try {
-                    val tag = Base64.decode(frame.getString("tagBase64"), Base64.DEFAULT)
+                    val tag = Base64.getDecoder().decode(frame.getString("tagBase64"))
                     try {
                         if (tag.size != TAG_BYTES) throw IllegalArgumentException(
                             "ELITE_SESSION_TAG_INVALID: AES-GCM tag length is not 16 bytes",

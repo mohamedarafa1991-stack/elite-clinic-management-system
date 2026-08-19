@@ -37,8 +37,11 @@ object SyncResponseVerifier {
         } catch (_: Exception) {
             return SyncVerificationResult.Rejected("SYNC_JSON_INVALID")
         }
-        fun requiredString(name: String): String? =
-            if (json.has(name) && !json.isNull(name)) json.optString(name, null) else null
+        fun requiredString(name: String): String? {
+            if (!json.has(name) || json.isNull(name)) return null
+            val value = json.opt(name)
+            return if (value == null || value == JSONObject.NULL) null else value.toString()
+        }
 
         if (json.optInt("protocolVersion", -1) != 1) {
             return SyncVerificationResult.Rejected("SYNC_PROTOCOL_UNSUPPORTED")

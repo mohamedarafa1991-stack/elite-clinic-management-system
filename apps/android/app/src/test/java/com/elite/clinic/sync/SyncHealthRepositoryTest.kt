@@ -88,6 +88,7 @@ class SyncHealthRepositoryTest {
         override suspend fun getHealth(deviceId: String): SyncHealthEntity? = health
         override fun observeHealth(deviceId: String): Flow<SyncHealthEntity?> = flowOf(health)
         override suspend fun getConnectionProfile(deviceId: String): SyncConnectionProfileEntity? = null
+        override suspend fun getConnectionProfiles(): List<SyncConnectionProfileEntity> = emptyList()
         override suspend fun updateConnectionProfileState(
             deviceId: String,
             state: String,

@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import com.elite.clinic.security.ZeroizableBytes
 import com.elite.clinic.security.withZeroizedBytes
 import java.security.MessageDigest
@@ -54,7 +54,7 @@ object DoctorDocumentStreamParser {
     fun parse(response: JSONObject): InMemoryDoctorDocument {
         val contentBase64 = response.getString("contentBase64")
         val bytes = try {
-            Base64.decode(contentBase64, Base64.DEFAULT)
+            Base64.getDecoder().decode(contentBase64)
         } catch (error: IllegalArgumentException) {
             throw IllegalArgumentException("SYNC_DOCTOR_DOCUMENT_BASE64_INVALID", error)
         }

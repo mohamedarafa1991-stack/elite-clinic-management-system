@@ -8,11 +8,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.MemoryFile
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
-import android.util.Base64
+import java.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -67,6 +66,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 
 private const val MAX_DOCTOR_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -343,7 +343,7 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             try {
                                 val encoded = withContext(Dispatchers.Default) {
                                     picked.useContent { bytes ->
-                                        Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                        Base64.getEncoder().encodeToString(bytes)
                                     }
                                 }
                                 val response = withContext(Dispatchers.IO) {
@@ -525,10 +525,13 @@ private fun SecurePdfPreview(document: InMemoryDoctorDocument) {
             latestBitmap?.recycle()
         }
     }
+    val applicationContext = LocalContext.current.applicationContext
     LaunchedEffect(document.documentId) {
         try {
             bitmap = withContext(Dispatchers.Default) {
-                document.useViewerCopy(::renderFirstPdfPage)
+                document.useViewerCopy { bytes ->
+                    renderFirstPdfPage(applicationContext, bytes)
+                }
             }
             if (bitmap == null) error = "PDF could not be rendered in memory."
         } catch (exception: Exception) {
@@ -587,11 +590,20 @@ private fun Context.findActivity(): Activity? {
     return current as? Activity
 }
 
-private fun renderFirstPdfPage(bytes: ByteArray): Bitmap? {
-    val memoryFile = MemoryFile("elite-doctor-document", bytes.size)
+private fun renderFirstPdfPage(context: Context, bytes: ByteArray): Bitmap? {
+    val temporaryFile = File.createTempFile(
+        "elite-doctor-document-",
+        ".pdf",
+        context.cacheDir,
+    )
     return try {
-        memoryFile.writeBytes(bytes, 0, 0, bytes.size)
-        ParcelFileDescriptor.dup(memoryFile.fileDescriptor).use { descriptor ->
+        temporaryFile.outputStream().use { output ->
+            output.write(bytes)
+        }
+        ParcelFileDescriptor.open(
+            temporaryFile,
+            ParcelFileDescriptor.MODE_READ_ONLY,
+        ).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
                 if (renderer.pageCount == 0) return null
                 renderer.openPage(0).use { page ->
@@ -605,7 +617,7 @@ private fun renderFirstPdfPage(bytes: ByteArray): Bitmap? {
             }
         }
     } finally {
-        memoryFile.close()
+        temporaryFile.delete()
     }
 }
 

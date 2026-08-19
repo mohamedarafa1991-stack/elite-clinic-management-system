@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.PrivateKey
@@ -21,7 +21,7 @@ object SessionKeyDerivation {
         privateKey: PrivateKey,
         peerPublicKeySpkiBase64: String,
     ): ByteArray {
-        val peerEncoded = Base64.decode(peerPublicKeySpkiBase64, Base64.DEFAULT)
+        val peerEncoded = Base64.getDecoder().decode(peerPublicKeySpkiBase64)
         val peerPublicKey = try {
             KeyFactory.getInstance("EC").generatePublic(
                 X509EncodedKeySpec(peerEncoded),

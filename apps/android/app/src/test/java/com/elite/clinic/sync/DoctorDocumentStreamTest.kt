@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import java.security.MessageDigest
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
@@ -87,6 +87,6 @@ class DoctorDocumentStreamTest {
             .put("sizeBytes", bytes.size)
             .put("contentSha256", hash)
             .put("version", 1)
-            .put("contentBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            .put("contentBase64", Base64.getEncoder().encodeToString(bytes))
     }
 }

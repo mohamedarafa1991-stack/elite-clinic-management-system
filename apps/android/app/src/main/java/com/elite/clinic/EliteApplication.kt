@@ -12,6 +12,7 @@ import com.elite.clinic.sync.LanSyncSessionFactory
 import com.elite.clinic.sync.SecureSessionTransport
 import com.elite.clinic.sync.SecureSyncCoordinator
 import com.elite.clinic.sync.SyncConnectionProfileRepository
+import com.elite.clinic.sync.SyncHealthRepository
 import com.elite.clinic.sync.SyncRepository
 import com.elite.clinic.sync.SyncWorker
 import org.json.JSONObject

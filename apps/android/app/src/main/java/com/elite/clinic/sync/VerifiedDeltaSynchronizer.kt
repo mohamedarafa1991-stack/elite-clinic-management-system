@@ -28,7 +28,7 @@ class VerifiedDeltaSynchronizer(
             now = now,
         )
         if (result is SyncVerificationResult.Rejected) {
-            throw SecurityException(result.reasonCode)
+            throw java.lang.SecurityException(result.code)
         }
         return result
     }

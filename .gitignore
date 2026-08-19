@@ -33,6 +33,8 @@ Thumbs.db
 .idea/
 android/.gradle/
 android/local.properties
+apps/android/.gradle/
+apps/android/local.properties
 apps/android/app/build/
 apps/android/app/release/
 *.tsbuildinfo

@@ -3,6 +3,7 @@ package com.elite.clinic.sync
 import java.io.ByteArrayInputStream
 import java.net.URL
 import java.security.KeyStore
+import java.util.Base64
 import java.security.SecureRandom
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -54,7 +55,7 @@ object LanTlsConnection {
             .replace("-----END CERTIFICATE-----", "")
             .replace(Regex("\\s"), "")
         val der = try {
-            android.util.Base64.decode(normalized, android.util.Base64.DEFAULT)
+            Base64.getDecoder().decode(normalized)
         } catch (_: Exception) {
             throw IllegalArgumentException("ELITE_LAN_TLS_CERTIFICATE_INVALID")
         }

@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,7 +21,7 @@ class SessionFrameCodecTest {
             "{\"scope\":\"appointments\"}".toByteArray(),
         )
         assertEquals(
-            Base64.encodeToString(hex("010203040000000000000000"), Base64.NO_WRAP),
+            Base64.getEncoder().encodeToString(hex("010203040000000000000000")),
             frame.getString("nonceBase64"),
         )
         assertEquals(
@@ -50,7 +50,7 @@ class SessionFrameCodecTest {
             hub.decrypt(
                 JSONObject(second.toString()).put(
                     "ciphertextBase64",
-                    Base64.encodeToString("tampered-ciphertext".toByteArray(), Base64.NO_WRAP),
+                    Base64.getEncoder().encodeToString("tampered-ciphertext".toByteArray()),
                 ),
             )
         }
@@ -75,7 +75,7 @@ class SessionFrameCodecTest {
 
         val frame = codec.encrypt("sync-request", "owned-key-test".toByteArray())
         assertEquals(
-            Base64.encodeToString(hex("010203040000000000000000"), Base64.NO_WRAP),
+            Base64.getEncoder().encodeToString(hex("010203040000000000000000")),
             frame.getString("nonceBase64"),
         )
         codec.close()

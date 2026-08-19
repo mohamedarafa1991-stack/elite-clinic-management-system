@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import com.elite.clinic.data.LocalOutboxEvent
 import com.elite.clinic.security.AndroidIdentityKeyStore
 import org.json.JSONObject
@@ -81,10 +81,7 @@ class LanSyncSessionFactory(
         }
         val identity = identityKeyStore.ensureIdentityKey()
         val ephemeral = generateEphemeralKeyPair()
-        val ephemeralSpki = Base64.encodeToString(
-            ephemeral.public.encoded,
-            Base64.NO_WRAP,
-        )
+        val ephemeralSpki = Base64.getEncoder().encodeToString(ephemeral.public.encoded)
         val descriptor = JSONObject().apply {
             put("protocolVersion", 1)
             put("messageType", "session-init")
@@ -118,7 +115,7 @@ class LanSyncSessionFactory(
         verifyHubSignature(grant)
 
         val serverEphemeralSpki = grant.getString("serverEphemeralPublicKeySpkiBase64")
-        val serverEphemeralBytes = Base64.decode(serverEphemeralSpki, Base64.DEFAULT)
+        val serverEphemeralBytes = Base64.getDecoder().decode(serverEphemeralSpki)
         try {
             require(
                 SessionProtocolCrypto.sha256Hex(serverEphemeralBytes) ==
@@ -161,10 +158,7 @@ class LanSyncSessionFactory(
                 transcriptHash,
                 "hub",
             )
-            val actualMac = Base64.decode(
-                grant.getString("keyConfirmationMacBase64"),
-                Base64.DEFAULT,
-            )
+            val actualMac = Base64.getDecoder().decode(grant.getString("keyConfirmationMacBase64"))
             try {
                 if (!SessionKeyDerivation.verifyKeyConfirmation(expectedMac, actualMac)) {
                     throw SecurityException("ELITE_LAN_SESSION_KEY_CONFIRMATION_INVALID")
@@ -174,10 +168,7 @@ class LanSyncSessionFactory(
                 actualMac.fill(0)
             }
 
-            noncePrefix = Base64.decode(
-                grant.getString("noncePrefixBase64"),
-                Base64.DEFAULT,
-            )
+            noncePrefix = Base64.getDecoder().decode(grant.getString("noncePrefixBase64"))
             require(noncePrefix?.size == 4) { "ELITE_LAN_SESSION_NONCE_PREFIX_INVALID" }
             val now = Instant.now()
             val issuedAt = parseInstant(grant.getString("issuedAt"))
@@ -259,7 +250,7 @@ class LanSyncSessionFactory(
             if (status in 300..399) {
                 throw SyncFailureClassifier.security("ELITE_LAN_SESSION_REDIRECT_REJECTED")
             }
-            if (status == HttpURLConnection.HTTP_REQUEST_TIMEOUT ||
+            if (status == HttpURLConnection.HTTP_CLIENT_TIMEOUT ||
                 status == 429 ||
                 status >= 500
             ) {
@@ -305,7 +296,7 @@ class LanSyncSessionFactory(
                 .toByteArray(StandardCharsets.UTF_8),
         )
         if (!verifier.verify(
-                Base64.decode(grant.getString("signatureBase64"), Base64.DEFAULT),
+                Base64.getDecoder().decode(grant.getString("signatureBase64")),
             )
         ) {
             throw SecurityException("ELITE_LAN_SESSION_HUB_SIGNATURE_INVALID")
@@ -353,7 +344,7 @@ class LanSyncSessionFactory(
             .replace("-----END PUBLIC KEY-----", "")
             .replace(Regex("\\s"), "")
         return KeyFactory.getInstance("Ed25519").generatePublic(
-            X509EncodedKeySpec(Base64.decode(encoded, Base64.DEFAULT)),
+            X509EncodedKeySpec(Base64.getDecoder().decode(encoded)),
         )
     }
 

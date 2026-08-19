@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import com.elite.clinic.data.LocalOutboxEvent
 import com.elite.clinic.security.withZeroizedBytes
 import java.nio.charset.StandardCharsets
@@ -56,7 +56,7 @@ class LanSyncHttpSession(
             }
         }
 
-    suspend fun requestDelta(request: JSONObject): JSONObject =
+    override suspend fun requestDelta(request: JSONObject): JSONObject =
         withSyncFailureClassification(
             securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
             retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
@@ -157,7 +157,7 @@ class LanSyncHttpSession(
             ) {
                 throw SecurityException("SECURE_SESSION_REJECTED")
             }
-            if (status == HttpURLConnection.HTTP_REQUEST_TIMEOUT ||
+            if (status == HttpURLConnection.HTTP_CLIENT_TIMEOUT ||
                 status == 429 ||
                 status >= 500
             ) {

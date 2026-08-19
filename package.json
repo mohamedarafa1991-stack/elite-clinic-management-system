@@ -23,6 +23,11 @@
     "desktop:package:dir": "node scripts/package-desktop.mjs --dir",
     "desktop:package:win": "node scripts/package-desktop.mjs --win",
     "desktop:package:verify": "node scripts/verify-desktop-package.mjs",
+    "android:unit": "node scripts/run-android-gradle.mjs testDebugUnitTest",
+    "android:lint": "node scripts/run-android-gradle.mjs lintRelease",
+    "android:assemble": "node scripts/run-android-gradle.mjs assembleRelease",
+    "android:verify": "node scripts/verify-android-release.mjs",
+    "android:release-check": "pnpm android:unit && pnpm android:lint && pnpm android:assemble && pnpm android:verify -- --artifacts",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"
   },

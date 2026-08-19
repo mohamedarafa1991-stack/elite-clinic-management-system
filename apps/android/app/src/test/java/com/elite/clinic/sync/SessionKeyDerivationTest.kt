@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -51,11 +51,11 @@ class SessionKeyDerivationTest {
         val second = generator.generateKeyPair()
         val firstSecret = SessionKeyDerivation.deriveSharedSecret(
             first.private,
-            Base64.encodeToString(second.public.encoded, Base64.NO_WRAP),
+            Base64.getEncoder().encodeToString(second.public.encoded),
         )
         val secondSecret = SessionKeyDerivation.deriveSharedSecret(
             second.private,
-            Base64.encodeToString(first.public.encoded, Base64.NO_WRAP),
+            Base64.getEncoder().encodeToString(first.public.encoded),
         )
         assertArrayEquals(firstSecret, secondSecret)
 

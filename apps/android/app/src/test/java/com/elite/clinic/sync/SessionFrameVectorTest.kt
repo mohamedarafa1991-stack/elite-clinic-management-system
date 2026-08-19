@@ -1,6 +1,6 @@
 package com.elite.clinic.sync
 
-import android.util.Base64
+import java.util.Base64
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -28,7 +28,7 @@ class SessionFrameVectorTest {
         )
         val actual = channel.encrypt(
             frameDefinition.getString("messageType"),
-            Base64.decode(vector.getString("plaintextBase64"), Base64.DEFAULT),
+            Base64.getDecoder().decode(vector.getString("plaintextBase64")),
         )
         assertEquals(frameDefinition.getString("nonceBase64"), actual.getString("nonceBase64"))
         assertEquals(frameDefinition.getString("aadHash"), actual.getString("aadHash"))
