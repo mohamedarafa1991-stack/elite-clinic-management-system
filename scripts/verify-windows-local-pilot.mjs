@@ -11,6 +11,14 @@ function assertContains(id, fragment, detail) {
   if (!source.includes(fragment)) failures.push(`${id}: ${detail}`);
 }
 
+function assertOrdered(id, first, second, detail) {
+  const firstIndex = source.indexOf(first);
+  const secondIndex = source.indexOf(second);
+  if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+    failures.push(`${id}: ${detail}`);
+  }
+}
+
 assertContains(
   "WIN-SCRIPT-001",
   "Set-StrictMode -Version Latest",
@@ -37,38 +45,44 @@ assertContains(
   "-SkipWindowsPackage",
   "Packaging can be skipped only explicitly.",
 );
-assertContains(
+assertOrdered(
   "WIN-SCRIPT-007",
+  'Invoke-LocalStep -Id "LOCAL-PACKAGES-001"',
+  'Invoke-LocalStep -Id "LOCAL-TS-001"',
+  "Workspace packages are built before tests on a fresh checkout.",
+);
+assertContains(
+  "WIN-SCRIPT-008",
   "WIN-INSTALL-001",
   "The Windows install scenario is represented as pending.",
 );
 assertContains(
-  "WIN-SCRIPT-008",
+  "WIN-SCRIPT-009",
   "WIN-INSTALL-002",
   "The Windows upgrade scenario is represented as pending.",
 );
 assertContains(
-  "WIN-SCRIPT-009",
+  "WIN-SCRIPT-010",
   "WIN-INSTALL-003",
   "The Windows uninstall/reinstall scenario is represented as pending.",
 );
 assertContains(
-  "WIN-SCRIPT-010",
+  "WIN-SCRIPT-011",
   "WIN-RESTORE-001",
   "The replacement-Hub restore scenario is represented as pending.",
 );
 assertContains(
-  "WIN-SCRIPT-011",
+  "WIN-SCRIPT-012",
   "WIN-RECOVERY-001",
   "The rollback scenario is represented as pending.",
 );
 assertContains(
-  "WIN-SCRIPT-012",
+  "WIN-SCRIPT-013",
   "does not install or uninstall over a user-approved data directory",
   "The runner documents that destructive install/uninstall over user data is not automated.",
 );
 assertContains(
-  "WIN-SCRIPT-013",
+  "WIN-SCRIPT-014",
   "physical Windows scenarios remain pending human evidence",
   "The runner does not falsely mark physical scenarios passed.",
 );

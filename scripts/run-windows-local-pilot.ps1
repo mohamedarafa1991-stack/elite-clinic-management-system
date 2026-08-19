@@ -254,6 +254,7 @@ try {
     Invoke-LocalStep -Id "WIN-PREFLIGHT-002" -DisplayName "Node runtime check" -Command "node" -Arguments @("--version") -Evidence @($RunLog)
     Invoke-LocalStep -Id "WIN-PREFLIGHT-003" -DisplayName "pnpm runtime check" -Command "pnpm" -Arguments @("--version") -Evidence @($RunLog)
     Invoke-LocalStep -Id "WIN-PREFLIGHT-004" -DisplayName "Frozen dependency installation" -Command "pnpm" -Arguments @("install", "--frozen-lockfile") -Evidence @($RunLog)
+    Invoke-LocalStep -Id "LOCAL-PACKAGES-001" -DisplayName "Build workspace packages for clean-checkout resolution" -Command "pnpm" -Arguments @("build:packages") -Evidence @($RunLog)
 
     Invoke-LocalStep -Id "LOCAL-TS-001" -DisplayName "TypeScript and desktop test suite" -Command "pnpm" -Arguments @("test") -Evidence @($RunLog)
     Invoke-LocalStep -Id "LOCAL-TS-002" -DisplayName "TypeScript workspace typecheck" -Command "pnpm" -Arguments @("typecheck") -Evidence @($RunLog)
