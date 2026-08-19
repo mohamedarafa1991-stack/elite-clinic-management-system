@@ -5,6 +5,7 @@ release/
 .packaging/
 build/
 coverage/
+artifacts/
 *.log
 .env
 .env.*
