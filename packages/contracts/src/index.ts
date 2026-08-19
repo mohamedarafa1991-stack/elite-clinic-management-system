@@ -1655,6 +1655,110 @@ export const serviceSchema = z.object({
 });
 export type Service = z.infer<typeof serviceSchema>;
 
+export const drugCatalogSourceKindSchema = z.enum([
+  "remote-json",
+  "local-json",
+]);
+export type DrugCatalogSourceKind = z.infer<typeof drugCatalogSourceKindSchema>;
+export const drugCatalogSnapshotStatusSchema = z.enum([
+  "staged",
+  "active",
+  "superseded",
+  "rejected",
+]);
+export type DrugCatalogSnapshotStatus = z.infer<
+  typeof drugCatalogSnapshotStatusSchema
+>;
+export const drugCatalogWarningSchema = z.object({
+  highBloodPressure: z.boolean(),
+  diabetes: z.boolean(),
+  pregnancy: z.boolean(),
+  lactation: z.boolean(),
+  kidney: z.boolean(),
+  liver: z.boolean(),
+  heart: z.boolean(),
+});
+export type DrugCatalogWarning = z.infer<typeof drugCatalogWarningSchema>;
+export const drugCatalogImportInputSchema = z.object({
+  sourceKind: drugCatalogSourceKindSchema,
+  sourceUrl: z.string().url(),
+  sourceCommit: z.string().trim().min(7).max(80),
+  sourceFile: z.literal("data/eg_drugs.json"),
+  sourceVersion: z.string().trim().min(1).max(80),
+  licenseAcknowledged: z.literal(true),
+  content: z.string().min(2).max(50_000_000),
+});
+export type DrugCatalogImportInput = z.infer<
+  typeof drugCatalogImportInputSchema
+>;
+export const drugCatalogRemoteImportInputSchema = z.object({
+  sourceKind: z.literal("remote-json"),
+  sourceUrl: z.string().url(),
+  sourceCommit: z.string().trim().min(7).max(80),
+  sourceFile: z.literal("data/eg_drugs.json"),
+  sourceVersion: z.string().trim().min(1).max(80),
+  licenseAcknowledged: z.literal(true),
+});
+export type DrugCatalogRemoteImportInput = z.infer<
+  typeof drugCatalogRemoteImportInputSchema
+>;
+export const drugCatalogSnapshotTransitionInputSchema = z.object({
+  snapshotId: opaqueIdSchema,
+  reason: z.string().trim().min(3).max(500),
+});
+export type DrugCatalogSnapshotTransitionInput = z.infer<
+  typeof drugCatalogSnapshotTransitionInputSchema
+>;
+export const drugCatalogSnapshotSchema = z.object({
+  id: opaqueIdSchema,
+  sourceKind: drugCatalogSourceKindSchema,
+  sourceUrl: z.string().url(),
+  sourceCommit: z.string().trim().min(7).max(80),
+  sourceFile: z.literal("data/eg_drugs.json"),
+  sourceVersion: z.string().trim().min(1).max(80),
+  licenseAcknowledged: z.literal(true),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  status: drugCatalogSnapshotStatusSchema,
+  totalRecords: z.number().int().nonnegative(),
+  validRecords: z.number().int().nonnegative(),
+  invalidRecords: z.number().int().nonnegative(),
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+  promotedAt: isoDateTimeSchema.optional(),
+  promotedByUserId: opaqueIdSchema.optional(),
+  supersededAt: isoDateTimeSchema.optional(),
+  rejectedAt: isoDateTimeSchema.optional(),
+  rejectionReason: z.string().optional(),
+  previousSnapshotId: opaqueIdSchema.optional(),
+});
+export type DrugCatalogSnapshot = z.infer<typeof drugCatalogSnapshotSchema>;
+export const drugCatalogEntrySchema = z.object({
+  id: opaqueIdSchema,
+  snapshotId: opaqueIdSchema,
+  externalId: z.string().trim().min(1).max(160),
+  nameEn: z.string().trim().min(1).max(240),
+  nameAr: z.string().trim().max(240).optional(),
+  activeIngredients: z.string().trim().min(1).max(2000),
+  company: z.string().trim().max(240).optional(),
+  priceEgp: z.number().nonnegative().max(1_000_000).optional(),
+  oldPriceEgp: z.number().nonnegative().max(1_000_000).optional(),
+  availability: z.string().trim().max(80).optional(),
+  barcode: z.string().trim().max(80).optional(),
+  slug: z.string().trim().max(240).optional(),
+  units: z.string().trim().max(240).optional(),
+  description: z.string().trim().max(1000).optional(),
+  usesAr: z.string().trim().max(5000).optional(),
+  matchedFdaIngredients: z.string().trim().max(2000).optional(),
+  usesSummaryAr: z.string().trim().max(2000).optional(),
+  usesSummaryEn: z.string().trim().max(2000).optional(),
+  warnings: drugCatalogWarningSchema,
+  warningsSummaryAr: z.string().trim().max(5000).optional(),
+  warningsSummaryEn: z.string().trim().max(5000).optional(),
+  validationStatus: z.enum(["valid", "invalid"]),
+  validationErrors: z.array(z.string().trim().min(1).max(240)).max(20),
+});
+export type DrugCatalogEntry = z.infer<typeof drugCatalogEntrySchema>;
+
 export const billingInvoiceStatusSchema = z.enum([
   "open",
   "partially-paid",

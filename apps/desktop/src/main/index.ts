@@ -1,6 +1,7 @@
 import {
   AuthService,
   BillingService,
+  DrugCatalogService,
   DoctorProfileService,
   ClinicalWorkflowService,
   ExportGovernanceService,
@@ -54,6 +55,9 @@ import {
   billingPackageInputSchema,
   billingPaymentInputSchema,
   billingRefundInputSchema,
+  drugCatalogImportInputSchema,
+  drugCatalogRemoteImportInputSchema,
+  drugCatalogSnapshotTransitionInputSchema,
   departmentSchema,
   diagnosisInputSchema,
   doctorDocumentUploadInputSchema,
@@ -110,6 +114,7 @@ let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let billingService: BillingService | undefined;
+let drugCatalogService: DrugCatalogService | undefined;
 let doctorProfileService: DoctorProfileService | undefined;
 let patientExportService: PatientExportService | undefined;
 let exportGovernanceService: ExportGovernanceService | undefined;
@@ -150,6 +155,7 @@ function initializeServices(): void {
     encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
     billingService = new BillingService(database);
+    drugCatalogService = new DrugCatalogService(database);
     const doctorVaultKey = app.isPackaged
       ? keyProvider.getOrCreateKey()
       : Buffer.alloc(32, 7);
@@ -1607,6 +1613,91 @@ function registerIpc(): void {
         parseIpcInput(billingRefundInputSchema, input),
       ),
   );
+  registerIpcHandler("drug-catalog:snapshots", (_event, token: string) =>
+    requireDrugCatalogService().listSnapshots(serviceContext(token)),
+  );
+  registerIpcHandler(
+    "drug-catalog:entries",
+    (_event, token: string, snapshotId: string) =>
+      requireDrugCatalogService().listEntries(
+        serviceContext(token),
+        snapshotId,
+      ),
+  );
+  registerIpcHandler(
+    "drug-catalog:fetch-stage",
+    async (_event, token: string, input: unknown) => {
+      const parsed = parseIpcInput(drugCatalogRemoteImportInputSchema, input);
+      const url = new URL(parsed.sourceUrl);
+      if (
+        !["github.com", "raw.githubusercontent.com"].includes(
+          url.hostname.toLowerCase(),
+        ) ||
+        !url.pathname.toLowerCase().includes("mahmoudfalous/eg-drugs") ||
+        !url.pathname.includes(parsed.sourceCommit)
+      ) {
+        throw new Error(
+          "ELITE_DRUG_CATALOG_SOURCE_NOT_ALLOWED: only the approved pinned eg-drugs GitHub source is allowed",
+        );
+      }
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `ELITE_DRUG_CATALOG_SOURCE_UNAVAILABLE: source returned HTTP ${response.status}`,
+        );
+      }
+      const contentLength = Number(response.headers.get("content-length") ?? 0);
+      if (contentLength > 50_000_000) {
+        throw new Error(
+          "ELITE_DRUG_CATALOG_SOURCE_TOO_LARGE: source exceeds the import limit",
+        );
+      }
+      const content = await response.text();
+      if (Buffer.byteLength(content, "utf8") > 50_000_000) {
+        throw new Error(
+          "ELITE_DRUG_CATALOG_SOURCE_TOO_LARGE: source exceeds the import limit",
+        );
+      }
+      return requireDrugCatalogService().stageImport(serviceContext(token), {
+        ...parsed,
+        content,
+      });
+    },
+  );
+  registerIpcHandler(
+    "drug-catalog:stage",
+    (_event, token: string, input: unknown) =>
+      requireDrugCatalogService().stageImport(
+        serviceContext(token),
+        parseIpcInput(drugCatalogImportInputSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "drug-catalog:promote",
+    (_event, token: string, input: unknown) =>
+      requireDrugCatalogService().promoteSnapshot(
+        serviceContext(token),
+        parseIpcInput(drugCatalogSnapshotTransitionInputSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "drug-catalog:reject",
+    (_event, token: string, input: unknown) =>
+      requireDrugCatalogService().rejectSnapshot(
+        serviceContext(token),
+        parseIpcInput(drugCatalogSnapshotTransitionInputSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "drug-catalog:rollback",
+    (_event, token: string, input: unknown) =>
+      requireDrugCatalogService().rollbackSnapshot(
+        serviceContext(token),
+        parseIpcInput(drugCatalogSnapshotTransitionInputSchema, input),
+      ),
+  );
   registerIpcHandler(
     "clinical:service-create",
     (_event, token: string, input: unknown) =>
@@ -1696,6 +1787,11 @@ function requireBillingService(): BillingService {
   if (!billingService) throw new Error("ELITE_BILLING_SERVICE_UNAVAILABLE");
   return billingService;
 }
+function requireDrugCatalogService(): DrugCatalogService {
+  if (!drugCatalogService)
+    throw new Error("ELITE_DRUG_CATALOG_SERVICE_UNAVAILABLE");
+  return drugCatalogService;
+}
 
 function requireClinicalService(): ClinicalWorkflowService {
   if (!clinicalService)
@@ -1738,6 +1834,7 @@ app.on("before-quit", () => {
   medicalHistoryService = undefined;
   encounterService = undefined;
   clinicalService = undefined;
+  drugCatalogService = undefined;
   patientExportService = undefined;
   exportGovernanceService = undefined;
   synchronizationService = undefined;

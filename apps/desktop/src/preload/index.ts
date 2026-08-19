@@ -84,6 +84,11 @@ import type {
   EnrollmentDeviceRequest,
   EnrollmentResponse,
   EnrollmentStateSummary,
+  DrugCatalogEntry,
+  DrugCatalogImportInput,
+  DrugCatalogRemoteImportInput,
+  DrugCatalogSnapshot,
+  DrugCatalogSnapshotTransitionInput,
 } from "@elite/contracts";
 import type {
   PatientRelatedPersonLinkSummary,
@@ -626,6 +631,55 @@ const eliteApi = {
         token,
         documentId,
       ) as Promise<DoctorDocument>,
+  },
+  drugCatalog: {
+    listSnapshots: (token: string) =>
+      ipcRenderer.invoke("drug-catalog:snapshots", token) as Promise<
+        readonly DrugCatalogSnapshot[]
+      >,
+    listEntries: (token: string, snapshotId: string) =>
+      ipcRenderer.invoke("drug-catalog:entries", token, snapshotId) as Promise<
+        readonly DrugCatalogEntry[]
+      >,
+    fetchAndStageRemote: (token: string, input: DrugCatalogRemoteImportInput) =>
+      ipcRenderer.invoke(
+        "drug-catalog:fetch-stage",
+        token,
+        input,
+      ) as Promise<DrugCatalogSnapshot>,
+    stageImport: (token: string, input: DrugCatalogImportInput) =>
+      ipcRenderer.invoke(
+        "drug-catalog:stage",
+        token,
+        input,
+      ) as Promise<DrugCatalogSnapshot>,
+    promoteSnapshot: (
+      token: string,
+      input: DrugCatalogSnapshotTransitionInput,
+    ) =>
+      ipcRenderer.invoke(
+        "drug-catalog:promote",
+        token,
+        input,
+      ) as Promise<DrugCatalogSnapshot>,
+    rejectSnapshot: (
+      token: string,
+      input: DrugCatalogSnapshotTransitionInput,
+    ) =>
+      ipcRenderer.invoke(
+        "drug-catalog:reject",
+        token,
+        input,
+      ) as Promise<DrugCatalogSnapshot>,
+    rollbackSnapshot: (
+      token: string,
+      input: DrugCatalogSnapshotTransitionInput,
+    ) =>
+      ipcRenderer.invoke(
+        "drug-catalog:rollback",
+        token,
+        input,
+      ) as Promise<DrugCatalogSnapshot>,
   },
   billing: {
     listPackages: (token: string) =>

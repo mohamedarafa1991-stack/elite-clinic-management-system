@@ -814,6 +814,11 @@ export {
 } from "./clinical-service.js";
 export { BillingService } from "./billing-service.js";
 export {
+  DrugCatalogService,
+  hashDrugCatalogContent,
+  normalizeDrugCatalogRows,
+} from "./drug-catalog-service.js";
+export {
   DoctorProfileService,
   createDerivedDoctorVaultKey,
 } from "./doctor-profile-service.js";

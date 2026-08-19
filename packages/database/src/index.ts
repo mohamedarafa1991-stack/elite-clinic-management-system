@@ -1394,6 +1394,71 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         ON doctor_documents(family_id, version DESC);
     `,
   },
+  {
+    version: 22,
+    name: "staged-egyptian-drug-catalog",
+    sql: `
+      CREATE TABLE IF NOT EXISTS drug_catalog_snapshots (
+        id TEXT PRIMARY KEY NOT NULL,
+        source_kind TEXT NOT NULL CHECK (source_kind IN ('remote-json', 'local-json')),
+        source_url TEXT NOT NULL,
+        source_commit TEXT NOT NULL,
+        source_file TEXT NOT NULL CHECK (source_file = 'data/eg_drugs.json'),
+        source_version TEXT NOT NULL,
+        license_acknowledged INTEGER NOT NULL CHECK (license_acknowledged = 1),
+        content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
+        status TEXT NOT NULL CHECK (status IN ('staged', 'active', 'superseded', 'rejected')),
+        total_records INTEGER NOT NULL CHECK (total_records >= 0),
+        valid_records INTEGER NOT NULL CHECK (valid_records >= 0),
+        invalid_records INTEGER NOT NULL CHECK (invalid_records >= 0),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        promoted_at TEXT,
+        promoted_by_user_id TEXT REFERENCES users(id),
+        superseded_at TEXT,
+        rejected_at TEXT,
+        rejection_reason TEXT,
+        previous_snapshot_id TEXT REFERENCES drug_catalog_snapshots(id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_drug_catalog_one_active
+        ON drug_catalog_snapshots(status) WHERE status = 'active';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_drug_catalog_snapshot_source
+        ON drug_catalog_snapshots(source_commit, source_file, content_sha256);
+      CREATE INDEX IF NOT EXISTS idx_drug_catalog_snapshots_status
+        ON drug_catalog_snapshots(status, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS drug_catalog_entries (
+        id TEXT PRIMARY KEY NOT NULL,
+        snapshot_id TEXT NOT NULL REFERENCES drug_catalog_snapshots(id),
+        external_id TEXT NOT NULL,
+        name_en TEXT NOT NULL,
+        name_ar TEXT,
+        active_ingredients TEXT NOT NULL,
+        company TEXT,
+        price_egp REAL,
+        old_price_egp REAL,
+        availability TEXT,
+        barcode TEXT,
+        slug TEXT,
+        units TEXT,
+        description TEXT,
+        uses_ar TEXT,
+        matched_fda_ingredients TEXT,
+        uses_summary_ar TEXT,
+        uses_summary_en TEXT,
+        warnings_json TEXT NOT NULL,
+        warnings_summary_ar TEXT,
+        warnings_summary_en TEXT,
+        validation_status TEXT NOT NULL CHECK (validation_status IN ('valid', 'invalid')),
+        validation_errors_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE (snapshot_id, external_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_drug_catalog_entries_snapshot
+        ON drug_catalog_entries(snapshot_id, validation_status, name_en);
+      CREATE INDEX IF NOT EXISTS idx_drug_catalog_entries_barcode
+        ON drug_catalog_entries(snapshot_id, barcode);
+    `,
+  },
 ];
 
 function now(): string {

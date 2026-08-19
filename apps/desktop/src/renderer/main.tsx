@@ -74,6 +74,7 @@ import type { PatientRelatedPersonLinkSummary } from "@elite/auth";
 import { AppShell } from "./app-shell.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
 import { TodayWorkspace } from "./today-workspace.js";
+import { DrugCatalogAdminPanel } from "./drug-catalog-admin-panel.js";
 import {
   buildRelatedPersonInputs,
   createNewRelatedPersonForm,
@@ -6267,6 +6268,7 @@ function BillingWorkspace({
           </button>
         </form>
       ) : null}
+      <DrugCatalogAdminPanel token={token} canManage={canManageCatalog} />
       <div className="form-section">
         <h3>Available catalog</h3>
         <div className="patient-list">
