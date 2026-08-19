@@ -196,6 +196,11 @@ runPnpm(
   "LOCAL-DESKTOP-001",
   "The desktop main process and renderer build successfully.",
 );
+runPnpm(
+  ["desktop:ipc:smoke"],
+  "LOCAL-DESKTOP-002",
+  "Centralized IPC sender validation, registration, and safe-error policy tests pass.",
+);
 if (existsSync(desktopArchive)) {
   runPnpm(
     ["desktop:package:verify"],

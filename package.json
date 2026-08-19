@@ -19,6 +19,7 @@
     "security:check": "pnpm audit --audit-level high",
     "desktop:dev": "pnpm --filter @elite/desktop dev",
     "desktop:build": "pnpm --filter @elite/desktop build",
+    "desktop:ipc:smoke": "pnpm --filter @elite/desktop test --run src/main/ipc-registration.test.ts src/main/ipc-security.test.ts",
     "desktop:native-rebuild": "electron-rebuild --force --module-dir apps/desktop",
     "desktop:package:dir": "node scripts/package-desktop.mjs --dir",
     "desktop:package:win": "node scripts/package-desktop.mjs --win",
@@ -29,6 +30,7 @@
     "android:verify": "node scripts/verify-android-release.mjs",
     "android:release-check": "pnpm android:unit && pnpm android:lint && pnpm android:assemble && pnpm android:verify -- --artifacts",
     "pilot:rehearsal": "pnpm build:packages && node scripts/synthetic-pilot-rehearsal.mjs",
+    "pilot:evidence": "node scripts/generate-pilot-evidence-pack.mjs",
     "release:readiness": "node scripts/validate-release-readiness.mjs",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"

@@ -73,7 +73,13 @@ The generated report is synthetic evidence and should be copied to the pilot evi
 ELITE_READINESS_REPORT=artifacts/release-readiness/local-gates.json pnpm release:readiness
 ```
 
-The complete workstation and device matrix is documented in `docs/workstation-and-device-validation-matrix.md`, with the JSON and operator checklist templates under `docs/templates/`. The optional `--keep-artifacts` argument preserves the temporary encrypted database, backup, restore copy, and vault directories for inspection:
+The complete workstation and device matrix is documented in `docs/workstation-and-device-validation-matrix.md`, with the JSON and operator checklist templates under `docs/templates/`. The ordered physical execution sequence is documented in `docs/physical-pilot-execution-order.md`. Before beginning hardware tests, generate the synthetic-only evidence pack and hash any available desktop/APK artifacts:
+
+```bash
+pnpm pilot:evidence -- --clean --require-artifacts
+```
+
+The pack is written to the ignored `artifacts/pilot-evidence-pack/` directory and keeps `pendingHardwareSignoff: true` until the operator completes the physical matrix. The optional `--keep-artifacts` argument preserves the temporary encrypted database, backup, restore copy, and vault directories for inspection:
 
 ```bash
 ELITE_PILOT_REPORT=artifacts/pilot-rehearsal/run-report.json pnpm pilot:rehearsal -- --keep-artifacts
