@@ -1099,8 +1099,18 @@ export class PatientIdentityService {
     if (!hasCapability(context, "patient.merge"))
       throw new Error("ELITE_AUTH_CAPABILITY_REQUIRED: patient.merge");
     const parsedReason = z.string().trim().min(3).max(500).parse(reason);
+    const merge = this.database.raw
+      .prepare(
+        "SELECT status, field_decisions_json FROM patient_merge_cases WHERE id = ?",
+      )
+      .get(caseId) as
+      { status: string; field_decisions_json: string } | undefined;
+    if (!merge || merge.status !== "pending")
+      throw new Error(
+        "ELITE_PATIENT_MERGE_CASE_NOT_PENDING: merge case is not pending",
+      );
     const parsedFieldDecisions = patientMergeFieldDecisionsSchema.parse(
-      fieldDecisions ?? {},
+      fieldDecisions ?? JSON.parse(merge.field_decisions_json),
     );
     const timestamp = this.now();
     const nextStatus = decision === "approve" ? "approved" : "rejected";

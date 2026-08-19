@@ -342,7 +342,11 @@ export class BillingService {
       const payment = this.database.raw
         .prepare("SELECT * FROM billing_payments WHERE id = ?")
         .get(parsed.paymentId) as Row | undefined;
-      if (!payment || payment.status === "voided") {
+      if (
+        !payment ||
+        payment.status === "voided" ||
+        payment.status === "refunded"
+      ) {
         throw new Error(
           "ELITE_BILLING_PAYMENT_NOT_REFUNDABLE: payment is unavailable",
         );

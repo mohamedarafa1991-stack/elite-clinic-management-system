@@ -185,6 +185,75 @@ describe("Step 4 patient identity service", () => {
   });
 });
 
+it("applies selected source and target fields during an approved merge", async () => {
+  const fixture = await createFixture();
+  try {
+    const source = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Source Name",
+      nameAr: "اسم المصدر التجريبي",
+      dob: "1988-01-02",
+      sex: "female",
+      phone: "+201000000021",
+      nationalId: "SYNTHETIC-SOURCE-021",
+    });
+    const target = fixture.service.registerPatient(fixture.context, {
+      registrationMode: "full",
+      nameEn: "Synthetic Target Name",
+      nameAr: "اسم الهدف التجريبي",
+      dob: "1989-03-04",
+      sex: "male",
+      phone: "+201000000022",
+      nationalId: "SYNTHETIC-TARGET-022",
+    });
+    const mergeCase = fixture.service.requestMerge(fixture.context, {
+      sourcePatientId: source.patient.patientId,
+      targetPatientId: target.patient.patientId,
+      reason: "Synthetic field resolution test",
+      fieldDecisions: {
+        nameEn: "source",
+        nameAr: "target",
+        dob: "source",
+        sex: "target",
+        phone: "target",
+        nationalId: "source",
+      },
+    });
+    fixture.service.reviewMergeCase(
+      fixture.context,
+      mergeCase.id,
+      "approve",
+      "Synthetic field resolution approval",
+    );
+    const executed = fixture.service.executeMerge(
+      fixture.context,
+      mergeCase.id,
+    );
+    expect(executed.status).toBe("executed");
+
+    const mergedTarget = fixture.service.getPatient(
+      fixture.context,
+      target.patient.patientId,
+    );
+    expect(mergedTarget).toMatchObject({
+      patientId: target.patient.patientId,
+      nameEn: "Synthetic Source Name",
+      nameAr: "اسم الهدف التجريبي",
+      dob: "1988-01-02",
+      sex: "male",
+      phone: "+201000000022",
+      nationalId: "SYNTHETIC-SOURCE-021",
+      status: "active",
+    });
+    expect(
+      fixture.service.getPatient(fixture.context, source.patient.patientId)
+        .status,
+    ).toBe("merged");
+  } finally {
+    fixture.database.close();
+  }
+});
+
 it("promotes a quick record to full registration and rejects stale profile edits", async () => {
   const fixture = await createFixture();
   try {

@@ -121,6 +121,13 @@ describe("Step 29 billing service", () => {
           method: "cash",
         }),
       ).toThrow("ELITE_BILLING_PAYMENT_EXCEEDS_BALANCE");
+      expect(() =>
+        fixture.billing.refundPayment(fixture.context, {
+          paymentId: firstPayment.payment.id,
+          amountEgp: 301,
+          reason: "Synthetic over-refund rejection",
+        }),
+      ).toThrow("ELITE_BILLING_REFUND_EXCEEDS_PAYMENT");
       const refund = fixture.billing.refundPayment(fixture.context, {
         paymentId: firstPayment.payment.id,
         amountEgp: 300,
@@ -137,6 +144,13 @@ describe("Step 29 billing service", () => {
           .prepare("SELECT status FROM billing_receipts WHERE payment_id = ?")
           .get(firstPayment.payment.id),
       ).toMatchObject({ status: "voided" });
+      expect(() =>
+        fixture.billing.refundPayment(fixture.context, {
+          paymentId: firstPayment.payment.id,
+          amountEgp: 1,
+          reason: "Synthetic duplicate refund rejection",
+        }),
+      ).toThrow("ELITE_BILLING_PAYMENT_NOT_REFUNDABLE");
     } finally {
       fixture.database.close();
     }

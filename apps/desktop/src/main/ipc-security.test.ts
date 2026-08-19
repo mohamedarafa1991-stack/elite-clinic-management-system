@@ -92,6 +92,29 @@ describe("assertTrustedIpcSender", () => {
     ).toThrowError(/ELITE_IPC_UNTRUSTED_SENDER/);
   });
 
+  it("rejects a destroyed trusted window and a missing sender frame", () => {
+    const senderFrame = { url: "http://localhost:5173/index.html" };
+    const sender = { mainFrame: senderFrame };
+
+    expect(() =>
+      assertTrustedIpcSender(
+        fakeEvent(sender, senderFrame),
+        fakeWindow(sender, true),
+        {
+          isPackaged: false,
+          developmentRendererUrl: "http://localhost:5173",
+        },
+      ),
+    ).toThrowError(/ELITE_IPC_UNTRUSTED_SENDER/);
+
+    expect(() =>
+      assertTrustedIpcSender(fakeEvent(sender, null), fakeWindow(sender), {
+        isPackaged: false,
+        developmentRendererUrl: "http://localhost:5173",
+      }),
+    ).toThrowError(/ELITE_IPC_UNTRUSTED_SENDER/);
+  });
+
   it("accepts a packaged file frame and rejects a remote packaged frame", () => {
     const packagedFrame = { url: "file:///app/renderer/index.html" };
     const packagedSender = { mainFrame: packagedFrame };
