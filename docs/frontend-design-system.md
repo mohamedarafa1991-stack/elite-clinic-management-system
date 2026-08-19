@@ -313,3 +313,11 @@ The first visual implementation should include:
 [9]: https://digital.ahrq.gov/program-overview/research-stories/improving-electronic-health-record-usability-patient-safety "AHRQ — Improving EHR Usability for Patient Safety"
 [10]: https://pmc.ncbi.nlm.nih.gov/articles/PMC12206486/ "Olakotan et al. — Usability Challenges in Electronic Health Records: Impact on Documentation Burden and Clinical Workflow"
 [11]: https://pmc.ncbi.nlm.nih.gov/articles/PMC11705737/ "Cahill et al. — The influence of electronic health record design on usability and medication safety"
+
+## 12. Implemented slice: Patient Context and Today
+
+The first vertical workflow slice is now implemented in the desktop renderer. The authenticated shell includes a real Today workspace that loads the current day’s appointments through the existing secure clinical bridge, sorts them by scheduled time, and exposes appointment, waiting, completed, and next-patient summaries. It includes loading, error, and no-appointment states and a role-specific focus panel for Admin, Doctor, Nurse, and Receptionist users.
+
+The Patient workspace now exposes a reusable Patient Context Banner above profile editing. It keeps the selected patient’s identity, patient ID, phone, age, and status visible while the user edits the profile, related persons, medical history, or guardian links. Patient ID and phone values are rendered in explicit LTR spans so they remain readable inside Arabic RTL layouts. The banner provides a deliberate “Clear context” action to reduce wrong-patient risk.
+
+The desktop locale foundation now persists `en-EG` or `ar-EG`, updates the document `lang` and `dir` attributes, mirrors the shell using logical layout properties, localizes the new shell/Today/banner copy, formats dates/times/numbers through `Intl`, translates dynamic role/status labels, and keeps machine identifiers direction-isolated. Arabic copy is intentionally limited to the newly implemented slice until the remaining workspaces are migrated through the same dictionary rather than mixing partial translations invisibly.

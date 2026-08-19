@@ -4,6 +4,7 @@ import {
   useState,
   type FormEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { createRoot } from "react-dom/client";
 import type {
@@ -161,6 +162,303 @@ const initialBootstrap: BootstrapFormState = {
   backupDisplayName: "",
   hubDeviceName: "Elite Windows Hub",
 };
+
+type InterfaceLocale = "en-EG" | "ar-EG";
+type InterfaceCopyKey =
+  | "appName"
+  | "clinicWorkspace"
+  | "localFirst"
+  | "workingLocally"
+  | "encryptedStore"
+  | "interfaceLanguage"
+  | "signOut"
+  | "overview"
+  | "patients"
+  | "careSchedule"
+  | "billing"
+  | "doctors"
+  | "governance"
+  | "overviewDetail"
+  | "patientsDetail"
+  | "careScheduleDetail"
+  | "billingDetail"
+  | "doctorsDetail"
+  | "governanceDetail"
+  | "patientContext"
+  | "patientId"
+  | "phone"
+  | "age"
+  | "status"
+  | "clearContext"
+  | "todayEyebrow"
+  | "todayWorkspace"
+  | "findPatient"
+  | "refreshToday"
+  | "refreshing"
+  | "appointments"
+  | "waiting"
+  | "completed"
+  | "nextPatient"
+  | "scheduledToday"
+  | "arrivedNotCompleted"
+  | "closedVisits"
+  | "noUpcomingVisit"
+  | "clinicQueue"
+  | "todaysAppointments"
+  | "localData"
+  | "loadingAppointments"
+  | "noAppointments"
+  | "queueDescription"
+  | "yourFocus"
+  | "calmNextAction"
+  | "patientIdentityFirst"
+  | "patientIdentityFirstDetail"
+  | "offlineValid"
+  | "offlineValidDetail";
+
+const INTERFACE_COPY: Record<
+  InterfaceLocale,
+  Record<InterfaceCopyKey, string>
+> = {
+  "en-EG": {
+    appName: "Elite Clinic Management System",
+    clinicWorkspace: "Clinic workspace",
+    localFirst: "Local-first",
+    workingLocally: "Working locally",
+    encryptedStore: "Encrypted clinic store",
+    interfaceLanguage: "Interface language",
+    signOut: "Sign out",
+    overview: "Overview",
+    patients: "Patients",
+    careSchedule: "Care & schedule",
+    billing: "Billing",
+    doctors: "Doctors",
+    governance: "Governance",
+    overviewDetail: "Today and clinic status",
+    patientsDetail: "Search and patient records",
+    careScheduleDetail: "Appointments and encounters",
+    billingDetail: "Invoices, receipts, and packages",
+    doctorsDetail: "Profiles and secure documents",
+    governanceDetail: "Exports, audit, and Admin controls",
+    patientContext: "Patient context",
+    patientId: "Patient ID",
+    phone: "Phone",
+    age: "Age",
+    status: "Status",
+    clearContext: "Clear context",
+    todayEyebrow: "Today at Elite Clinic",
+    todayWorkspace: "Clinic workspace",
+    findPatient: "Find a patient",
+    refreshToday: "Refresh today",
+    refreshing: "Refreshing…",
+    appointments: "Appointments",
+    waiting: "Waiting",
+    completed: "Completed",
+    nextPatient: "Next patient",
+    scheduledToday: "Scheduled for today",
+    arrivedNotCompleted: "Arrived and not completed",
+    closedVisits: "Closed visits today",
+    noUpcomingVisit: "No upcoming visit",
+    clinicQueue: "Clinic queue",
+    todaysAppointments: "Today’s appointments",
+    localData: "Local data",
+    loadingAppointments: "Loading today’s appointments…",
+    noAppointments: "No appointments scheduled today",
+    queueDescription:
+      "When the day is open, the queue will appear here in time order.",
+    yourFocus: "Your focus",
+    calmNextAction: "A calm next action",
+    patientIdentityFirst: "Patient identity first",
+    patientIdentityFirstDetail:
+      "Keep the patient ID and name visible before editing or documenting.",
+    offlineValid: "Offline is valid",
+    offlineValidDetail:
+      "Local work continues while the secure LAN status is unavailable.",
+  },
+  "ar-EG": {
+    appName: "نظام إدارة عيادة إيليت",
+    clinicWorkspace: "مساحة عمل العيادة",
+    localFirst: "محلي أولاً",
+    workingLocally: "العمل محلياً",
+    encryptedStore: "مخزن العيادة المشفر",
+    interfaceLanguage: "لغة الواجهة",
+    signOut: "تسجيل الخروج",
+    overview: "نظرة عامة",
+    patients: "المرضى",
+    careSchedule: "الرعاية والجدول",
+    billing: "الفوترة",
+    doctors: "الأطباء",
+    governance: "الحوكمة",
+    overviewDetail: "اليوم وحالة العيادة",
+    patientsDetail: "البحث وسجلات المرضى",
+    careScheduleDetail: "المواعيد والزيارات",
+    billingDetail: "الفواتير والإيصالات والباقات",
+    doctorsDetail: "الملفات والوثائق الآمنة",
+    governanceDetail: "التصدير والتدقيق وإدارة النظام",
+    patientContext: "سياق المريض",
+    patientId: "معرّف المريض",
+    phone: "الهاتف",
+    age: "العمر",
+    status: "الحالة",
+    clearContext: "مسح السياق",
+    todayEyebrow: "اليوم في عيادة إيليت",
+    todayWorkspace: "مساحة عمل العيادة",
+    findPatient: "البحث عن مريض",
+    refreshToday: "تحديث اليوم",
+    refreshing: "جارٍ التحديث…",
+    appointments: "المواعيد",
+    waiting: "في الانتظار",
+    completed: "المكتملة",
+    nextPatient: "المريض التالي",
+    scheduledToday: "المجدولة اليوم",
+    arrivedNotCompleted: "وصلوا ولم تكتمل زيارتهم",
+    closedVisits: "الزيارات المغلقة اليوم",
+    noUpcomingVisit: "لا توجد زيارة قادمة",
+    clinicQueue: "قائمة العيادة",
+    todaysAppointments: "مواعيد اليوم",
+    localData: "بيانات محلية",
+    loadingAppointments: "جارٍ تحميل مواعيد اليوم…",
+    noAppointments: "لا توجد مواعيد مجدولة اليوم",
+    queueDescription: "عند وجود مواعيد، ستظهر القائمة هنا مرتبة حسب الوقت.",
+    yourFocus: "تركيزك",
+    calmNextAction: "الخطوة التالية بهدوء",
+    patientIdentityFirst: "الهوية أولاً",
+    patientIdentityFirstDetail:
+      "حافظ على ظهور معرّف المريض واسمه قبل التعديل أو التوثيق.",
+    offlineValid: "العمل دون اتصال متاح",
+    offlineValidDetail:
+      "يستمر العمل محلياً أثناء عدم توفر حالة الاتصال الآمن بالشبكة المحلية.",
+  },
+};
+
+function copy(locale: InterfaceLocale, key: InterfaceCopyKey): string {
+  return INTERFACE_COPY[locale][key];
+}
+
+function localeDirection(locale: InterfaceLocale): "ltr" | "rtl" {
+  return locale === "ar-EG" ? "rtl" : "ltr";
+}
+
+function useInterfaceLocale(): readonly [
+  InterfaceLocale,
+  (locale: InterfaceLocale) => void,
+] {
+  const [locale, setLocaleState] = useState<InterfaceLocale>(() => {
+    if (typeof window === "undefined") return "en-EG";
+    return window.localStorage.getItem("elite-clinic-locale") === "ar-EG"
+      ? "ar-EG"
+      : "en-EG";
+  });
+
+  const setLocale = (nextLocale: InterfaceLocale): void => {
+    setLocaleState(nextLocale);
+    window.localStorage.setItem("elite-clinic-locale", nextLocale);
+  };
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = localeDirection(locale);
+  }, [locale]);
+
+  return [locale, setLocale] as const;
+}
+
+function formatLocalizedDate(
+  value: string | Date,
+  locale: InterfaceLocale,
+  options: Intl.DateTimeFormatOptions = {},
+): string {
+  return new Intl.DateTimeFormat(locale, options).format(
+    typeof value === "string" ? new Date(value) : value,
+  );
+}
+
+function formatLocalizedTime(
+  value: string | Date,
+  locale: InterfaceLocale,
+): string {
+  return formatLocalizedDate(value, locale, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatLocalizedEgp(amount: number, locale: InterfaceLocale): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "EGP",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function BidiValue({
+  children,
+  direction = "auto",
+  className,
+}: {
+  children: ReactNode;
+  direction?: "auto" | "ltr" | "rtl";
+  className?: string;
+}): ReactElement {
+  return (
+    <span dir={direction} className={className}>
+      {children}
+    </span>
+  );
+}
+
+function getPatientAge(dob: string | undefined): number | null {
+  if (!dob) return null;
+  const birthDate = new Date(`${dob}T00:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const beforeBirthday =
+    today.getMonth() < birthDate.getMonth() ||
+    (today.getMonth() === birthDate.getMonth() &&
+      today.getDate() < birthDate.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function formatStatusLabel(
+  value: string,
+  locale: InterfaceLocale = "en-EG",
+): string {
+  const arabicLabels: Record<string, string> = {
+    active: "نشط",
+    arrived: "وصل",
+    scheduled: "مجدول",
+    "in-consultation": "قيد الاستشارة",
+    completed: "مكتمل",
+    cancelled: "ملغى",
+    pending: "معلق",
+    verified: "تم التحقق",
+    archived: "مؤرشف",
+  };
+  if (locale === "ar-EG" && arabicLabels[value]) {
+    return arabicLabels[value];
+  }
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatRoleLabel(
+  role: SessionSummary["role"],
+  locale: InterfaceLocale,
+): string {
+  if (locale === "ar-EG") {
+    return {
+      admin: "مدير",
+      doctor: "طبيب",
+      nurse: "تمريض",
+      receptionist: "استقبال",
+    }[role];
+  }
+  return role;
+}
 
 function ErrorMessage({
   message,
@@ -645,9 +943,11 @@ function DevicePanel({ token }: { token: string }): ReactElement {
 function PatientWorkspace({
   token,
   session,
+  locale,
 }: {
   token: string;
   session: SessionSummary;
+  locale: InterfaceLocale;
 }): ReactElement {
   const [patients, setPatients] = useState<readonly Patient[]>([]);
   const [query, setQuery] = useState("");
@@ -1141,6 +1441,29 @@ function PatientWorkspace({
     }
   };
 
+  const clearSelectedPatient = (): void => {
+    setSelectedPatient(null);
+    setRelatedLinks([]);
+    setMedicalHistory([]);
+    setMedicalHistoryForm(null);
+    setEditingMedicalHistory(null);
+    setMedicalHistoryArchiveReason("");
+    setRelatedPersonForm(null);
+    setEditingRelatedLink(null);
+    setNameEn("");
+    setNameAr("");
+    setDob("");
+    setSex("");
+    setPhone("");
+    setNationalId("");
+    setRegistrationMode("quick");
+    setDuplicates([]);
+    setPendingInput(null);
+    setPendingEdit(null);
+    setDecisionReason("");
+    setError(null);
+  };
+
   const archive = async (patient: Patient): Promise<void> => {
     setIsBusy(true);
     setError(null);
@@ -1174,6 +1497,13 @@ function PatientWorkspace({
         are warnings, never silent merges.
       </p>
       <ErrorMessage message={error} />
+      {selectedPatient ? (
+        <PatientContextBanner
+          patient={selectedPatient}
+          locale={locale}
+          onClear={clearSelectedPatient}
+        />
+      ) : null}
       <div className="patient-toolbar">
         <input
           aria-label="Search patients"
@@ -1210,23 +1540,7 @@ function PatientWorkspace({
             <button
               className="button secondary"
               type="button"
-              onClick={() => {
-                setSelectedPatient(null);
-                setRelatedLinks([]);
-                setMedicalHistory([]);
-                setMedicalHistoryForm(null);
-                setEditingMedicalHistory(null);
-                setMedicalHistoryArchiveReason("");
-                setRelatedPersonForm(null);
-                setEditingRelatedLink(null);
-                setNameEn("");
-                setNameAr("");
-                setDob("");
-                setSex("");
-                setPhone("");
-                setNationalId("");
-                setRegistrationMode("quick");
-              }}
+              onClick={clearSelectedPatient}
             >
               New patient
             </button>
@@ -6878,74 +7192,411 @@ function DoctorWorkspace({
   );
 }
 
+function PatientContextBanner({
+  patient,
+  locale,
+  onClear,
+}: {
+  patient: Patient;
+  locale: InterfaceLocale;
+  onClear: () => void;
+}): ReactElement {
+  const primaryName =
+    locale === "ar-EG" && patient.nameAr?.trim()
+      ? patient.nameAr
+      : patient.nameEn;
+  const secondaryName =
+    locale === "ar-EG" && patient.nameAr?.trim()
+      ? patient.nameEn
+      : patient.nameAr;
+  const age = getPatientAge(patient.dob);
+  const statusClass = patient.status === "active" ? "ok" : "warn";
+
+  return (
+    <section
+      className="patient-context-banner"
+      aria-labelledby="patient-context-title"
+      aria-live="polite"
+    >
+      <div className="patient-context-identity">
+        <span className="patient-context-avatar" aria-hidden="true">
+          {primaryName.trim().slice(0, 1).toUpperCase() || "P"}
+        </span>
+        <div>
+          <p className="eyebrow">{copy(locale, "patientContext")}</p>
+          <h3 id="patient-context-title">
+            <BidiValue direction="auto">{primaryName}</BidiValue>
+          </h3>
+          {secondaryName ? (
+            <p className="patient-context-secondary">
+              <BidiValue direction="auto">{secondaryName}</BidiValue>
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <dl className="patient-context-facts">
+        <div>
+          <dt>{copy(locale, "patientId")}</dt>
+          <dd>
+            <BidiValue direction="ltr">{patient.patientId}</BidiValue>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy(locale, "phone")}</dt>
+          <dd>
+            <BidiValue direction="ltr">{patient.phone}</BidiValue>
+          </dd>
+        </div>
+        <div>
+          <dt>{copy(locale, "age")}</dt>
+          <dd>
+            {age === null
+              ? locale === "ar-EG"
+                ? "غير مسجل"
+                : "Not recorded"
+              : new Intl.NumberFormat(locale).format(age)}
+          </dd>
+        </div>
+        <div>
+          <dt>{copy(locale, "status")}</dt>
+          <dd>
+            <span className={`status ${statusClass}`}>
+              {formatStatusLabel(patient.status, locale)}
+            </span>
+          </dd>
+        </div>
+      </dl>
+      <button className="button ghost small" type="button" onClick={onClear}>
+        {copy(locale, "clearContext")}
+      </button>
+    </section>
+  );
+}
+
+function OverviewToday({
+  token,
+  session,
+  locale,
+}: {
+  token: string;
+  session: SessionSummary;
+  locale: InterfaceLocale;
+}): ReactElement {
+  const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async (): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+    const today = new Date();
+    const start = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+    const end = addCalendarDays(start, 1);
+    try {
+      const nextAppointments = await window.elite.clinical.listAppointments(
+        token,
+        start.toISOString(),
+        end.toISOString(),
+      );
+      setAppointments(
+        [...nextAppointments].sort(
+          (left, right) =>
+            new Date(left.scheduledStart).getTime() -
+            new Date(right.scheduledStart).getTime(),
+        ),
+      );
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to load today’s appointments",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [token]);
+
+  const waitingCount = appointments.filter(
+    (appointment) => appointment.status === "arrived",
+  ).length;
+  const completedCount = appointments.filter(
+    (appointment) => appointment.status === "completed",
+  ).length;
+  const nextAppointment = appointments.find(
+    (appointment) =>
+      appointment.status !== "completed" &&
+      appointment.status !== "cancelled" &&
+      new Date(appointment.scheduledStart).getTime() >= Date.now(),
+  );
+  const roleFocus: Record<SessionSummary["role"], string> =
+    locale === "ar-EG"
+      ? {
+          admin: "راجع حالة العيادة وحوكمة الموظفين وعناصر التحكم المعلقة.",
+          doctor: "حافظ على ظهور سياق المريض أثناء متابعة الرعاية اليوم.",
+          nurse:
+            "انقل المرضى من الوصول إلى تجهيز الغرفة مع إبقاء القائمة ظاهرة.",
+          receptionist: "سجّل وصول المريض التالي وعالج تحذيرات الهوية مبكراً.",
+        }
+      : {
+          admin:
+            "Review the clinic’s status, staff governance, and pending controls.",
+          doctor:
+            "Keep today’s patient context visible while you move through care.",
+          nurse:
+            "Move patients from arrival to rooming with the queue in view.",
+          receptionist:
+            "Check in the next patient and resolve identity warnings early.",
+        };
+
+  return (
+    <section id="workspace-overview" className="today-workspace">
+      <div className="today-hero">
+        <div>
+          <p className="eyebrow">{copy(locale, "todayEyebrow")}</p>
+          <h1>
+            {locale === "ar-EG"
+              ? copy(locale, "todayWorkspace")
+              : `Good day, ${session.username}`}
+          </h1>
+          <p className="today-date">
+            {formatLocalizedDate(new Date(), locale, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+        </div>
+        <div className="today-actions">
+          <button
+            className="button primary"
+            type="button"
+            onClick={() =>
+              document
+                .getElementById("workspace-patients")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+          >
+            {copy(locale, "findPatient")}
+          </button>
+          <button
+            className="button ghost"
+            type="button"
+            onClick={() => void refresh()}
+            disabled={isLoading}
+          >
+            {isLoading
+              ? copy(locale, "refreshing")
+              : copy(locale, "refreshToday")}
+          </button>
+        </div>
+      </div>
+      <div className="today-metrics" aria-label="Today summary">
+        <div className="today-metric">
+          <span>{copy(locale, "appointments")}</span>
+          <strong>{isLoading ? "—" : appointments.length}</strong>
+          <small>{copy(locale, "scheduledToday")}</small>
+        </div>
+        <div className="today-metric">
+          <span>{copy(locale, "waiting")}</span>
+          <strong>{isLoading ? "—" : waitingCount}</strong>
+          <small>{copy(locale, "arrivedNotCompleted")}</small>
+        </div>
+        <div className="today-metric">
+          <span>{copy(locale, "completed")}</span>
+          <strong>{isLoading ? "—" : completedCount}</strong>
+          <small>{copy(locale, "closedVisits")}</small>
+        </div>
+        <div className="today-metric metric-accent">
+          <span>{copy(locale, "nextPatient")}</span>
+          <strong>
+            {nextAppointment ? (
+              <BidiValue direction="ltr">{nextAppointment.patientId}</BidiValue>
+            ) : (
+              "—"
+            )}
+          </strong>
+          <small>
+            {nextAppointment
+              ? formatLocalizedTime(nextAppointment.scheduledStart, locale)
+              : copy(locale, "noUpcomingVisit")}
+          </small>
+        </div>
+      </div>
+      <div className="today-grid">
+        <section
+          className="today-card"
+          aria-labelledby="today-appointments-title"
+        >
+          <div className="today-card-heading">
+            <div>
+              <p className="eyebrow">{copy(locale, "clinicQueue")}</p>
+              <h2 id="today-appointments-title">
+                {copy(locale, "todaysAppointments")}
+              </h2>
+            </div>
+            <span className="status ok">{copy(locale, "localData")}</span>
+          </div>
+          {error ? <ErrorMessage message={error} /> : null}
+          {isLoading ? (
+            <p className="muted">{copy(locale, "loadingAppointments")}</p>
+          ) : appointments.length === 0 ? (
+            <div className="today-empty-state">
+              <strong>{copy(locale, "noAppointments")}</strong>
+              <p>{copy(locale, "queueDescription")}</p>
+            </div>
+          ) : (
+            <div className="today-appointment-list" aria-live="polite">
+              {appointments.map((appointment) => (
+                <article className="today-appointment-row" key={appointment.id}>
+                  <time dateTime={appointment.scheduledStart}>
+                    {formatLocalizedTime(appointment.scheduledStart, locale)}
+                  </time>
+                  <div className="today-appointment-main">
+                    <strong>
+                      <BidiValue direction="ltr">
+                        {appointment.patientId}
+                      </BidiValue>
+                    </strong>
+                    <span>
+                      {appointment.visitType} · {appointment.durationMinutes}{" "}
+                      min
+                    </span>
+                  </div>
+                  <span
+                    className={`status ${
+                      appointment.status === "completed"
+                        ? "ok"
+                        : appointment.status === "cancelled"
+                          ? "error"
+                          : appointment.status === "arrived"
+                            ? "warn"
+                            : "info"
+                    }`}
+                  >
+                    {formatStatusLabel(appointment.status, locale)}
+                  </span>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+        <section
+          className="today-card today-focus-card"
+          aria-labelledby="today-focus-title"
+        >
+          <div className="today-card-heading">
+            <div>
+              <p className="eyebrow">{copy(locale, "yourFocus")}</p>
+              <h2 id="today-focus-title">{copy(locale, "calmNextAction")}</h2>
+            </div>
+            <span className="today-focus-mark" aria-hidden="true">
+              E
+            </span>
+          </div>
+          <p>{roleFocus[session.role]}</p>
+          <div className="today-focus-list">
+            <div>
+              <strong>{copy(locale, "patientIdentityFirst")}</strong>
+              <span>{copy(locale, "patientIdentityFirstDetail")}</span>
+            </div>
+            <div>
+              <strong>{copy(locale, "offlineValid")}</strong>
+              <span>{copy(locale, "offlineValidDetail")}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 interface ShellNavigationItem {
   id: string;
-  label: string;
-  detail: string;
+  label: InterfaceCopyKey;
+  detail: InterfaceCopyKey;
   visible: boolean;
 }
 
 function AppShell({
   session,
+  locale,
+  onLocaleChange,
   onLogout,
   children,
 }: {
   session: SessionSummary;
+  locale: InterfaceLocale;
+  onLocaleChange: (locale: InterfaceLocale) => void;
   onLogout: () => Promise<void>;
   children: ReactElement;
 }): ReactElement {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeSection, setActiveSection] = useState("workspace-overview");
-  const navigation: ShellNavigationItem[] = [
-    {
-      id: "workspace-overview",
-      label: "Overview",
-      detail: "Today and clinic status",
-      visible: true,
-    },
-    {
-      id: "workspace-patients",
-      label: "Patients",
-      detail: "Search and patient records",
-      visible: session.capabilities.includes("patient.read"),
-    },
-    {
-      id: "workspace-care",
-      label: "Care & schedule",
-      detail: "Appointments and encounters",
-      visible: session.capabilities.includes("appointment.read"),
-    },
-    {
-      id: "workspace-billing",
-      label: "Billing",
-      detail: "Invoices, receipts, and packages",
-      visible: session.capabilities.includes("billing.read"),
-    },
-    {
-      id: "workspace-doctors",
-      label: "Doctors",
-      detail: "Profiles and secure documents",
-      visible: session.capabilities.includes("doctor.profile.read"),
-    },
-    {
-      id: "workspace-governance",
-      label: "Governance",
-      detail: "Exports, audit, and Admin controls",
-      visible:
-        session.capabilities.includes("export.manage") ||
-        session.capabilities.includes("device.manage"),
-    },
-  ].filter((item) => item.visible);
+  const navigation = (
+    [
+      {
+        id: "workspace-overview",
+        label: "overview",
+        detail: "overviewDetail",
+        visible: true,
+      },
+      {
+        id: "workspace-patients",
+        label: "patients",
+        detail: "patientsDetail",
+        visible: session.capabilities.includes("patient.read"),
+      },
+      {
+        id: "workspace-care",
+        label: "careSchedule",
+        detail: "careScheduleDetail",
+        visible: session.capabilities.includes("appointment.read"),
+      },
+      {
+        id: "workspace-billing",
+        label: "billing",
+        detail: "billingDetail",
+        visible: session.capabilities.includes("billing.read"),
+      },
+      {
+        id: "workspace-doctors",
+        label: "doctors",
+        detail: "doctorsDetail",
+        visible: session.capabilities.includes("doctor.profile.read"),
+      },
+      {
+        id: "workspace-governance",
+        label: "governance",
+        detail: "governanceDetail",
+        visible:
+          session.capabilities.includes("export.manage") ||
+          session.capabilities.includes("device.manage"),
+      },
+    ] as ShellNavigationItem[]
+  ).filter((item) => item.visible);
 
   return (
-    <div className={`app-shell${isCollapsed ? " is-collapsed" : ""}`}>
+    <div
+      className={`app-shell${isCollapsed ? " is-collapsed" : ""}`}
+      dir={localeDirection(locale)}
+      lang={locale}
+    >
       <aside className="app-sidebar" aria-label="Primary navigation">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
             E
           </span>
           <span className="brand-copy">
-            <strong>Elite Clinic</strong>
+            <strong>{copy(locale, "appName")}</strong>
             <small>ايليت · Cairo branch</small>
           </span>
         </div>
@@ -6972,11 +7623,11 @@ function AppShell({
               onClick={() => setActiveSection(item.id)}
             >
               <span className="sidebar-link-icon" aria-hidden="true">
-                {item.label.slice(0, 1)}
+                {copy(locale, item.label).slice(0, 1)}
               </span>
               <span className="sidebar-link-copy">
-                <strong>{item.label}</strong>
-                <small>{item.detail}</small>
+                <strong>{copy(locale, item.label)}</strong>
+                <small>{copy(locale, item.detail)}</small>
               </span>
             </a>
           ))}
@@ -6984,31 +7635,46 @@ function AppShell({
         <div className="sidebar-footer">
           <span className="local-status-dot" aria-hidden="true" />
           <span className="sidebar-link-copy">
-            <strong>Working locally</strong>
-            <small>Encrypted clinic store</small>
+            <strong>{copy(locale, "workingLocally")}</strong>
+            <small>{copy(locale, "encryptedStore")}</small>
           </span>
         </div>
       </aside>
       <div className="app-main">
         <header className="app-topbar">
           <div className="topbar-heading">
-            <span className="topbar-kicker">
-              Elite Clinic Management System
-            </span>
-            <strong>Clinic workspace</strong>
+            <span className="topbar-kicker">{copy(locale, "appName")}</span>
+            <strong>{copy(locale, "clinicWorkspace")}</strong>
           </div>
           <div className="topbar-actions">
+            <label className="locale-control">
+              <span className="visually-hidden">
+                {copy(locale, "interfaceLanguage")}
+              </span>
+              <select
+                aria-label={copy(locale, "interfaceLanguage")}
+                value={locale}
+                onChange={(event) =>
+                  onLocaleChange(event.target.value as InterfaceLocale)
+                }
+              >
+                <option value="en-EG">English</option>
+                <option value="ar-EG">العربية</option>
+              </select>
+            </label>
             <span className="topbar-status">
               <span className="local-status-dot" aria-hidden="true" />
-              Local-first
+              {copy(locale, "localFirst")}
             </span>
-            <span className="role-chip">{session.role}</span>
+            <span className="role-chip">
+              {formatRoleLabel(session.role, locale)}
+            </span>
             <button
               className="button ghost small"
               type="button"
               onClick={() => void onLogout()}
             >
-              Sign out
+              {copy(locale, "signOut")}
             </button>
           </div>
         </header>
@@ -7037,10 +7703,14 @@ function WorkspaceSection({
 function AuthenticatedView({
   token,
   session,
+  locale,
+  onLocaleChange,
   onLogout,
 }: {
   token: string;
   session: SessionSummary;
+  locale: InterfaceLocale;
+  onLocaleChange: (locale: InterfaceLocale) => void;
   onLogout: () => void;
 }): ReactElement {
   const [error, setError] = useState<string | null>(null);
@@ -7054,48 +7724,15 @@ function AuthenticatedView({
   };
 
   return (
-    <AppShell session={session} onLogout={logout}>
-      <section className="workspace-stack" aria-labelledby="session-title">
-        <section id="workspace-overview" className="workspace-overview">
-          <div className="overview-header">
-            <div>
-              <p className="eyebrow">Authenticated session</p>
-              <h2 id="session-title">Welcome, {session.username}</h2>
-            </div>
-            <span className="role-chip">{session.role}</span>
-          </div>
-          <p className="overview-description">
-            Your clinic workspace is ready. Start with today’s queue, search a
-            patient, or open a role-specific operational area.
-          </p>
-          <ErrorMessage message={error} />
-          <dl className="status-grid overview-metrics">
-            <div>
-              <dt>Device</dt>
-              <dd>{session.deviceId}</dd>
-            </div>
-            <div>
-              <dt>Session expires</dt>
-              <dd>{new Date(session.expiresAt).toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Capabilities</dt>
-              <dd>{session.capabilities.length}</dd>
-            </div>
-            <div>
-              <dt>Clinical approval</dt>
-              <dd>
-                {session.capabilities.includes("clinical.approve")
-                  ? "Doctor capability"
-                  : "Not assigned"}
-              </dd>
-            </div>
-          </dl>
-          <div className="capability-list overview-capabilities">
-            <strong>Access profile</strong>
-            <span>{session.capabilities.length} enabled capabilities</span>
-          </div>
-        </section>
+    <AppShell
+      session={session}
+      locale={locale}
+      onLocaleChange={onLocaleChange}
+      onLogout={logout}
+    >
+      <section className="workspace-stack" aria-label="Clinic workspaces">
+        <ErrorMessage message={error} />
+        <OverviewToday token={token} session={session} locale={locale} />
         {session.role === "admin" &&
         session.capabilities.includes("device.manage") ? (
           <WorkspaceSection id="workspace-governance">
@@ -7104,7 +7741,7 @@ function AuthenticatedView({
         ) : null}
         {session.capabilities.includes("patient.read") ? (
           <WorkspaceSection id="workspace-patients">
-            <PatientWorkspace token={token} session={session} />
+            <PatientWorkspace token={token} session={session} locale={locale} />
           </WorkspaceSection>
         ) : null}
         {session.capabilities.includes("billing.read") ? (
@@ -7239,6 +7876,7 @@ function LanSyncRecoveryNotice({
 }
 
 function FoundationStatus(): ReactElement {
+  const [locale, setLocale] = useInterfaceLocale();
   const [security, setSecurity] = useState<EliteSecurityStatus | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -7357,6 +7995,8 @@ function FoundationStatus(): ReactElement {
         <AuthenticatedView
           token={token}
           session={session}
+          locale={locale}
+          onLocaleChange={setLocale}
           onLogout={handleLogout}
         />
       ) : null}
