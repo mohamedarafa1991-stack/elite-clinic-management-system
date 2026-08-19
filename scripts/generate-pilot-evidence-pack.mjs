@@ -93,7 +93,12 @@ mkdirSync(outputPath, { recursive: true });
 
 const commit = run("git", ["rev-parse", "HEAD"]);
 const branch = run("git", ["branch", "--show-current"]);
-const worktreeStatus = run("git", ["status", "--short"]);
+const worktreeStatus = run("git", [
+  "-c",
+  "color.status=false",
+  "status",
+  "--short",
+]);
 const nodeVersion = run(process.execPath, ["--version"]);
 const pnpmVersion = run(pnpmCommand, ["--version"]);
 
