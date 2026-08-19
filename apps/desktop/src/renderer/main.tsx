@@ -70,15 +70,18 @@ import type {
   ScheduleInput,
   ScheduleExceptionInput,
 } from "@elite/contracts";
-import type {
-  PatientRelatedPersonLinkSummary,
-  RelatedPersonInput,
-  RelatedPersonLinkInput,
-  RelatedPersonSummary,
-} from "@elite/auth";
+import type { PatientRelatedPersonLinkSummary } from "@elite/auth";
 import { AppShell } from "./app-shell.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
 import { TodayWorkspace } from "./today-workspace.js";
+import {
+  buildRelatedPersonInputs,
+  createNewRelatedPersonForm,
+  getDuplicateReviewState,
+  getPatientWorkspaceCapabilities,
+  getRelatedPersonFormState,
+  type RelatedPersonFormState,
+} from "./patient-workspace-model.js";
 import "./styles.css";
 
 interface BootstrapFormState {
@@ -126,34 +129,6 @@ const emptyMedicalHistoryForm: MedicalHistoryFormState = {
   onsetDate: "",
   status: "active",
   source: "clinician-recorded",
-};
-
-interface RelatedPersonFormState {
-  displayNameEn: string;
-  displayNameAr: string;
-  relationship: string;
-  phone: string;
-  isGuardian: boolean;
-  isAuthorizedToConsent: boolean;
-  isAuthorizedToContact: boolean;
-  verificationStatus: "unverified" | "verified";
-  relationshipRole: string;
-  isPrimary: boolean;
-  consentAuthority: "none" | "inform" | "consent";
-}
-
-const emptyRelatedPersonForm: RelatedPersonFormState = {
-  displayNameEn: "",
-  displayNameAr: "",
-  relationship: "",
-  phone: "",
-  isGuardian: true,
-  isAuthorizedToConsent: true,
-  isAuthorizedToContact: true,
-  verificationStatus: "unverified",
-  relationshipRole: "",
-  isPrimary: false,
-  consentAuthority: "consent",
 };
 
 const initialBootstrap: BootstrapFormState = {
@@ -966,7 +941,16 @@ function PatientWorkspace({
   const [decisionReason, setDecisionReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-
+  const patientCapabilities = getPatientWorkspaceCapabilities(
+    session.capabilities,
+  );
+  const duplicateReview = getDuplicateReviewState({
+    candidates: duplicates,
+    hasPendingInput: pendingInput !== null,
+    hasPendingEdit: pendingEdit !== null,
+    decisionReason,
+    isBusy,
+  });
   const refresh = async (): Promise<void> => {
     setError(null);
     try {
@@ -1092,7 +1076,7 @@ function PatientWorkspace({
         await window.elite.relatedPersons.listLinks(token, patient.patientId),
       );
       setMedicalHistory(
-        session.capabilities.includes("clinical.read")
+        patientCapabilities.canReadClinical
           ? await window.elite.medicalHistory.list(token, patient.patientId)
           : [],
       );
@@ -1211,10 +1195,7 @@ function PatientWorkspace({
   const openNewRelatedPerson = (): void => {
     if (!selectedPatient) return;
     setEditingRelatedLink(null);
-    setRelatedPersonForm({
-      ...emptyRelatedPersonForm,
-      relationshipRole: "guardian",
-    });
+    setRelatedPersonForm(createNewRelatedPersonForm());
     setError(null);
   };
 
@@ -1222,19 +1203,7 @@ function PatientWorkspace({
     link: PatientRelatedPersonLinkSummary,
   ): void => {
     setEditingRelatedLink(link);
-    setRelatedPersonForm({
-      displayNameEn: link.relatedPerson.displayNameEn,
-      displayNameAr: link.relatedPerson.displayNameAr ?? "",
-      relationship: link.relatedPerson.relationship,
-      phone: link.relatedPerson.phoneNumbers[0] ?? "",
-      isGuardian: link.relatedPerson.isGuardian,
-      isAuthorizedToConsent: link.relatedPerson.isAuthorizedToConsent,
-      isAuthorizedToContact: link.relatedPerson.isAuthorizedToContact,
-      verificationStatus: link.verificationStatus,
-      relationshipRole: link.relationshipRole,
-      isPrimary: link.isPrimary,
-      consentAuthority: link.consentAuthority,
-    });
+    setRelatedPersonForm(getRelatedPersonFormState(link));
     setError(null);
   };
 
@@ -1244,24 +1213,7 @@ function PatientWorkspace({
     event.preventDefault();
     if (!selectedPatient || !relatedPersonForm) return;
     const form = relatedPersonForm;
-    const personInput: RelatedPersonInput = {
-      displayNameEn: form.displayNameEn,
-      ...(form.displayNameAr.trim()
-        ? { displayNameAr: form.displayNameAr.trim() }
-        : {}),
-      relationship: form.relationship,
-      phoneNumbers: [form.phone],
-      isGuardian: form.isGuardian,
-      isAuthorizedToConsent: form.isAuthorizedToConsent,
-      isAuthorizedToContact: form.isAuthorizedToContact,
-      verificationStatus: form.verificationStatus,
-    };
-    const linkInput: RelatedPersonLinkInput = {
-      relationshipRole: form.relationshipRole,
-      isPrimary: form.isPrimary,
-      consentAuthority: form.consentAuthority,
-      verificationStatus: form.verificationStatus,
-    };
+    const { personInput, linkInput } = buildRelatedPersonInputs(form);
     setIsBusy(true);
     setError(null);
     try {
@@ -1603,7 +1555,7 @@ function PatientWorkspace({
           {selectedPatient ? "Check and save profile" : "Check and register"}
         </button>
       </form>
-      {pendingInput || pendingEdit ? (
+      {duplicateReview.visible ? (
         <div className="duplicate-panel" role="alert">
           <h3>Possible duplicate patients</h3>
           <p>
@@ -1647,14 +1599,17 @@ function PatientWorkspace({
             <button
               className="button primary"
               type="button"
-              disabled={decisionReason.trim().length < 3 || isBusy}
+              disabled={!duplicateReview.canConfirm}
+
               onClick={() => {
-                if (pendingEdit) void confirmProfileDuplicate();
-                else if (pendingInput)
+                if (duplicateReview.mode === "update") {
+                  void confirmProfileDuplicate();
+                } else if (duplicateReview.mode === "create" && pendingInput) {
                   void createPatient(pendingInput, decisionReason);
+                }
               }}
             >
-              {pendingEdit
+              {duplicateReview.mode === "update"
                 ? "Save profile after review"
                 : "Create another patient"}
             </button>
@@ -1683,7 +1638,7 @@ function PatientWorkspace({
             >
               Open profile
             </button>
-            {session.capabilities.includes("patient.archive") &&
+            {patientCapabilities.canArchivePatient &&
             patient.status === "active" ? (
               <button
                 className="button danger"
@@ -1732,7 +1687,7 @@ function PatientWorkspace({
               </dd>
             </div>
           </dl>
-          {session.capabilities.includes("clinical.read") ? (
+          {patientCapabilities.canReadClinical ? (
             <section
               className="medical-history-section"
               aria-labelledby="medical-history-title"
@@ -1745,7 +1700,7 @@ function PatientWorkspace({
                     deleted.
                   </p>
                 </div>
-                {session.capabilities.includes("clinical.write") ? (
+                {patientCapabilities.canWriteClinical ? (
                   <button
                     className="button secondary"
                     type="button"
@@ -1756,7 +1711,7 @@ function PatientWorkspace({
                   </button>
                 ) : null}
               </div>
-              {session.capabilities.includes("clinical.write") ? (
+              {patientCapabilities.canWriteClinical ? (
                 <label className="history-audit-reason">
                   Reason for inactivation
                   <input
@@ -1782,7 +1737,7 @@ function PatientWorkspace({
                         </span>
                         {entry.details ? <small>{entry.details}</small> : null}
                       </div>
-                      {session.capabilities.includes("clinical.write") ? (
+                      {patientCapabilities.canWriteClinical ? (
                         <div className="button-row">
                           <button
                             className="button secondary"
@@ -1965,7 +1920,7 @@ function PatientWorkspace({
           ) : null}
           <div className="related-person-heading">
             <h4>Related persons and guardians</h4>
-            {session.capabilities.includes("patient.write") ? (
+            {patientCapabilities.canManageRelatedPersons ? (
               <button
                 className="button secondary"
                 type="button"
@@ -1996,7 +1951,7 @@ function PatientWorkspace({
                       {link.verificationStatus}
                     </small>
                   </div>
-                  {session.capabilities.includes("patient.write") ? (
+                  {patientCapabilities.canManageRelatedPersons ? (
                     <div className="button-row">
                       <button
                         className="button secondary"
