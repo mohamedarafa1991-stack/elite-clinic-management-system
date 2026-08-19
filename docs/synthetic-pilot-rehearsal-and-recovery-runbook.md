@@ -67,7 +67,13 @@ $env:ELITE_PILOT_REPORT = "artifacts/pilot-rehearsal/run-report.json"
 pnpm pilot:rehearsal
 ```
 
-The generated report is synthetic evidence and should be copied to the pilot evidence archive only after review. It is ignored by Git by design. The optional `--keep-artifacts` argument preserves the temporary encrypted database, backup, restore copy, and vault directories for inspection:
+The generated report is synthetic evidence and should be copied to the pilot evidence archive only after review. It is ignored by Git by design. The unified local release-readiness harness runs the existing TypeScript, desktop, Android, formatting, and synthetic-pilot gates in one command and records physical gates as pending:
+
+```bash
+ELITE_READINESS_REPORT=artifacts/release-readiness/local-gates.json pnpm release:readiness
+```
+
+The complete workstation and device matrix is documented in `docs/workstation-and-device-validation-matrix.md`, with the JSON and operator checklist templates under `docs/templates/`. The optional `--keep-artifacts` argument preserves the temporary encrypted database, backup, restore copy, and vault directories for inspection:
 
 ```bash
 ELITE_PILOT_REPORT=artifacts/pilot-rehearsal/run-report.json pnpm pilot:rehearsal -- --keep-artifacts

@@ -29,6 +29,7 @@
     "android:verify": "node scripts/verify-android-release.mjs",
     "android:release-check": "pnpm android:unit && pnpm android:lint && pnpm android:assemble && pnpm android:verify -- --artifacts",
     "pilot:rehearsal": "pnpm build:packages && node scripts/synthetic-pilot-rehearsal.mjs",
+    "release:readiness": "node scripts/validate-release-readiness.mjs",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"
   },

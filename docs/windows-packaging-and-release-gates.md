@@ -24,7 +24,7 @@ The NSIS command deliberately fails when run on a non-Windows host. The Linux sa
 
 The Builder configuration uses `asar: true` and unpacks native `.node` modules and the encrypted SQLite package under `resources/app.asar.unpacked`. The application archive must contain the compiled main process, preload bridge, renderer entrypoint, compiled `@elite/auth`, `@elite/contracts`, and `@elite/database` packages, and the PDF export runtime. TypeScript source and runtime smoke scripts must not be included in the production archive.
 
-The verifier is [`scripts/verify-desktop-package.mjs`](../scripts/verify-desktop-package.mjs). It validates the Linux unpacked proxy for the same archive structure expected from the Windows build and emits `DESKTOP_PACKAGE_PASS` markers for every check.
+The verifier is [`scripts/verify-desktop-package.mjs`](../scripts/verify-desktop-package.mjs). It validates `linux-unpacked` on Linux and `win-unpacked` on Windows, using the same archive-structure checks for the target platform, and emits `DESKTOP_PACKAGE_PASS` markers for every check.
 
 ## Data and upgrade policy
 
@@ -51,3 +51,5 @@ The following checks are not claimed by the Linux sandbox and must be executed o
 ## Current sandbox evidence
 
 The Linux packaging proxy completed successfully using Electron Builder 26.15.3 and Electron 43.4.0. The archive verifier confirmed the compiled entrypoints, local workspace packages, PDF runtime, unpacked encrypted SQLite native module, absence of source/test files, and the per-user data policy. This is packaging-structure evidence only; it is not a substitute for the Windows gates above.
+
+The unified local readiness command is `ELITE_READINESS_REPORT=artifacts/release-readiness/local-gates.json pnpm release:readiness`. It runs the repository tests, typecheck, desktop build, available archive inspection, Android release pipeline, synthetic pilot rehearsal, formatting, and whitespace checks, then records the Windows and Android physical gates as `pending` until they are executed on the intended workstation and devices. The complete cross-platform matrix is documented in [`docs/workstation-and-device-validation-matrix.md`](workstation-and-device-validation-matrix.md).

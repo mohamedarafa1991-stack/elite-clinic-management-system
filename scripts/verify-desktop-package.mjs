@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
-const releaseDir = join(root, "release", "linux-unpacked");
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const packageDirectory =
+  process.argv.includes("--win") || process.platform === "win32"
+    ? "win-unpacked"
+    : "linux-unpacked";
+const releaseDir = join(root, "release", packageDirectory);
 const resourcesDir = join(releaseDir, "resources");
 const asarPath = join(resourcesDir, "app.asar");
 const unpackedDir = join(resourcesDir, "app.asar.unpacked");

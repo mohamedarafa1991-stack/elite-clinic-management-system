@@ -53,6 +53,8 @@ The following checks passed during this phase:
 
 The sandbox emitted two non-blocking environment/build messages: the SDK command-line tools reported an SDK XML-version compatibility warning, and Android packaging reported that `libsqlcipher.so` could not be stripped and was therefore packaged unstripped. The release artifact still assembled successfully; these messages must be reviewed during the Windows/Android workstation release run.
 
+The unified local readiness command is `ELITE_READINESS_REPORT=artifacts/release-readiness/local-gates.json pnpm release:readiness`. It reruns the Android release pipeline together with the desktop, TypeScript, formatting, and synthetic pilot gates and records physical-device requirements as pending. Use [`docs/workstation-and-device-validation-matrix.md`](workstation-and-device-validation-matrix.md) and the templates under [`docs/templates/`](templates/) for workstation execution and evidence capture.
+
 ## Required physical-device and workstation gates
 
 The sandbox cannot prove the following requirements and they remain mandatory before a synthetic pilot:

@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "syntheticOnly": true,
+  "run": {
+    "runId": "replace-with-run-id",
+    "generatedAt": "replace-with-iso-timestamp",
+    "gitCommit": "replace-with-commit",
+    "operatorLabel": "replace-with-sanitized-operator-label",
+    "clinicBranch": "cairo-branch-01",
+    "notes": "No real patient data is permitted."
+  },
+  "hub": {
+    "os": "Windows 10 or Windows 11",
+    "osBuild": "replace",
+    "appVersion": "replace",
+    "installerFile": "replace",
+    "installerSha256": "replace",
+    "databaseMigrationVersion": 22,
+    "tlsCertificateLabel": "replace",
+    "tlsCertificateSha256": "replace",
+    "backupManifestSha256": "replace-or-null"
+  },
+  "devices": [
+    {
+      "label": "android-api-29-floor",
+      "manufacturerModel": "replace",
+      "apiLevel": 29,
+      "securityPatchLevel": "replace",
+      "appVersion": "replace",
+      "apkSha256": "replace",
+      "enrollmentLabel": "replace",
+      "deviceIdentityFingerprint": "sanitized-or-approved-label",
+      "cameraPresent": false,
+      "notes": "Use a sanitized hardware label unless the clinic approves the identifier."
+    },
+    {
+      "label": "android-current-supported",
+      "manufacturerModel": "replace",
+      "apiLevel": 36,
+      "securityPatchLevel": "replace",
+      "appVersion": "replace",
+      "apkSha256": "replace",
+      "enrollmentLabel": "replace",
+      "deviceIdentityFingerprint": "sanitized-or-approved-label",
+      "cameraPresent": true,
+      "notes": "Use a sanitized hardware label unless the clinic approves the identifier."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "WIN-INSTALL-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Clean packaged installation starts without a development server and opens an encrypted synthetic database.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "WIN-RESTORE-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Verified encrypted backup restores to a separate Hub directory with matching migration, counts, and vault hashes.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-BOOT-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Both Android device classes install the approved APK and complete Admin-approved enrollment.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DB-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "SQLCipher Room opens and migrations 1 through 6 preserve synthetic data after process death.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-SYNC-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "All six approved synchronization scopes negotiate, verify, and apply the minimum-necessary payload.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-SYNC-003",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Wrong trust anchors and permanent security failures fail closed; transient outage recovers with retry-now and safe sync health.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DOC-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Authorized Android view/upload works through the Hub vault; unauthorized roles are denied; Android persistence inventory is clean.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-DOC-002",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "FLAG_SECURE and viewer cleanup behavior are observed for screenshots, recents, recording, rotation, and process death.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-BILL-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Android receives and validates a minimized EGP billing summary without enabling Android billing writes.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    },
+    {
+      "id": "AND-RELEASE-001",
+      "status": "pending",
+      "startedAt": null,
+      "completedAt": null,
+      "expected": "Signed APK installation, upgrade, rollback, checksum/signature verification, and device revocation/re-enrollment pass.",
+      "observed": null,
+      "evidence": [],
+      "defectIds": []
+    }
+  ],
+  "artifacts": [],
+  "defects": [],
+  "approval": {
+    "status": "pending",
+    "approvedByAdminLabels": [],
+    "approvedAt": null,
+    "decisionNotes": "Do not approve clinical production while any required scenario is pending, blocked, or failed."
+  }
+}
