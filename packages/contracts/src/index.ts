@@ -291,6 +291,29 @@ export type DoctorDocumentUploadInput = z.infer<
   typeof doctorDocumentUploadInputSchema
 >;
 
+export const doctorDocumentUploadMetadataSchema = z.object({
+  doctorId: opaqueIdSchema,
+  documentType: doctorDocumentTypeSchema,
+  displayName: z.string().trim().min(1).max(200),
+  fileName: z.string().trim().min(1).max(240),
+  mimeType: z.enum([
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(20 * 1024 * 1024),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  replacesDocumentId: opaqueIdSchema.optional(),
+});
+export type DoctorDocumentUploadMetadata = z.infer<
+  typeof doctorDocumentUploadMetadataSchema
+>;
+
 export const doctorDocumentViewRequestSchema = z.object({
   documentId: opaqueIdSchema,
 });
@@ -839,6 +862,7 @@ export type OrgIdentifier = z.infer<typeof orgIdentifierSchema>;
 
 export const orgSettingsInputSchema = orgIdentifierSchema.extend({
   exportExpirationDays: z.number().int().min(1).max(3650).default(30),
+  sessionTtlMinutes: z.number().int().min(15).max(720).default(180),
   fhirProfileBundleId: z.string().trim().min(3).max(128).optional(),
 });
 export type OrgSettingsInput = z.infer<typeof orgSettingsInputSchema>;

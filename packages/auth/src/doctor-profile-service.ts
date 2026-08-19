@@ -10,12 +10,14 @@ import {
   doctorDocumentContentSchema,
   doctorDocumentSchema,
   doctorDocumentUploadInputSchema,
+  doctorDocumentUploadMetadataSchema,
   doctorDocumentViewRequestSchema,
   doctorProfileSchema,
   doctorProfileUpdateInputSchema,
   type DoctorDocument,
   type DoctorDocumentContent,
   type DoctorDocumentUploadInput,
+  type DoctorDocumentUploadMetadata,
   type DoctorProfile,
   type DoctorProfileUpdateInput,
 } from "@elite/contracts";
@@ -357,8 +359,59 @@ export class DoctorProfileService {
     context: SessionContext,
     input: DoctorDocumentUploadInput,
   ): Promise<DoctorDocument> {
-    requireCapability(context, "doctor.document.write");
     const parsed = doctorDocumentUploadInputSchema.parse(input);
+    const content = Buffer.from(parsed.contentBase64, "base64");
+    try {
+      return await this.uploadDocumentContent(
+        context,
+        {
+          doctorId: parsed.doctorId,
+          documentType: parsed.documentType,
+          displayName: parsed.displayName,
+          fileName: parsed.fileName,
+          mimeType: parsed.mimeType,
+          sizeBytes: content.length,
+          contentSha256: sha256(content),
+          ...(parsed.replacesDocumentId
+            ? { replacesDocumentId: parsed.replacesDocumentId }
+            : {}),
+        },
+        content,
+      );
+    } finally {
+      content.fill(0);
+    }
+  }
+
+  public async uploadDocumentBytes(
+    context: SessionContext,
+    input: DoctorDocumentUploadMetadata,
+    content: Buffer,
+  ): Promise<DoctorDocument> {
+    const parsed = doctorDocumentUploadMetadataSchema.parse(input);
+    try {
+      if (content.length !== parsed.sizeBytes) {
+        throw new Error(
+          "ELITE_DOCTOR_DOCUMENT_SIZE_MISMATCH: content size does not match metadata",
+        );
+      }
+      if (sha256(content) !== parsed.contentSha256) {
+        throw new Error(
+          "ELITE_DOCTOR_DOCUMENT_INTEGRITY_FAILURE: content hash does not match metadata",
+        );
+      }
+      return await this.uploadDocumentContent(context, parsed, content);
+    } finally {
+      content.fill(0);
+    }
+  }
+
+  private async uploadDocumentContent(
+    context: SessionContext,
+    parsed: DoctorDocumentUploadMetadata,
+    content: Buffer,
+  ): Promise<DoctorDocument> {
+    requireCapability(context, "doctor.document.write");
     if (context.role === "doctor" && context.userId !== parsed.doctorId) {
       throw new Error(
         "ELITE_DOCTOR_DOCUMENT_OWNER_REQUIRED: doctors may upload only to their own profile",
@@ -375,7 +428,6 @@ export class DoctorProfileService {
       throw new Error(
         "ELITE_DOCTOR_PROFILE_NOT_FOUND: doctor account is unavailable",
       );
-    const content = Buffer.from(parsed.contentBase64, "base64");
     if (content.length === 0 || content.length > MAX_DOCUMENT_BYTES)
       throw new Error(
         "ELITE_DOCTOR_DOCUMENT_SIZE_INVALID: document exceeds 20 MB",
@@ -446,7 +498,7 @@ export class DoctorProfileService {
             parsed.fileName,
             parsed.mimeType,
             content.length,
-            sha256(content),
+            parsed.contentSha256,
             version,
             sensitiveDocumentType(parsed.documentType) ? 1 : 0,
             vaultRelpath,

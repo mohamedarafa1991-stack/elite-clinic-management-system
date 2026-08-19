@@ -11,7 +11,9 @@ import {
 } from "@elite/contracts";
 import type { EliteDatabase } from "@elite/database";
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DEFAULT_SESSION_TTL_MINUTES = 180;
+const MIN_SESSION_TTL_MINUTES = 15;
+const MAX_SESSION_TTL_MINUTES = 720;
 const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 const DUMMY_PASSWORD_HASH =
@@ -139,6 +141,25 @@ function later(milliseconds: number): string {
   return new Date(Date.now() + milliseconds).toISOString();
 }
 
+function sessionTtlMilliseconds(database: EliteDatabase): number {
+  try {
+    const row = database.raw
+      .prepare("SELECT value FROM org_settings WHERE key = 'sessionTtlMinutes'")
+      .get() as { value?: unknown } | undefined;
+    const minutes = Number(row?.value);
+    if (
+      Number.isInteger(minutes) &&
+      minutes >= MIN_SESSION_TTL_MINUTES &&
+      minutes <= MAX_SESSION_TTL_MINUTES
+    ) {
+      return minutes * 60 * 1000;
+    }
+  } catch {
+    // A legacy or partially initialized database uses the safe default policy.
+  }
+  return DEFAULT_SESSION_TTL_MINUTES * 60 * 1000;
+}
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
@@ -221,12 +242,8 @@ async function hashPassword(password: string): Promise<string> {
   });
 }
 
-function assertNotLocked(lockedUntil: string | null): void {
-  if (lockedUntil && Date.parse(lockedUntil) > Date.now()) {
-    throw new Error(
-      "ELITE_AUTH_ACCOUNT_LOCKED: account temporarily locked after failed attempts",
-    );
-  }
+function isAccountLocked(lockedUntil: string | null): boolean {
+  return Boolean(lockedUntil && Date.parse(lockedUntil) > Date.now());
 }
 
 export class AuthService {
@@ -381,14 +398,17 @@ export class AuthService {
         }
       | undefined;
 
-    if (user?.is_active === 1) {
-      assertNotLocked(user.locked_until);
-    }
-
+    const isActiveUser = user?.is_active === 1;
+    const isLockedUser = isActiveUser && isAccountLocked(user.locked_until);
     const valid = await this.passwordVerifier(
-      user?.is_active === 1 ? user.password_hash : DUMMY_PASSWORD_HASH,
+      isActiveUser && !isLockedUser ? user.password_hash : DUMMY_PASSWORD_HASH,
       parsed.password,
     );
+    if (isLockedUser) {
+      throw new Error(
+        "ELITE_AUTH_ACCOUNT_LOCKED: account temporarily locked after failed attempts",
+      );
+    }
     if (!user || user.is_active !== 1) {
       throw new Error(
         "ELITE_AUTH_INVALID_CREDENTIALS: username or password is invalid",
@@ -435,7 +455,7 @@ export class AuthService {
     const sessionId = nanoid(18);
     const token = randomBytes(32).toString("base64url");
     const timestamp = now();
-    const expiresAt = later(SESSION_TTL_MS);
+    const expiresAt = later(sessionTtlMilliseconds(this.database));
     this.database.raw
       .prepare(
         "UPDATE auth_credentials SET failed_attempts = 0, locked_until = NULL, updated_at = ? WHERE user_id = ?",

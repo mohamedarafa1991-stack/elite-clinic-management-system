@@ -11,7 +11,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
-import java.util.Base64
+import java.security.MessageDigest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -344,25 +344,26 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             isBusy = true
                             operationError = null
                             operationMessage = null
+                            val uploadContent = picked.useContent { it.copyOf() }
                             try {
-                                val encoded = withContext(Dispatchers.Default) {
-                                    picked.useContent { bytes ->
-                                        Base64.getEncoder().encodeToString(bytes)
-                                    }
+                                val metadata = withContext(Dispatchers.Default) {
+                                    JSONObject()
+                                        .put("doctorId", uploadDoctorId.trim())
+                                        .put("documentType", uploadDocumentType)
+                                        .put(
+                                            "displayName",
+                                            uploadDisplayName.trim().ifBlank { picked.fileName },
+                                        )
+                                        .put("fileName", picked.fileName)
+                                        .put("mimeType", picked.mimeType)
+                                        .put("sizeBytes", uploadContent.size)
+                                        .put("contentSha256", sha256Hex(uploadContent))
                                 }
                                 val response = withContext(Dispatchers.IO) {
                                     application.uploadDoctorDocument(
                                         profile.entity.deviceId,
-                                        JSONObject()
-                                            .put("doctorId", uploadDoctorId.trim())
-                                            .put("documentType", uploadDocumentType)
-                                            .put(
-                                                "displayName",
-                                                uploadDisplayName.trim().ifBlank { picked.fileName },
-                                            )
-                                            .put("fileName", picked.fileName)
-                                            .put("mimeType", picked.mimeType)
-                                            .put("contentBase64", encoded),
+                                        metadata,
+                                        uploadContent,
                                     )
                                 }
                                 operationMessage = "Upload accepted: ${response.optString("documentId", "document metadata returned")}."
@@ -372,6 +373,7 @@ fun DoctorDocumentWorkspace(application: EliteApplication) {
                             } catch (error: Exception) {
                                 operationError = userFacingError(error)
                             } finally {
+                                uploadContent.fill(0)
                                 isBusy = false
                             }
                         }
@@ -675,6 +677,11 @@ private fun android.content.ContentResolver.queryDisplayName(uri: Uri): String {
     return uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "doctor-document" }
         ?: "doctor-document"
 }
+
+private fun sha256Hex(bytes: ByteArray): String = MessageDigest
+    .getInstance("SHA-256")
+    .digest(bytes)
+    .joinToString("") { byte -> "%02x".format(byte) }
 
 private fun formatBytes(bytes: Int): String = when {
     bytes >= 1024 * 1024 -> "%.1f MiB".format(bytes / (1024f * 1024f))

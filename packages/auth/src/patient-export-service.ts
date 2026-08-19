@@ -1859,13 +1859,15 @@ export class PatientExportService {
     const values: Record<string, unknown> = {
       ...DEFAULT_ORG_IDENTIFIER,
       exportExpirationDays: 30,
+      sessionTtlMinutes: 180,
       fhirProfileBundleId: "elite-clinic-r4",
     };
     let updatedAt = this.now();
     let updatedByUserId = userId;
     for (const row of rows) {
       values[String(row["key"])] =
-        row["key"] === "exportExpirationDays"
+        row["key"] === "exportExpirationDays" ||
+        row["key"] === "sessionTtlMinutes"
           ? Number(row["value"])
           : String(row["value"]);
       updatedAt = String(row["updated_at"]);

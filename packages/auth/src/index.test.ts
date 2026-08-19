@@ -77,6 +77,45 @@ describe("Elite Step 2 authentication", () => {
     }
   });
 
+  it("uses the three-hour default and the Admin-configured session duration", async () => {
+    const database = createDatabase();
+    try {
+      const service = new AuthService(database);
+      const result = await service.bootstrapInitialAdmins(bootstrapInput);
+      const defaultStartedAt = Date.now();
+      const defaultSession = await service.login({
+        username: "admin.primary",
+        password: bootstrapInput.admins[0]!.password,
+        deviceId: result.hubDeviceId,
+      });
+      const defaultDuration =
+        Date.parse(defaultSession.expiresAt) - defaultStartedAt;
+      expect(defaultDuration).toBeGreaterThan(179 * 60 * 1000);
+      expect(defaultDuration).toBeLessThan(181 * 60 * 1000);
+
+      const timestamp = new Date().toISOString();
+      database.raw
+        .prepare(
+          `INSERT INTO org_settings
+            (key, value, updated_at, updated_by_user_id)
+           VALUES ('sessionTtlMinutes', '60', ?, ?)`,
+        )
+        .run(timestamp, result.adminUserIds[0]);
+      const configuredStartedAt = Date.now();
+      const configuredSession = await service.login({
+        username: "admin.primary",
+        password: bootstrapInput.admins[0]!.password,
+        deviceId: result.hubDeviceId,
+      });
+      const configuredDuration =
+        Date.parse(configuredSession.expiresAt) - configuredStartedAt;
+      expect(configuredDuration).toBeGreaterThan(59 * 60 * 1000);
+      expect(configuredDuration).toBeLessThan(61 * 60 * 1000);
+    } finally {
+      database.close();
+    }
+  });
+
   it("performs password verification for an unknown username", async () => {
     const database = createDatabase();
     const calls: Array<{ passwordHash: string; password: string }> = [];
@@ -99,6 +138,44 @@ describe("Elite Step 2 authentication", () => {
 
       expect(calls).toHaveLength(1);
       expect(calls[0]!.password).toBe("Synthetic-Missing-Password-2026!");
+      expect(calls[0]!.passwordHash).toMatch(
+        /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/,
+      );
+      const storedPassword = database.raw
+        .prepare("SELECT password_hash FROM auth_credentials WHERE user_id = ?")
+        .get(result.adminUserIds[0]) as { password_hash: string };
+      expect(calls[0]!.passwordHash).not.toBe(storedPassword.password_hash);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("performs password verification before rejecting a locked account", async () => {
+    const database = createDatabase();
+    const calls: Array<{ passwordHash: string; password: string }> = [];
+    try {
+      const service = new AuthService(database, {
+        passwordVerifier: async (passwordHash, password) => {
+          calls.push({ passwordHash, password });
+          return false;
+        },
+      });
+      const result = await service.bootstrapInitialAdmins(bootstrapInput);
+      database.raw
+        .prepare(
+          "UPDATE auth_credentials SET locked_until = ? WHERE user_id = ?",
+        )
+        .run("2099-01-01T00:00:00.000Z", result.adminUserIds[0]);
+
+      await expect(
+        service.login({
+          username: "admin.primary",
+          password: bootstrapInput.admins[0]!.password,
+          deviceId: result.hubDeviceId,
+        }),
+      ).rejects.toThrow("ELITE_AUTH_ACCOUNT_LOCKED");
+
+      expect(calls).toHaveLength(1);
       expect(calls[0]!.passwordHash).toMatch(
         /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/,
       );

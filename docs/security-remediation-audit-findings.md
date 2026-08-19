@@ -54,7 +54,7 @@ The final unified readiness run passed all eight local gates:
 | Formatting                                               | Passed.                                                                                                                       |
 | Git whitespace validation                                | Passed.                                                                                                                       |
 
-The local report intentionally retains **17 physical gates as pending**. These include Windows installer/key/backup/restore behavior, Android SQLCipher and Keystore behavior, two-device LAN synchronization, `FLAG_SECURE`, process death, picker providers, document no-persistence, signed APK lifecycle, and device revocation/re-enrollment. The full execution order and evidence templates are in the workstation/device validation matrix.[2]
+The local report intentionally retains **23 physical scenario gates as pending**, covering the complete workstation/device matrix. These include Windows installer/key/backup/restore behavior, Android offline policy and Keystore behavior, two-device LAN synchronization, `FLAG_SECURE`, process death, picker providers, document no-persistence, signed APK lifecycle, and device revocation/re-enrollment. The full execution order and evidence templates are in the workstation/device validation matrix.[2]
 
 ## Remaining recommendation
 

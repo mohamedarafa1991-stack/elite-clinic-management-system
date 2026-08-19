@@ -1,6 +1,7 @@
 import {
   canonicalJson,
   doctorDocumentUploadInputSchema,
+  doctorDocumentUploadMetadataSchema,
   doctorDocumentViewRequestSchema,
   syncDeltaRequestSchema,
   syncOutboxInputSchema,
@@ -11,6 +12,7 @@ import type { SessionContext } from "./index.js";
 import type { SynchronizationService } from "./synchronization-service.js";
 import type { DoctorProfileService } from "./doctor-profile-service.js";
 import { verifySessionGrant } from "./session-protocol.js";
+import { decodeDoctorDocumentUploadFrame } from "./doctor-document-upload-frame.js";
 import {
   SessionFrameChannel,
   type SessionFrameChannelOptions,
@@ -127,24 +129,39 @@ export class LanSyncFrameRouter {
       );
     }
     const decrypted = session.channel.decrypt(frame);
-    const request = JSON.parse(decrypted.plaintext.toString("utf8")) as unknown;
-    const response = await this.routeRequest(
-      session.context,
-      frame.messageType,
-      request,
-    );
-    const responseType =
-      frame.messageType === "sync-request"
-        ? "sync-response"
-        : frame.messageType === "outbox-request"
-          ? "outbox-response"
-          : frame.messageType === "document-upload-request"
-            ? "document-upload-response"
-            : "document-response";
-    return session.channel.encrypt(
-      responseType,
-      Buffer.from(canonicalJson(response), "utf8"),
-    );
+    let uploadContent: Buffer | undefined;
+    try {
+      const request =
+        frame.messageType === "document-upload-request"
+          ? (() => {
+              const decoded = decodeDoctorDocumentUploadFrame(
+                decrypted.plaintext,
+              );
+              uploadContent = decoded.content;
+              return { request: decoded.metadata, content: decoded.content };
+            })()
+          : (JSON.parse(decrypted.plaintext.toString("utf8")) as unknown);
+      const response = await this.routeRequest(
+        session.context,
+        frame.messageType,
+        request,
+      );
+      const responseType =
+        frame.messageType === "sync-request"
+          ? "sync-response"
+          : frame.messageType === "outbox-request"
+            ? "outbox-response"
+            : frame.messageType === "document-upload-request"
+              ? "document-upload-response"
+              : "document-response";
+      return session.channel.encrypt(
+        responseType,
+        Buffer.from(canonicalJson(response), "utf8"),
+      );
+    } finally {
+      decrypted.plaintext.fill(0);
+      uploadContent?.fill(0);
+    }
   }
 
   private async routeRequest(
@@ -157,7 +174,8 @@ export class LanSyncFrameRouter {
         "ELITE_LAN_REQUEST_ENVELOPE_INVALID: request envelope is invalid",
       );
     }
-    const request = (value as { request: unknown }).request;
+    const envelope = value as { request: unknown; content?: unknown };
+    const request = envelope.request;
     if (messageType === "sync-request") {
       return {
         response: this.synchronizationService.getDelta(
@@ -196,10 +214,14 @@ export class LanSyncFrameRouter {
           "ELITE_DOCTOR_DOCUMENT_SERVICE_UNAVAILABLE: document service is unavailable",
         );
       }
+      if (!Buffer.isBuffer(envelope.content)) {
+        throw new Error("ELITE_DOCTOR_DOCUMENT_UPLOAD_FRAME_INVALID");
+      }
       return {
-        response: await this.doctorProfileService.uploadDocument(
+        response: await this.doctorProfileService.uploadDocumentBytes(
           context,
-          doctorDocumentUploadInputSchema.parse(request),
+          doctorDocumentUploadMetadataSchema.parse(request),
+          envelope.content,
         ),
       };
     }

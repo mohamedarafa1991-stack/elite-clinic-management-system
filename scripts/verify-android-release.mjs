@@ -208,6 +208,35 @@ requireText(
   "requestDoctorDocumentBytes",
   "LAN document transport exposes the raw-byte response path",
 );
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/LanSyncHttpSession.kt",
+  "uploadDoctorDocument(metadata: JSONObject, content: ByteArray)",
+  "LAN document upload accepts metadata and mutable bytes separately",
+);
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/LanSyncHttpSession.kt",
+  "DoctorDocumentUploadFrame.encode(metadata, content)",
+  "LAN document upload uses the binary frame encoder",
+);
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/sync/DoctorDocumentUploadFrame.kt",
+  "fun encode(metadata: JSONObject, content: ByteArray)",
+  "binary document upload frame encoder is present",
+);
+requireText(
+  "apps/android/app/src/main/java/com/elite/clinic/DoctorDocumentScreen.kt",
+  "contentSha256",
+  "doctor document upload sends integrity metadata",
+);
+if (!documentScreen.includes("contentBase64")) {
+  pass(
+    "doctor document workspace does not create Base64 content strings for upload",
+  );
+} else {
+  fail(
+    "doctor document workspace must not create contentBase64 upload strings",
+  );
+}
 const encryptedRoomFactory = source(
   "apps/android/app/src/main/java/com/elite/clinic/security/EncryptedRoomFactory.kt",
 );

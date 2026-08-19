@@ -24,9 +24,21 @@ const physicalGates = [
     detail: "Requires packaged Windows upgrade and migration evidence.",
   },
   {
+    id: "WIN-INSTALL-003",
+    status: "pending",
+    detail:
+      "Requires uninstall/reinstall evidence preserving encrypted data, audit history, and native-module compatibility.",
+  },
+  {
     id: "WIN-DB-001",
     status: "pending",
     detail: "Requires production OS-backed key-provider behavior on Windows.",
+  },
+  {
+    id: "WIN-SEC-001",
+    status: "pending",
+    detail:
+      "Requires Windows security-boundary evidence for least-privilege operation, redacted logs, and protected local storage.",
   },
   {
     id: "WIN-BACKUP-001",
@@ -52,10 +64,34 @@ const physicalGates = [
       "Requires Android floor/current device installation and enrollment evidence.",
   },
   {
+    id: "AND-BOOT-002",
+    status: "pending",
+    detail:
+      "Requires offline start, inactivity-lock, and no-cloud-dependency evidence.",
+  },
+  {
+    id: "AND-BOOT-003",
+    status: "pending",
+    detail:
+      "Requires configured thirty-day offline-access expiry and documented recovery evidence.",
+  },
+  {
+    id: "AND-KEY-001",
+    status: "pending",
+    detail:
+      "Requires invalid or unavailable Keystore identity-key failure-closed and recovery evidence.",
+  },
+  {
     id: "AND-DB-001",
     status: "pending",
     detail:
       "Requires SQLCipher Room startup and migration evidence on hardware.",
+  },
+  {
+    id: "WIN-LAN-001",
+    status: "pending",
+    detail:
+      "Requires Windows Hub LAN discovery, firewall, TLS endpoint, and enrolled-device connectivity evidence.",
   },
   {
     id: "AND-SYNC-001",

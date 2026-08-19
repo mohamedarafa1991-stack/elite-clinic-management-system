@@ -388,13 +388,16 @@ class DoctorDocumentClient(private val session: SecureSession) {
         }
     }
 
-    suspend fun upload(request: JSONObject): JSONObject =
-        session.requireLanDocumentUpload(request)
+    suspend fun upload(metadata: JSONObject, content: ByteArray): JSONObject =
+        session.requireLanDocumentUpload(metadata, content)
 }
 
-private suspend fun SecureSession.requireLanDocumentUpload(request: JSONObject): JSONObject {
+private suspend fun SecureSession.requireLanDocumentUpload(
+    metadata: JSONObject,
+    content: ByteArray,
+): JSONObject {
     require(this is LanSyncHttpSession) {
         "SYNC_DOCTOR_DOCUMENT_UPLOAD_TRANSPORT_REQUIRED"
     }
-    return uploadDoctorDocument(request)
+    return uploadDoctorDocument(metadata, content)
 }

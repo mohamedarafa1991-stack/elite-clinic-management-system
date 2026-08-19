@@ -268,6 +268,7 @@ describe("PatientExportService", () => {
         oid: "1.3.6.1.4.1.99999.42",
         fhirSystemUrl: "https://synthetic.elite-clinic.local/fhir",
         exportExpirationDays: 7,
+        sessionTtlMinutes: 180,
         fhirProfileBundleId: "national-eg-demo-r4",
       });
       expect(updatedSettings.exportExpirationDays).toBe(7);

@@ -2360,6 +2360,7 @@ function ClinicalWorkflowWorkspace({
     oid: "1.3.6.1.4.1.99999.1",
     fhirSystemUrl: "https://fhir.elite-clinic.local",
     exportExpirationDays: 30,
+    sessionTtlMinutes: 180,
     fhirProfileBundleId: "elite-clinic-r4",
   });
   const [revocations, setRevocations] = useState<readonly ExportRevocation[]>(
@@ -3179,6 +3180,7 @@ function ClinicalWorkflowWorkspace({
         oid: settings.oid,
         fhirSystemUrl: settings.fhirSystemUrl,
         exportExpirationDays: settings.exportExpirationDays,
+        sessionTtlMinutes: settings.sessionTtlMinutes,
         fhirProfileBundleId: settings.fhirProfileBundleId,
       });
       setFhirProfiles(
@@ -5190,6 +5192,22 @@ function ClinicalWorkflowWorkspace({
                           setOrgSettingsForm({
                             ...orgSettingsForm,
                             exportExpirationDays: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Session duration (minutes)
+                      <input
+                        type="number"
+                        min={15}
+                        max={720}
+                        step={15}
+                        value={orgSettingsForm.sessionTtlMinutes}
+                        onChange={(event) =>
+                          setOrgSettingsForm({
+                            ...orgSettingsForm,
+                            sessionTtlMinutes: Number(event.target.value),
                           })
                         }
                       />

@@ -80,14 +80,25 @@ class LanSyncHttpSession(
             }
         }
 
-    suspend fun uploadDoctorDocument(request: JSONObject): JSONObject =
+    suspend fun uploadDoctorDocument(metadata: JSONObject, content: ByteArray): JSONObject =
         withSyncFailureClassification(
             securityFallback = "SECURE_SESSION_SECURITY_FAILURE",
             retryableFallback = "SECURE_LAN_TRANSIENT_FAILURE",
         ) {
             withContext(Dispatchers.IO) {
-                val envelope = postEncrypted("document-upload-request", request)
-                envelope.optJSONObject("response") ?: envelope
+                val requestPlaintext = DoctorDocumentUploadFrame.encode(metadata, content)
+                try {
+                    val responseBytes = postEncryptedPlaintext(
+                        "document-upload-request",
+                        requestPlaintext,
+                    )
+                    withZeroizedBytes(responseBytes) { bytes ->
+                        val response = JSONObject(String(bytes, StandardCharsets.UTF_8))
+                        response.optJSONObject("response") ?: response
+                    }
+                } finally {
+                    DoctorDocumentUploadFrame.clear(requestPlaintext)
+                }
             }
         }
 
@@ -111,11 +122,22 @@ class LanSyncHttpSession(
         }
 
     private fun postEncryptedPayload(messageType: String, request: JSONObject): ByteArray {
-        ensureUsable()
         val requestPlaintext = JSONObject()
             .put("request", request)
             .toString()
             .toByteArray(StandardCharsets.UTF_8)
+        return try {
+            postEncryptedPlaintext(messageType, requestPlaintext)
+        } finally {
+            requestPlaintext.fill(0)
+        }
+    }
+
+    private fun postEncryptedPlaintext(
+        messageType: String,
+        requestPlaintext: ByteArray,
+    ): ByteArray {
+        ensureUsable()
         val frame = try {
             frameCodec.encrypt(
                 messageType = messageType,

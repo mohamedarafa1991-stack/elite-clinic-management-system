@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SessionFrameChannel } from "./session-frame-codec.js";
 import {
@@ -6,6 +7,7 @@ import {
 } from "./lan-sync-frame-router.js";
 import type { SessionContext, SynchronizationService } from "./index.js";
 import type { SyncOutboxAcknowledgment } from "@elite/contracts";
+import { encodeDoctorDocumentUploadFrame } from "./doctor-document-upload-frame.js";
 
 const base = {
   operationId: "operation-01",
@@ -20,6 +22,10 @@ function acknowledgment(
   extra: Partial<SyncOutboxAcknowledgment> = {},
 ): SyncOutboxAcknowledgment {
   return { ...base, state, ...extra };
+}
+
+function sha256(content: Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 function testContext(): SessionContext {
@@ -208,5 +214,74 @@ describe("LanSyncFrameRouter", () => {
     expect(response.response.contentBase64).toBe(
       Buffer.from("synthetic cv").toString("base64"),
     );
+  });
+
+  it("routes a binary doctor-document upload and clears decrypted content", async () => {
+    const clientKey = Buffer.alloc(32, 0x51);
+    const hubKey = Buffer.alloc(32, 0x61);
+    const content = Buffer.from("synthetic upload bytes");
+    let capturedContent: Buffer | undefined;
+    const fakeService = {
+      getDelta: () => ({
+        protocolVersion: 1,
+        scope: "appointments",
+        responseNonce: "0123456789abcdef0123456789abcdef",
+        changes: [],
+      }),
+    } as unknown as SynchronizationService;
+    const fakeDoctorService = {
+      uploadDocumentBytes: async (
+        _context: SessionContext,
+        request: Record<string, unknown>,
+        bytes: Buffer,
+      ) => {
+        capturedContent = bytes;
+        expect(request["fileName"]).toBe("synthetic-upload.pdf");
+        expect(request["sizeBytes"]).toBe(content.length);
+        expect(bytes).toEqual(content);
+        return { documentId: "doctor-doc-upload-01" };
+      },
+    } as unknown as import("./doctor-profile-service.js").DoctorProfileService;
+    const router = new LanSyncFrameRouter(fakeService, fakeDoctorService);
+    router.registerSession({
+      context: testContext(),
+      sessionChannel: {
+        sessionId: "session-upload-01",
+        noncePrefix: Buffer.from("21222324", "hex"),
+        sendKey: hubKey,
+        receiveKey: clientKey,
+        sendDirection: "hub-to-client",
+        receiveDirection: "client-to-hub",
+      },
+    });
+    const client = new SessionFrameChannel({
+      sessionId: "session-upload-01",
+      noncePrefix: Buffer.from("21222324", "hex"),
+      sendKey: clientKey,
+      receiveKey: hubKey,
+      sendDirection: "client-to-hub",
+      receiveDirection: "hub-to-client",
+    });
+    const metadata = {
+      doctorId: "doctor-01",
+      documentType: "cv" as const,
+      displayName: "Synthetic Upload",
+      fileName: "synthetic-upload.pdf",
+      mimeType: "application/pdf" as const,
+      sizeBytes: content.length,
+      contentSha256: sha256(content),
+    };
+    const responseFrame = await router.route(
+      client.encrypt(
+        "document-upload-request",
+        encodeDoctorDocumentUploadFrame(metadata, content),
+      ),
+    );
+    const response = JSON.parse(
+      client.decrypt(responseFrame).plaintext.toString("utf8"),
+    ) as { response: { documentId: string } };
+    expect(response.response.documentId).toBe("doctor-doc-upload-01");
+    expect(capturedContent).toBeDefined();
+    expect(capturedContent?.equals(Buffer.alloc(content.length))).toBe(true);
   });
 });

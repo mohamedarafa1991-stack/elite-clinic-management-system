@@ -41,7 +41,7 @@ The final `pnpm release:readiness` run passed all eight local gates:
 | Formatting                                               | Passed.                                                                                                                    |
 | Git whitespace validation                                | Passed.                                                                                                                    |
 
-The local report records **17 physical gates as pending**. Those gates still require Windows workstations and Android hardware, including installer upgrade/reinstall behavior, OS-backed key recovery, SQLCipher startup and migration behavior, LAN/TLS synchronization, `FLAG_SECURE`, process death, document no-persistence, signed APK upgrade/rollback, and device revocation/re-enrollment.[1]
+The local report records **23 physical scenario gates as pending**. Those gates still require Windows workstations and Android hardware, including installer upgrade/reinstall behavior, Android offline policy and OS-backed key recovery, SQLCipher startup and migration behavior, LAN/TLS synchronization, `FLAG_SECURE`, process death, document no-persistence, signed APK upgrade/rollback, and device revocation/re-enrollment.[1]
 
 ## Scope deliberately deferred
 
