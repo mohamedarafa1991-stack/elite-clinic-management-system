@@ -98,7 +98,7 @@ import {
 import { ElectronExportSigner } from "./export-signer.js";
 import { renderPatientExportPdf } from "./export-pdf.js";
 import { FileSystemDoctorDocumentVault } from "./doctor-document-vault.js";
-import { assertTrustedIpcSender } from "./ipc-security.js";
+import { createIpcRegistrar } from "./ipc-registration.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -375,24 +375,15 @@ function requireExportSigner(): ElectronExportSigner {
   return exportSigner;
 }
 
-type IpcHandler<Args extends unknown[] = unknown[]> = (
-  event: IpcMainInvokeEvent,
-  ...args: Args
-) => unknown;
-
-function registerIpcHandler<Args extends unknown[]>(
-  channel: string,
-  handler: IpcHandler<Args>,
-): void {
-  ipcMain.handle(channel, (event, ...args) => {
-    assertTrustedIpcSender(event, mainWindow, {
-      isPackaged: app.isPackaged,
-      developmentRendererUrl:
-        process.env["ELITE_RENDERER_URL"] ?? "http://localhost:5173",
-    });
-    return handler(event, ...(args as Args));
-  });
-}
+const registerIpcHandler = createIpcRegistrar(
+  ipcMain,
+  () => mainWindow,
+  () => ({
+    isPackaged: app.isPackaged,
+    developmentRendererUrl:
+      process.env["ELITE_RENDERER_URL"] ?? "http://localhost:5173",
+  }),
+);
 
 function parseIpcInput<T>(
   schema: { parse(input: unknown): T },
