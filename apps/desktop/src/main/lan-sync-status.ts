@@ -1,4 +1,4 @@
-import type { LanSyncStatus } from "../preload/index.js";
+import type { LanSyncStatus } from "../preload/index.cjs";
 
 export function sanitizeLanSyncStartupError(error: unknown): string {
   const code = error instanceof Error ? error.message : "";

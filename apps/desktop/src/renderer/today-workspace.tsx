@@ -5,7 +5,7 @@ import type {
   Schedule,
   ScheduleException,
 } from "@elite/contracts";
-import type { SessionSummary } from "../preload/index.js";
+import type { SessionSummary } from "../preload/index.cjs";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import {
   getDoctorsScheduledToday,

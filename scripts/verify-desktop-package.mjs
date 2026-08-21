@@ -18,15 +18,31 @@ function assert(condition, message) {
   console.log(`DESKTOP_PACKAGE_PASS: ${message}`);
 }
 
+function quoteWindowsArgument(value) {
+  const text = String(value);
+  return /[\s"]/.test(text)
+    ? `"${text.replaceAll('"', '\\"')}"`
+    : text;
+}
+
+function listArchive() {
+  const args = ["exec", "asar", "list", asarPath];
+  if (process.platform === "win32") {
+    return execFileSync(
+      process.env.ComSpec ?? "cmd.exe",
+      ["/d", "/s", "/c", ["pnpm.cmd", ...args].map(quoteWindowsArgument).join(" ")],
+      { cwd: root, encoding: "utf8" },
+    );
+  }
+  return execFileSync("pnpm", args, { cwd: root, encoding: "utf8" });
+}
+
 assert(existsSync(asarPath), "asar archive exists");
-const listing = execFileSync("pnpm", ["exec", "asar", "list", asarPath], {
-  cwd: root,
-  encoding: "utf8",
-});
+const listing = listArchive();
 const requiredEntries = [
   "/dist/main/index.js",
   "/dist/main/ipc-registration.js",
-  "/dist/preload/index.js",
+  "/dist/preload/index.cjs",
   "/dist/renderer/index.html",
   "/node_modules/@elite/auth/dist/index.js",
   "/node_modules/@elite/contracts/dist/index.js",

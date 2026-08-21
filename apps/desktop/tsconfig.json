@@ -12,5 +12,5 @@
     { "path": "../../packages/database" },
     { "path": "../../packages/auth" }
   ],
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.cts"]
 }

@@ -56,7 +56,7 @@ import {
   lanSyncStartingStatus,
   sanitizeLanSyncStartupError,
 } from "./lan-sync-status.js";
-import type { LanSyncStatus } from "../preload/index.js";
+import type { LanSyncStatus } from "../preload/index.cjs";
 import {
   appointmentCreateInputSchema,
   appointmentStatusUpdateSchema,
@@ -312,7 +312,7 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: "#f7f8fa",
     webPreferences: {
-      preload: join(currentDirectory, "../preload/index.js"),
+      preload: join(currentDirectory, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

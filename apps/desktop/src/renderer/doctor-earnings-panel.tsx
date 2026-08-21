@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from "react";
-import type { SessionSummary } from "../preload/index.js";
+import type { SessionSummary } from "../preload/index.cjs";
 import type {
   BillingDoctorCompensationRule,
   DoctorDirectoryEntry,

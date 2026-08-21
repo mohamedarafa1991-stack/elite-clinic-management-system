@@ -12,7 +12,7 @@ import type {
   EliteSecurityStatus,
   LanSyncStatus,
   SessionSummary,
-} from "../preload/index.js";
+} from "../preload/index.cjs";
 import type {
   DuplicateCandidate,
   Patient,
@@ -718,10 +718,10 @@ function LoginForm({
 
 function DevicePanel({ token }: { token: string }): ReactElement {
   const [devices, setDevices] = useState<
-    readonly import("../preload/index.js").DeviceSummary[]
+    readonly import("../preload/index.cjs").DeviceSummary[]
   >([]);
   const [requests, setRequests] = useState<
-    readonly import("../preload/index.js").EnrollmentRequestSummary[]
+    readonly import("../preload/index.cjs").EnrollmentRequestSummary[]
   >([]);
   const [friendlyName, setFriendlyName] = useState("");
   const [error, setError] = useState<string | null>(null);

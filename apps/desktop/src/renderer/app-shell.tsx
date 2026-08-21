@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import type { SessionSummary } from "../preload/index.js";
+import type { SessionSummary } from "../preload/index.cjs";
 import type { WorkspaceLocale } from "./workspace-model.js";
 
 export type ShellNavigationGroup =
