@@ -13,10 +13,29 @@ if (mode === "win" && process.platform !== "win32") {
   );
 }
 
+function quoteWindowsArgument(value) {
+  const text = String(value);
+  return /[\s"]/.test(text)
+    ? `"${text.replaceAll('"', '\\"')}"`
+    : text;
+}
+
 function run(command, args) {
-  const executable =
-    process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
-  execFileSync(executable, args, { cwd: root, stdio: "inherit" });
+  if (process.platform === "win32") {
+    const executable = command === "pnpm" ? "pnpm.cmd" : command;
+    execFileSync(
+      process.env.ComSpec ?? "cmd.exe",
+      [
+        "/d",
+        "/s",
+        "/c",
+        [executable, ...args].map(quoteWindowsArgument).join(" "),
+      ],
+      { cwd: root, stdio: "inherit" },
+    );
+    return;
+  }
+  execFileSync(command, args, { cwd: root, stdio: "inherit" });
 }
 
 rmSync(staging, { recursive: true, force: true });
