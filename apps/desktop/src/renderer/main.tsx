@@ -7724,21 +7724,29 @@ function FoundationStatus(): ReactElement {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([
+    void Promise.allSettled([
       window.elite.app.getSecurityStatus(),
       window.elite.auth.getStatus(),
-    ])
-      .then(([securityResult, authResult]) => {
-        setSecurity(securityResult);
-        setAuthStatus(authResult);
-      })
-      .catch((reason: unknown) =>
+    ]).then(([securityResult, authResult]) => {
+      if (securityResult.status === "fulfilled") {
+        setSecurity(securityResult.value);
+      } else {
         setError(
-          reason instanceof Error
-            ? reason.message
-            : "Unable to initialize secure services",
-        ),
-      );
+          securityResult.reason instanceof Error
+            ? securityResult.reason.message
+            : "Unable to read secure service status",
+        );
+      }
+      if (authResult.status === "fulfilled") {
+        setAuthStatus(authResult.value);
+      } else {
+        setError(
+          authResult.reason instanceof Error
+            ? authResult.reason.message
+            : "Unable to read authentication status",
+        );
+      }
+    });
   }, []);
 
   const handleLogin = (newToken: string, newSession: SessionSummary): void => {

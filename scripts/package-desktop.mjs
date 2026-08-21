@@ -47,9 +47,6 @@ mkdirSync(join(root, ".packaging"), { recursive: true });
 
 run("pnpm", ["build:packages"]);
 run("pnpm", ["desktop:build"]);
-if (mode === "win" || mode === "win-dir") {
-  run("pnpm", ["desktop:native-rebuild"]);
-}
 run("pnpm", [
   "deploy",
   "--legacy",
@@ -58,6 +55,17 @@ run("pnpm", [
   "--prod",
   staging,
 ]);
+if (mode === "win" || mode === "win-dir") {
+  run("pnpm", [
+    "exec",
+    "electron-rebuild",
+    "--force",
+    "--module-dir",
+    staging,
+    "--version",
+    "43.4.0",
+  ]);
+}
 
 const builderArgs = [
   "exec",
