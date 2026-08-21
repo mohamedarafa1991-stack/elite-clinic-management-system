@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { Appointment, Patient } from "@elite/contracts";
+import type {
+  Appointment,
+  DoctorDirectoryEntry,
+  Patient,
+  Schedule,
+  ScheduleException,
+} from "@elite/contracts";
 import {
   getPatientAge,
+  getDoctorsScheduledToday,
   getPatientContextModel,
   getTodayAppointmentMetrics,
   sortAppointmentsByStart,
@@ -125,5 +132,90 @@ describe("workspace model", () => {
     expect(metrics.waitingCount).toBe(1);
     expect(metrics.completedCount).toBe(1);
     expect(metrics.nextAppointment?.id).toBe("next");
+  });
+
+  it("projects doctors scheduled today while honoring date exceptions", () => {
+    const doctors: readonly DoctorDirectoryEntry[] = [
+      {
+        id: "doctor-a",
+        displayNameEn: "Dr Amal",
+        role: "doctor",
+        isClinicalApprover: false,
+        isActive: true,
+      },
+      {
+        id: "doctor-b",
+        displayNameEn: "Dr Bassem",
+        role: "doctor",
+        isClinicalApprover: false,
+        isActive: true,
+      },
+    ];
+    const schedules: readonly Schedule[] = [
+      {
+        id: "schedule-a",
+        doctorId: "doctor-a",
+        departmentId: "department-1",
+        dayOfWeek: 3,
+        startTime: "09:00",
+        endTime: "17:00",
+        slotDurationMinutes: 15,
+        version: 1,
+      },
+      {
+        id: "schedule-b",
+        doctorId: "doctor-b",
+        departmentId: "department-1",
+        dayOfWeek: 3,
+        startTime: "10:00",
+        endTime: "18:00",
+        slotDurationMinutes: 15,
+        version: 1,
+      },
+    ];
+    const exceptions: readonly ScheduleException[] = [
+      {
+        id: "exception-a",
+        doctorId: "doctor-a",
+        exceptionDate: "2026-08-19",
+        kind: "closed",
+        reason: "Leave",
+        createdAt: "2026-08-01T08:00:00.000Z",
+      },
+    ];
+
+    expect(
+      getDoctorsScheduledToday(doctors, schedules, exceptions, referenceDate),
+    ).toEqual([
+      {
+        doctor: doctors[1],
+        windows: ["10:00–18:00"],
+      },
+    ]);
+    expect(
+      getDoctorsScheduledToday(
+        doctors,
+        schedules,
+        [
+          {
+            id: "exception-open",
+            exceptionDate: "2026-08-19",
+            kind: "open",
+            reason: "Extra clinic",
+            createdAt: "2026-08-01T08:00:00.000Z",
+          },
+        ],
+        referenceDate,
+      ),
+    ).toEqual([
+      {
+        doctor: doctors[0],
+        windows: ["09:00–17:00"],
+      },
+      {
+        doctor: doctors[1],
+        windows: ["10:00–18:00"],
+      },
+    ]);
   });
 });

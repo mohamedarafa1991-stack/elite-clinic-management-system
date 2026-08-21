@@ -1,6 +1,9 @@
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import type { SessionSummary } from "../preload/index.js";
-import { useState, type ReactElement } from "react";
 import type { WorkspaceLocale } from "./workspace-model.js";
+
+export type ShellNavigationGroup =
+  "today" | "front-desk" | "clinical" | "operations" | "insights" | "system";
 
 export interface ShellLabels {
   appName: string;
@@ -14,24 +17,42 @@ export interface ShellLabels {
   primaryNavigationLabel: string;
   expandNavigation: string;
   collapseNavigation: string;
-  overview: string;
-  overviewDetail: string;
+  todayGroup: string;
+  frontDeskGroup: string;
+  clinicalGroup: string;
+  operationsGroup: string;
+  insightsGroup: string;
+  systemGroup: string;
+  dashboard: string;
+  dashboardDetail: string;
   patients: string;
   patientsDetail: string;
-  careSchedule: string;
-  careScheduleDetail: string;
-  billing: string;
-  billingDetail: string;
+  appointments: string;
+  appointmentsDetail: string;
   doctors: string;
   doctorsDetail: string;
-  governance: string;
-  governanceDetail: string;
+  clinicalRecords: string;
+  clinicalRecordsDetail: string;
+  documents: string;
+  documentsDetail: string;
+  billing: string;
+  billingDetail: string;
+  drugCatalog: string;
+  drugCatalogDetail: string;
+  reports: string;
+  reportsDetail: string;
+  syncDevices: string;
+  syncDevicesDetail: string;
+  adminSettings: string;
+  adminSettingsDetail: string;
 }
 
 export interface ShellNavigationItem {
   id: string;
   label: string;
   detail: string;
+  icon: string;
+  group: ShellNavigationGroup;
 }
 
 export interface AppShellProps {
@@ -43,52 +64,124 @@ export interface AppShellProps {
   children: ReactElement;
 }
 
+interface NavigationDefinition extends ShellNavigationItem {
+  visible: boolean;
+}
+
 export function getVisibleShellNavigation(
   capabilities: readonly string[],
   labels: ShellLabels,
 ): readonly ShellNavigationItem[] {
   const has = (capability: string): boolean =>
     capabilities.includes(capability);
-  return [
+  const hasAny = (...required: readonly string[]): boolean =>
+    required.some((capability) => has(capability));
+
+  const definitions: readonly NavigationDefinition[] = [
     {
       id: "workspace-overview",
-      label: labels.overview,
-      detail: labels.overviewDetail,
+      label: labels.dashboard,
+      detail: labels.dashboardDetail,
+      icon: "D",
+      group: "today",
       visible: true,
     },
     {
       id: "workspace-patients",
       label: labels.patients,
       detail: labels.patientsDetail,
+      icon: "P",
+      group: "front-desk",
       visible: has("patient.read"),
     },
     {
-      id: "workspace-care",
-      label: labels.careSchedule,
-      detail: labels.careScheduleDetail,
+      id: "workspace-appointments",
+      label: labels.appointments,
+      detail: labels.appointmentsDetail,
+      icon: "A",
+      group: "front-desk",
       visible: has("appointment.read"),
-    },
-    {
-      id: "workspace-billing",
-      label: labels.billing,
-      detail: labels.billingDetail,
-      visible: has("billing.read"),
     },
     {
       id: "workspace-doctors",
       label: labels.doctors,
       detail: labels.doctorsDetail,
+      icon: "Dr",
+      group: "clinical",
       visible: has("doctor.profile.read"),
     },
     {
-      id: "workspace-governance",
-      label: labels.governance,
-      detail: labels.governanceDetail,
-      visible: has("export.manage") || has("device.manage"),
+      id: "workspace-records",
+      label: labels.clinicalRecords,
+      detail: labels.clinicalRecordsDetail,
+      icon: "CR",
+      group: "clinical",
+      visible: hasAny(
+        "clinical.read",
+        "clinical.write",
+        "clinical.sign",
+        "clinical.approve",
+      ),
     },
-  ]
+    {
+      id: "workspace-documents",
+      label: labels.documents,
+      detail: labels.documentsDetail,
+      icon: "Dc",
+      group: "clinical",
+      visible: hasAny("doctor.profile.read", "doctor.document.sensitive-read"),
+    },
+    {
+      id: "workspace-billing",
+      label: labels.billing,
+      detail: labels.billingDetail,
+      icon: "EGP",
+      group: "operations",
+      visible: has("billing.read"),
+    },
+    {
+      id: "workspace-catalog",
+      label: labels.drugCatalog,
+      detail: labels.drugCatalogDetail,
+      icon: "Rx",
+      group: "operations",
+      visible: has("module.manage"),
+    },
+    {
+      id: "workspace-reports",
+      label: labels.reports,
+      detail: labels.reportsDetail,
+      icon: "R",
+      group: "insights",
+      visible: hasAny("export.manage", "export.sensitive", "export.revoke"),
+    },
+    {
+      id: "workspace-sync",
+      label: labels.syncDevices,
+      detail: labels.syncDevicesDetail,
+      icon: "↔",
+      group: "system",
+      visible: has("device.manage"),
+    },
+    {
+      id: "workspace-settings",
+      label: labels.adminSettings,
+      detail: labels.adminSettingsDetail,
+      icon: "S",
+      group: "system",
+      visible: has("module.manage"),
+    },
+  ];
+
+  return definitions
     .filter((item) => item.visible)
-    .map(({ id, label, detail }) => ({ id, label, detail }));
+    .map(({ id, label, detail, icon, group }) => ({
+      id,
+      label,
+      detail,
+      icon,
+      group,
+    }));
 }
 
 function localeDirection(locale: WorkspaceLocale): "ltr" | "rtl" {
@@ -110,6 +203,29 @@ function formatRoleLabel(
   return role;
 }
 
+function getGroupLabel(
+  group: ShellNavigationGroup,
+  labels: ShellLabels,
+): string {
+  return {
+    today: labels.todayGroup,
+    "front-desk": labels.frontDeskGroup,
+    clinical: labels.clinicalGroup,
+    operations: labels.operationsGroup,
+    insights: labels.insightsGroup,
+    system: labels.systemGroup,
+  }[group];
+}
+
+const NAVIGATION_GROUPS: readonly ShellNavigationGroup[] = [
+  "today",
+  "front-desk",
+  "clinical",
+  "operations",
+  "insights",
+  "system",
+];
+
 export function AppShell({
   session,
   locale,
@@ -120,7 +236,22 @@ export function AppShell({
 }: AppShellProps): ReactElement {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeSection, setActiveSection] = useState("workspace-overview");
-  const navigation = getVisibleShellNavigation(session.capabilities, labels);
+  const navigation = useMemo(
+    () => getVisibleShellNavigation(session.capabilities, labels),
+    [labels, session.capabilities],
+  );
+
+  useEffect(() => {
+    const syncFromHash = (): void => {
+      const section = window.location.hash.slice(1);
+      if (section && navigation.some((item) => item.id === section)) {
+        setActiveSection(section);
+      }
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, [navigation]);
 
   return (
     <div
@@ -154,23 +285,36 @@ export function AppShell({
         </button>
         <nav className="sidebar-nav">
           <p className="sidebar-label">{labels.workspaceLabel}</p>
-          {navigation.map((item) => (
-            <a
-              className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
-              href={`#${item.id}`}
-              key={item.id}
-              aria-current={activeSection === item.id ? "page" : undefined}
-              onClick={() => setActiveSection(item.id)}
-            >
-              <span className="sidebar-link-icon" aria-hidden="true">
-                {item.label.slice(0, 1)}
-              </span>
-              <span className="sidebar-link-copy">
-                <strong>{item.label}</strong>
-                <small>{item.detail}</small>
-              </span>
-            </a>
-          ))}
+          {NAVIGATION_GROUPS.map((group) => {
+            const items = navigation.filter((item) => item.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div className="sidebar-group" key={group}>
+                <p className="sidebar-group-label">
+                  {getGroupLabel(group, labels)}
+                </p>
+                {items.map((item) => (
+                  <a
+                    className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
+                    href={`#${item.id}`}
+                    key={item.id}
+                    aria-current={
+                      activeSection === item.id ? "page" : undefined
+                    }
+                    onClick={() => setActiveSection(item.id)}
+                  >
+                    <span className="sidebar-link-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className="sidebar-link-copy">
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                  </a>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-footer">
           <span className="local-status-dot" aria-hidden="true" />

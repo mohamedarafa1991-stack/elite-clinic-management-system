@@ -151,18 +151,34 @@ type InterfaceCopyKey =
   | "encryptedStore"
   | "interfaceLanguage"
   | "signOut"
-  | "overview"
+  | "todayGroup"
+  | "frontDeskGroup"
+  | "clinicalGroup"
+  | "operationsGroup"
+  | "insightsGroup"
+  | "systemGroup"
+  | "dashboard"
+  | "dashboardDetail"
   | "patients"
-  | "careSchedule"
-  | "billing"
-  | "doctors"
-  | "governance"
-  | "overviewDetail"
   | "patientsDetail"
-  | "careScheduleDetail"
-  | "billingDetail"
+  | "appointments"
+  | "appointmentsDetail"
+  | "doctors"
   | "doctorsDetail"
-  | "governanceDetail"
+  | "clinicalRecords"
+  | "clinicalRecordsDetail"
+  | "documents"
+  | "documentsDetail"
+  | "billing"
+  | "billingDetail"
+  | "drugCatalog"
+  | "drugCatalogDetail"
+  | "reports"
+  | "reportsDetail"
+  | "syncDevices"
+  | "syncDevicesDetail"
+  | "adminSettings"
+  | "adminSettingsDetail"
   | "patientContext"
   | "patientId"
   | "phone"
@@ -207,18 +223,34 @@ const INTERFACE_COPY: Record<
     encryptedStore: "Encrypted clinic store",
     interfaceLanguage: "Interface language",
     signOut: "Sign out",
-    overview: "Overview",
+    todayGroup: "Today",
+    frontDeskGroup: "Front desk",
+    clinicalGroup: "Clinical care",
+    operationsGroup: "Operations",
+    insightsGroup: "Insights",
+    systemGroup: "System",
+    dashboard: "Dashboard",
+    dashboardDetail: "Today, queue, and clinic status",
     patients: "Patients",
-    careSchedule: "Care & schedule",
-    billing: "Billing",
+    patientsDetail: "Profiles, history, and guardians",
+    appointments: "Appointments",
+    appointmentsDetail: "Calendar, check-in, and visits",
     doctors: "Doctors",
-    governance: "Governance",
-    overviewDetail: "Today and clinic status",
-    patientsDetail: "Search and patient records",
-    careScheduleDetail: "Appointments and encounters",
-    billingDetail: "Invoices, receipts, and packages",
-    doctorsDetail: "Profiles and secure documents",
-    governanceDetail: "Exports, audit, and Admin controls",
+    doctorsDetail: "Profiles, specialties, and documents",
+    clinicalRecords: "Clinical records",
+    clinicalRecordsDetail: "Encounters, diagnoses, and amendments",
+    documents: "Documents",
+    documentsDetail: "Secure doctor-document vault",
+    billing: "Billing",
+    billingDetail: "Invoices, receipts, refunds, and packages",
+    drugCatalog: "Drug catalog",
+    drugCatalogDetail: "Egyptian medicines and updates",
+    reports: "Reports & exports",
+    reportsDetail: "Signed records, FHIR, and disclosures",
+    syncDevices: "Sync & devices",
+    syncDevicesDetail: "LAN health, enrollment, and recovery",
+    adminSettings: "Admin settings",
+    adminSettingsDetail: "Clinic policy, schedules, and controls",
     patientContext: "Patient context",
     patientId: "Patient ID",
     phone: "Phone",
@@ -230,7 +262,6 @@ const INTERFACE_COPY: Record<
     findPatient: "Find a patient",
     refreshToday: "Refresh today",
     refreshing: "Refreshing…",
-    appointments: "Appointments",
     waiting: "Waiting",
     completed: "Completed",
     nextPatient: "Next patient",
@@ -262,18 +293,34 @@ const INTERFACE_COPY: Record<
     encryptedStore: "مخزن العيادة المشفر",
     interfaceLanguage: "لغة الواجهة",
     signOut: "تسجيل الخروج",
-    overview: "نظرة عامة",
+    todayGroup: "اليوم",
+    frontDeskGroup: "الاستقبال",
+    clinicalGroup: "الرعاية السريرية",
+    operationsGroup: "التشغيل",
+    insightsGroup: "التقارير والتحليل",
+    systemGroup: "النظام",
+    dashboard: "لوحة التحكم",
+    dashboardDetail: "اليوم والقائمة وحالة العيادة",
     patients: "المرضى",
-    careSchedule: "الرعاية والجدول",
-    billing: "الفوترة",
+    patientsDetail: "الملفات والتاريخ وذوو الصلة",
+    appointments: "المواعيد",
+    appointmentsDetail: "التقويم والتسجيل والزيارات",
     doctors: "الأطباء",
-    governance: "الحوكمة",
-    overviewDetail: "اليوم وحالة العيادة",
-    patientsDetail: "البحث وسجلات المرضى",
-    careScheduleDetail: "المواعيد والزيارات",
-    billingDetail: "الفواتير والإيصالات والباقات",
-    doctorsDetail: "الملفات والوثائق الآمنة",
-    governanceDetail: "التصدير والتدقيق وإدارة النظام",
+    doctorsDetail: "الملفات والتخصصات والوثائق",
+    clinicalRecords: "السجلات السريرية",
+    clinicalRecordsDetail: "الزيارات والتشخيصات والتعديلات",
+    documents: "الوثائق",
+    documentsDetail: "خزنة وثائق الأطباء الآمنة",
+    billing: "الفوترة",
+    billingDetail: "الفواتير والإيصالات والاسترداد والباقات",
+    drugCatalog: "دليل الأدوية",
+    drugCatalogDetail: "الأدوية المصرية والتحديثات",
+    reports: "التقارير والتصدير",
+    reportsDetail: "السجلات الموقعة وFHIR والإفصاحات",
+    syncDevices: "المزامنة والأجهزة",
+    syncDevicesDetail: "حالة الشبكة والتسجيل والاسترداد",
+    adminSettings: "إعدادات المدير",
+    adminSettingsDetail: "سياسة العيادة والجداول والتحكم",
     patientContext: "سياق المريض",
     patientId: "معرّف المريض",
     phone: "الهاتف",
@@ -285,7 +332,6 @@ const INTERFACE_COPY: Record<
     findPatient: "البحث عن مريض",
     refreshToday: "تحديث اليوم",
     refreshing: "جارٍ التحديث…",
-    appointments: "المواعيد",
     waiting: "في الانتظار",
     completed: "المكتملة",
     nextPatient: "المريض التالي",
@@ -3686,6 +3732,9 @@ function ClinicalWorkflowWorkspace({
       className="card clinical-workflow-card"
       aria-labelledby="clinical-workflow-title"
     >
+      <span id="workspace-records" className="workspace-anchor" />
+      <span id="workspace-reports" className="workspace-anchor" />
+      <span id="workspace-settings" className="workspace-anchor" />
       <div className="card-heading">
         <div>
           <p className="eyebrow">Step 5</p>
@@ -6286,7 +6335,9 @@ function BillingWorkspace({
           </button>
         </form>
       ) : null}
-      <DrugCatalogAdminPanel token={token} canManage={canManageCatalog} />
+      <div id="workspace-catalog" className="workspace-anchor-section">
+        <DrugCatalogAdminPanel token={token} canManage={canManageCatalog} />
+      </div>
       <div className="form-section">
         <h3>Available catalog</h3>
         <div className="patient-list">
@@ -7009,7 +7060,7 @@ function DoctorWorkspace({
               <p className="form-help">Read-only view for this account.</p>
             )}
           </form>
-          <section className="form-section">
+          <section id="workspace-documents" className="form-section">
             <h3>Documents</h3>
             <div className="list-stack">
               {documents.map((document) => (
@@ -7188,6 +7239,13 @@ function AuthenticatedView({
     }
   };
 
+  const openWorkspace = (id: string): void => {
+    window.location.hash = id;
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <AppShell
       session={session}
@@ -7207,18 +7265,34 @@ function AuthenticatedView({
           locale === "ar-EG" ? "توسيع التنقل" : "Expand navigation",
         collapseNavigation:
           locale === "ar-EG" ? "طيّ التنقل" : "Collapse navigation",
-        overview: copy(locale, "overview"),
-        overviewDetail: copy(locale, "overviewDetail"),
+        todayGroup: copy(locale, "todayGroup"),
+        frontDeskGroup: copy(locale, "frontDeskGroup"),
+        clinicalGroup: copy(locale, "clinicalGroup"),
+        operationsGroup: copy(locale, "operationsGroup"),
+        insightsGroup: copy(locale, "insightsGroup"),
+        systemGroup: copy(locale, "systemGroup"),
+        dashboard: copy(locale, "dashboard"),
+        dashboardDetail: copy(locale, "dashboardDetail"),
         patients: copy(locale, "patients"),
         patientsDetail: copy(locale, "patientsDetail"),
-        careSchedule: copy(locale, "careSchedule"),
-        careScheduleDetail: copy(locale, "careScheduleDetail"),
-        billing: copy(locale, "billing"),
-        billingDetail: copy(locale, "billingDetail"),
+        appointments: copy(locale, "appointments"),
+        appointmentsDetail: copy(locale, "appointmentsDetail"),
         doctors: copy(locale, "doctors"),
         doctorsDetail: copy(locale, "doctorsDetail"),
-        governance: copy(locale, "governance"),
-        governanceDetail: copy(locale, "governanceDetail"),
+        clinicalRecords: copy(locale, "clinicalRecords"),
+        clinicalRecordsDetail: copy(locale, "clinicalRecordsDetail"),
+        documents: copy(locale, "documents"),
+        documentsDetail: copy(locale, "documentsDetail"),
+        billing: copy(locale, "billing"),
+        billingDetail: copy(locale, "billingDetail"),
+        drugCatalog: copy(locale, "drugCatalog"),
+        drugCatalogDetail: copy(locale, "drugCatalogDetail"),
+        reports: copy(locale, "reports"),
+        reportsDetail: copy(locale, "reportsDetail"),
+        syncDevices: copy(locale, "syncDevices"),
+        syncDevicesDetail: copy(locale, "syncDevicesDetail"),
+        adminSettings: copy(locale, "adminSettings"),
+        adminSettingsDetail: copy(locale, "adminSettingsDetail"),
       }}
       onLocaleChange={onLocaleChange}
       onLogout={logout}
@@ -7260,22 +7334,43 @@ function AuthenticatedView({
             offlineValid: copy(locale, "offlineValid"),
             offlineValidDetail: copy(locale, "offlineValidDetail"),
             minuteShort: locale === "ar-EG" ? "دقيقة" : "min",
-            unableToLoadAppointments: "Unable to load today’s appointments",
+            quickActions:
+              locale === "ar-EG" ? "اختصارات سريعة" : "Quick actions",
+            openPatients: locale === "ar-EG" ? "فتح المرضى" : "Open patients",
+            openAppointments:
+              locale === "ar-EG" ? "فتح المواعيد" : "Open appointments",
+            openDoctors: locale === "ar-EG" ? "فتح الأطباء" : "Open doctors",
+            openBilling: locale === "ar-EG" ? "فتح الفوترة" : "Open billing",
+            scheduledDoctors:
+              locale === "ar-EG"
+                ? "الأطباء المجدولون اليوم"
+                : "Doctors scheduled today",
+            loadingDoctors:
+              locale === "ar-EG"
+                ? "جارٍ تحميل الأطباء…"
+                : "Loading scheduled doctors…",
+            noDoctorsScheduled:
+              locale === "ar-EG"
+                ? "لا توجد جداول أطباء متاحة لهذا اليوم"
+                : "No doctor schedules are available for today",
+            unableToLoadAppointments:
+              locale === "ar-EG"
+                ? "تعذر تحميل بيانات اليوم"
+                : "Unable to load today’s appointments",
           }}
           formatDate={(value, options) =>
             formatLocalizedDate(value, locale, options)
           }
           formatTime={(value) => formatLocalizedTime(value, locale)}
           formatStatusLabel={(value) => formatStatusLabel(value, locale)}
-          onFindPatient={() =>
-            document
-              .getElementById("workspace-patients")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" })
-          }
+          onFindPatient={() => openWorkspace("workspace-patients")}
+          onOpenAppointments={() => openWorkspace("workspace-appointments")}
+          onOpenDoctors={() => openWorkspace("workspace-doctors")}
+          onOpenBilling={() => openWorkspace("workspace-billing")}
         />
         {session.role === "admin" &&
         session.capabilities.includes("device.manage") ? (
-          <WorkspaceSection id="workspace-governance">
+          <WorkspaceSection id="workspace-sync">
             <DevicePanel token={token} />
           </WorkspaceSection>
         ) : null}
@@ -7295,7 +7390,7 @@ function AuthenticatedView({
           </WorkspaceSection>
         ) : null}
         {session.capabilities.includes("appointment.read") ? (
-          <WorkspaceSection id="workspace-care">
+          <WorkspaceSection id="workspace-appointments">
             <ClinicalWorkflowWorkspace
               token={token}
               canManage={session.capabilities.includes("module.manage")}
@@ -7318,7 +7413,7 @@ function AuthenticatedView({
         ) : null}
         {session.role === "admin" &&
         session.capabilities.includes("patient.merge") ? (
-          <WorkspaceSection id="workspace-governance">
+          <WorkspaceSection id="workspace-patient-review">
             <MergeReviewQueue token={token} />
           </WorkspaceSection>
         ) : null}

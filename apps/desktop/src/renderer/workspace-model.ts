@@ -1,5 +1,11 @@
 import type { Appointment, Patient } from "@elite/contracts";
 
+import type {
+  DoctorDirectoryEntry,
+  Schedule,
+  ScheduleException,
+} from "@elite/contracts";
+
 export type WorkspaceLocale = "en-EG" | "ar-EG";
 
 export interface PatientContextModel {
@@ -76,4 +82,65 @@ export function getTodayAppointmentMetrics(
   );
 
   return { waitingCount, completedCount, nextAppointment };
+}
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export interface TodayDoctorAvailability {
+  doctor: DoctorDirectoryEntry;
+  windows: readonly string[];
+}
+
+export function getDoctorsScheduledToday(
+  doctors: readonly DoctorDirectoryEntry[],
+  schedules: readonly Schedule[],
+  exceptions: readonly ScheduleException[],
+  referenceDate: Date = new Date(),
+): TodayDoctorAvailability[] {
+  const dayOfWeek = referenceDate.getDay();
+  const dateKey = localDateKey(referenceDate);
+  const dateExceptions = exceptions.filter(
+    (exception) => exception.exceptionDate === dateKey,
+  );
+
+  return doctors
+    .flatMap((doctor) => {
+      const schedulesForDay = schedules.filter(
+        (schedule) =>
+          schedule.doctorId === doctor.id && schedule.dayOfWeek === dayOfWeek,
+      );
+      const doctorExceptions = dateExceptions.filter(
+        (exception) =>
+          exception.doctorId === doctor.id ||
+          (!exception.doctorId && !exception.departmentId),
+      );
+      const closed = doctorExceptions.some(
+        (exception) => exception.kind === "closed",
+      );
+      const openOverride = doctorExceptions.some(
+        (exception) => exception.kind === "open",
+      );
+      if (closed || (schedulesForDay.length === 0 && !openOverride)) {
+        return [];
+      }
+      return [
+        {
+          doctor,
+          windows:
+            schedulesForDay.length > 0
+              ? schedulesForDay.map(
+                  (schedule) => `${schedule.startTime}–${schedule.endTime}`,
+                )
+              : ["Open override"],
+        },
+      ];
+    })
+    .sort((left, right) =>
+      left.doctor.displayNameEn.localeCompare(right.doctor.displayNameEn),
+    );
 }

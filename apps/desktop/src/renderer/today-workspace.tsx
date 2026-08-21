@@ -1,7 +1,13 @@
-import type { Appointment } from "@elite/contracts";
+import type {
+  Appointment,
+  DoctorDirectoryEntry,
+  Schedule,
+  ScheduleException,
+} from "@elite/contracts";
 import type { SessionSummary } from "../preload/index.js";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import {
+  getDoctorsScheduledToday,
   getTodayAppointmentMetrics,
   sortAppointmentsByStart,
   type WorkspaceLocale,
@@ -35,6 +41,14 @@ export interface TodayWorkspaceLabels {
   offlineValid: string;
   offlineValidDetail: string;
   minuteShort: string;
+  quickActions: string;
+  openPatients: string;
+  openAppointments: string;
+  openDoctors: string;
+  openBilling: string;
+  scheduledDoctors: string;
+  loadingDoctors: string;
+  noDoctorsScheduled: string;
   unableToLoadAppointments: string;
 }
 
@@ -50,6 +64,9 @@ export interface TodayWorkspaceProps {
   formatTime: (value: string | Date) => string;
   formatStatusLabel: (value: string) => string;
   onFindPatient: () => void;
+  onOpenAppointments: () => void;
+  onOpenDoctors: () => void;
+  onOpenBilling: () => void;
 }
 
 function BidiValue({
@@ -102,8 +119,16 @@ export function TodayWorkspace({
   formatTime,
   formatStatusLabel,
   onFindPatient,
+  onOpenAppointments,
+  onOpenDoctors,
+  onOpenBilling,
 }: TodayWorkspaceProps): ReactElement {
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [doctors, setDoctors] = useState<readonly DoctorDirectoryEntry[]>([]);
+  const [schedules, setSchedules] = useState<readonly Schedule[]>([]);
+  const [exceptions, setExceptions] = useState<readonly ScheduleException[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,12 +144,32 @@ export function TodayWorkspace({
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     try {
-      const nextAppointments = await window.elite.clinical.listAppointments(
-        token,
-        start.toISOString(),
-        end.toISOString(),
-      );
+      const canReadAppointments =
+        session.capabilities.includes("appointment.read");
+      const canReadSchedules = session.capabilities.includes("clinical.read");
+      const [nextAppointments, nextDoctors, nextSchedules, nextExceptions] =
+        await Promise.all([
+          canReadAppointments
+            ? window.elite.clinical.listAppointments(
+                token,
+                start.toISOString(),
+                end.toISOString(),
+              )
+            : Promise.resolve([] as readonly Appointment[]),
+          canReadAppointments
+            ? window.elite.clinical.listDoctors(token)
+            : Promise.resolve([] as readonly DoctorDirectoryEntry[]),
+          canReadSchedules
+            ? window.elite.clinical.listSchedules(token)
+            : Promise.resolve([] as readonly Schedule[]),
+          canReadSchedules
+            ? window.elite.clinical.listExceptions(token)
+            : Promise.resolve([] as readonly ScheduleException[]),
+        ]);
       setAppointments(sortAppointmentsByStart(nextAppointments));
+      setDoctors(nextDoctors);
+      setSchedules(nextSchedules);
+      setExceptions(nextExceptions);
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -142,6 +187,11 @@ export function TodayWorkspace({
 
   const { waitingCount, completedCount, nextAppointment } =
     getTodayAppointmentMetrics(appointments);
+  const scheduledDoctors = getDoctorsScheduledToday(
+    doctors,
+    schedules,
+    exceptions,
+  );
   const roleFocus = getTodayRoleFocus(session.role, locale);
 
   return (
@@ -178,6 +228,39 @@ export function TodayWorkspace({
             disabled={isLoading}
           >
             {isLoading ? labels.refreshing : labels.refreshToday}
+          </button>
+        </div>
+      </div>
+      <div className="today-quick-actions" aria-label={labels.quickActions}>
+        <span className="today-quick-actions-label">{labels.quickActions}</span>
+        <div className="today-quick-action-list">
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={onFindPatient}
+          >
+            {labels.openPatients}
+          </button>
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={onOpenAppointments}
+          >
+            {labels.openAppointments}
+          </button>
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={onOpenDoctors}
+          >
+            {labels.openDoctors}
+          </button>
+          <button
+            className="button secondary small"
+            type="button"
+            onClick={onOpenBilling}
+          >
+            {labels.openBilling}
           </button>
         </div>
       </div>
@@ -289,6 +372,45 @@ export function TodayWorkspace({
               <span>{labels.offlineValidDetail}</span>
             </div>
           </div>
+        </section>
+        <section
+          className="today-card today-doctors-card"
+          aria-labelledby="today-doctors-title"
+        >
+          <div className="today-card-heading">
+            <div>
+              <p className="eyebrow">{labels.scheduledDoctors}</p>
+              <h2 id="today-doctors-title">{labels.scheduledDoctors}</h2>
+            </div>
+            <span className="status info">{scheduledDoctors.length}</span>
+          </div>
+          {isLoading ? (
+            <p className="muted">{labels.loadingDoctors}</p>
+          ) : scheduledDoctors.length === 0 ? (
+            <p className="muted">{labels.noDoctorsScheduled}</p>
+          ) : (
+            <div className="today-doctor-list">
+              {scheduledDoctors.map(({ doctor, windows }) => (
+                <div className="today-doctor-row" key={doctor.id}>
+                  <span className="doctor-avatar" aria-hidden="true">
+                    {(locale === "ar-EG" && doctor.displayNameAr
+                      ? doctor.displayNameAr
+                      : doctor.displayNameEn
+                    ).slice(0, 1)}
+                  </span>
+                  <div>
+                    <strong>
+                      {locale === "ar-EG" && doctor.displayNameAr
+                        ? doctor.displayNameAr
+                        : doctor.displayNameEn}
+                    </strong>
+                    <small dir="ltr">{windows.join(" · ")}</small>
+                  </div>
+                  <span className="status ok">{labels.localData}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </section>
