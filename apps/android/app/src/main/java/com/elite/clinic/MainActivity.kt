@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,13 +28,61 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.elite.clinic.security.AppUnlockStore
 
+enum class WorkspaceThemePreference {
+    LIGHT,
+    DARK,
+    HIGH_CONTRAST,
+}
+
+fun workspaceColorScheme(theme: WorkspaceThemePreference): ColorScheme = when (theme) {
+    WorkspaceThemePreference.LIGHT -> lightColorScheme(
+        primary = Color(0xFF0B6E73),
+        onPrimary = Color.White,
+        background = Color(0xFFF4F7F8),
+        onBackground = Color(0xFF142B3A),
+        surface = Color.White,
+        onSurface = Color(0xFF314A57),
+        surfaceVariant = Color(0xFFEAF1F2),
+        onSurfaceVariant = Color(0xFF607681),
+        outline = Color(0xFFD6E1E4),
+    )
+    WorkspaceThemePreference.DARK -> darkColorScheme(
+        primary = Color(0xFF62C5C2),
+        onPrimary = Color(0xFF003739),
+        background = Color(0xFF111B20),
+        onBackground = Color(0xFFF2FAF9),
+        surface = Color(0xFF18262C),
+        onSurface = Color(0xFFD7E6E7),
+        surfaceVariant = Color(0xFF20343B),
+        onSurfaceVariant = Color(0xFFA8BDC1),
+        outline = Color(0xFF35505A),
+    )
+    WorkspaceThemePreference.HIGH_CONTRAST -> lightColorScheme(
+        primary = Color(0xFF004F52),
+        onPrimary = Color.White,
+        background = Color.White,
+        onBackground = Color.Black,
+        surface = Color.White,
+        onSurface = Color.Black,
+        surfaceVariant = Color(0xFFF1F1F1),
+        onSurfaceVariant = Color(0xFF111111),
+        outline = Color.Black,
+    )
+}
+
 class MainActivity : FragmentActivity() {
     private lateinit var unlockStore: AppUnlockStore
+    private val uiPreferences by lazy {
+        getSharedPreferences("elite.android.ui-preferences.v1", MODE_PRIVATE)
+    }
+    private var languageArabic by mutableStateOf(false)
+    private var workspaceTheme by mutableStateOf(WorkspaceThemePreference.LIGHT)
     private var pinConfigured by mutableStateOf(false)
     private var unlocked by mutableStateOf(false)
     private var unlockError by mutableStateOf<String?>(null)
@@ -51,8 +102,12 @@ class MainActivity : FragmentActivity() {
         val application = application as EliteApplication
         unlockStore = AppUnlockStore(this, application.deviceKeyStore)
         pinConfigured = unlockStore.isPinConfigured()
+        languageArabic = uiPreferences.getBoolean(KEY_ARABIC, false)
+        workspaceTheme = uiPreferences.getString(KEY_THEME, WorkspaceThemePreference.LIGHT.name)
+            ?.let { value -> WorkspaceThemePreference.entries.firstOrNull { it.name == value } }
+            ?: WorkspaceThemePreference.LIGHT
         setContent {
-            MaterialTheme {
+            MaterialTheme(colorScheme = workspaceColorScheme(workspaceTheme)) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     when {
                         application.database == null -> FoundationScreen(databaseReady = false)
@@ -66,7 +121,19 @@ class MainActivity : FragmentActivity() {
                             onPin = ::unlockWithPin,
                             onBiometric = ::launchBiometricPrompt,
                         )
-                        else -> ClinicWorkspace(application)
+                        else -> ClinicWorkspace(
+                            application = application,
+                            arabic = languageArabic,
+                            onArabicChange = { next ->
+                                languageArabic = next
+                                uiPreferences.edit().putBoolean(KEY_ARABIC, next).apply()
+                            },
+                            themePreference = workspaceTheme,
+                            onThemeChange = { next ->
+                                workspaceTheme = next
+                                uiPreferences.edit().putString(KEY_THEME, next.name).apply()
+                            },
+                        )
                     }
                 }
             }
@@ -165,6 +232,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private companion object {
+        const val KEY_ARABIC = "languageArabic"
+        const val KEY_THEME = "workspaceTheme"
         const val INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000L
         val AUTHENTICATORS = BiometricManager.Authenticators.BIOMETRIC_STRONG or
             BiometricManager.Authenticators.DEVICE_CREDENTIAL

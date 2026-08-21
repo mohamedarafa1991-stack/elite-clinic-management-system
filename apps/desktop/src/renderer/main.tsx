@@ -8105,6 +8105,22 @@ function AuthenticatedView({
   }, [activeWorkspaceIsVisible]);
 
   const isActiveWorkspace = (id: string): boolean => activeSection === id;
+  const receptionistOfflineCopy = session.role === "receptionist";
+  const savedOnComputer = receptionistOfflineCopy
+    ? locale === "ar-EG"
+      ? "محفوظ على هذا الكمبيوتر"
+      : "Saved on this computer"
+    : copy(locale, "localFirst");
+  const workingLocally = receptionistOfflineCopy
+    ? locale === "ar-EG"
+      ? "البيانات محفوظة محلياً"
+      : "Saved locally"
+    : copy(locale, "workingLocally");
+  const offlineDetail = receptionistOfflineCopy
+    ? locale === "ar-EG"
+      ? "يمكنك متابعة العمل حتى عند انقطاع الشبكة."
+      : "You can keep working even when the network is unavailable."
+    : copy(locale, "offlineValidDetail");
 
   return (
     <AppShell
@@ -8113,8 +8129,8 @@ function AuthenticatedView({
       labels={{
         appName: copy(locale, "appName"),
         clinicWorkspace: copy(locale, "clinicWorkspace"),
-        localFirst: copy(locale, "localFirst"),
-        workingLocally: copy(locale, "workingLocally"),
+        localFirst: savedOnComputer,
+        workingLocally,
         encryptedStore: copy(locale, "encryptedStore"),
         interfaceLanguage: copy(locale, "interfaceLanguage"),
         visualTheme: locale === "ar-EG" ? "المظهر" : "Theme",
@@ -8201,8 +8217,8 @@ function AuthenticatedView({
               locale,
               "patientIdentityFirstDetail",
             ),
-            offlineValid: copy(locale, "offlineValid"),
-            offlineValidDetail: copy(locale, "offlineValidDetail"),
+            offlineValid: savedOnComputer,
+            offlineValidDetail: offlineDetail,
             minuteShort: locale === "ar-EG" ? "دقيقة" : "min",
             quickActions:
               session.role === "receptionist"

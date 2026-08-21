@@ -28,7 +28,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -111,7 +113,13 @@ private data class MirrorDoctor(
 )
 
 @Composable
-fun ClinicWorkspace(application: EliteApplication) {
+fun ClinicWorkspace(
+    application: EliteApplication,
+    arabic: Boolean,
+    onArabicChange: (Boolean) -> Unit,
+    themePreference: WorkspaceThemePreference,
+    onThemeChange: (WorkspaceThemePreference) -> Unit,
+) {
     val database = requireNotNull(application.database) {
         "ELITE_ANDROID_WORKSPACE_DATABASE_REQUIRED"
     }
@@ -208,7 +216,7 @@ fun ClinicWorkspace(application: EliteApplication) {
                             selectedPatientId = null
                         },
                         icon = { Icon(tab.icon(), contentDescription = null) },
-                        label = { Text(tab.label) },
+                        label = { Text(if (arabic) tab.arabicLabel else tab.label) },
                     )
                 }
             }
@@ -249,7 +257,14 @@ fun ClinicWorkspace(application: EliteApplication) {
                         doctors = doctors,
                         hasEnrollment = deviceId != null,
                     )
-                    WorkspaceTab.MORE -> MoreScreen(application, billingSummaries)
+                    WorkspaceTab.MORE -> MoreScreen(
+                        application = application,
+                        billingSummaries = billingSummaries,
+                        arabic = arabic,
+                        onArabicChange = onArabicChange,
+                        themePreference = themePreference,
+                        onThemeChange = onThemeChange,
+                    )
                 }
             }
         }
@@ -509,7 +524,14 @@ private fun DoctorCard(doctor: MirrorDoctor) {
 }
 
 @Composable
-private fun MoreScreen(application: EliteApplication, billingSummaries: List<BillingSummaryEntity>) {
+private fun MoreScreen(
+    application: EliteApplication,
+    billingSummaries: List<BillingSummaryEntity>,
+    arabic: Boolean,
+    onArabicChange: (Boolean) -> Unit,
+    themePreference: WorkspaceThemePreference,
+    onThemeChange: (WorkspaceThemePreference) -> Unit,
+) {
     var showDocumentVault by remember { mutableStateOf(false) }
     if (showDocumentVault) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -518,7 +540,18 @@ private fun MoreScreen(application: EliteApplication, billingSummaries: List<Bil
         }
         return
     }
-    WorkspaceList(title = "More / المزيد", subtitle = "Documents · billing · reports · sync") {
+    WorkspaceList(
+        title = uiText(arabic, "More", "المزيد"),
+        subtitle = uiText(arabic, "Documents · billing · reports · sync", "الوثائق · الفوترة · التقارير · المزامنة"),
+    ) {
+        item {
+            PreferenceCard(
+                arabic = arabic,
+                themePreference = themePreference,
+                onArabicChange = onArabicChange,
+                onThemeChange = onThemeChange,
+            )
+        }
         item {
             MirrorSectionCard(
                 title = "Billing / الفوترة",
@@ -621,6 +654,52 @@ private fun DetailLine(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
+
+@Composable
+private fun PreferenceCard(
+    arabic: Boolean,
+    themePreference: WorkspaceThemePreference,
+    onArabicChange: (Boolean) -> Unit,
+    onThemeChange: (WorkspaceThemePreference) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                uiText(arabic, "Display preferences", "إعدادات المظهر"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(uiText(arabic, "Arabic interface", "الواجهة العربية"))
+                Switch(checked = arabic, onCheckedChange = onArabicChange)
+            }
+            Text(uiText(arabic, "Theme", "المظهر"), style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                WorkspaceThemePreference.entries.forEach { option ->
+                    TextButton(
+                        onClick = { onThemeChange(option) },
+                        enabled = option != themePreference,
+                    ) {
+                        Text(
+                            when (option) {
+                                WorkspaceThemePreference.LIGHT -> uiText(arabic, "Light", "فاتح")
+                                WorkspaceThemePreference.DARK -> uiText(arabic, "Dark", "داكن")
+                                WorkspaceThemePreference.HIGH_CONTRAST -> uiText(arabic, "High contrast", "تباين عالٍ")
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun uiText(arabic: Boolean, english: String, arabicText: String): String =
+    if (arabic) arabicText else english
 
 private fun SyncResourceMetadataEntity.payload(): JSONObject? = payloadJson?.let {
     runCatching { JSONObject(it) }.getOrNull()
