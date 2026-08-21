@@ -50,7 +50,7 @@ The final unified readiness run passed all eight local gates:
 | Desktop production build                                 | Passed.                                                                                                                       |
 | Existing desktop archive verification                    | Passed.                                                                                                                       |
 | Android release pipeline                                 | Passed; JVM tests, lint, release APK assembly, static checks, and archive checks succeeded.                                   |
-| Synthetic clinic-day rehearsal                           | Passed; migration 22, billing, document vault, six sync scopes, offline queue, and encrypted backup/restore checks succeeded. |
+| Synthetic clinic-day rehearsal                           | Passed; migration 23, billing, document vault, six sync scopes, offline queue, and encrypted backup/restore checks succeeded. |
 | Formatting                                               | Passed.                                                                                                                       |
 | Git whitespace validation                                | Passed.                                                                                                                       |
 

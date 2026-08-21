@@ -19,7 +19,7 @@ The rehearsal is accepted for this development milestone only when the command c
 
 | Area                        | Required local evidence                                                                                                                                            | Current sandbox result              |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| Database migrations         | The encrypted Hub database opens at migration version 22 after creation and after restore.                                                                         | Passed.                             |
+| Database migrations         | The encrypted Hub database opens at migration version 23 after creation and after restore.                                                                         | Passed.                             |
 | Patient identity            | Patients are issued as `EL-00001` and `EL-00002`; the second patient does not reuse the first identifier.                                                          | Passed.                             |
 | Guardian workflow           | A fictional minor has one verified guardian relationship with consent authority.                                                                                   | Passed.                             |
 | Clinic day                  | Appointment history records registration, arrival, rooming, consultation, and completion transitions.                                                              | Passed.                             |
@@ -97,7 +97,7 @@ The report should be checked for the following fields before archiving:
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `syntheticOnly`                                               | Must be exactly `true`.                                                                                                            |
 | `scenario`                                                    | Must identify the approved scenario version, currently `synthetic-clinic-day-v1`.                                                  |
-| `database.migrationVersion`                                   | Must be `22` for the current repository.                                                                                           |
+| `database.migrationVersion`                                   | Must be `23` for the current repository.                                                                                           |
 | `database.patientIds`                                         | Must contain the expected synthetic sequential identifiers and no real identifiers.                                                |
 | `sync.scopes`                                                 | Must contain `appointments`, `patient-summary`, `encounter-summary`, `clinical-notes`, `export-governance`, and `billing-summary`. |
 | `recovery.backupSha256` and `recovery.restoredDatabaseSha256` | Must match for this copy/restore rehearsal.                                                                                        |

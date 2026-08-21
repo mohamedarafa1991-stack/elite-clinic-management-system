@@ -60,6 +60,7 @@ describe("AppShell navigation model", () => {
           "doctor.profile.read",
           "clinical.read",
           "export.manage",
+          "reports.read",
           "device.manage",
           "module.manage",
         ],
@@ -85,6 +86,11 @@ describe("AppShell navigation model", () => {
       getVisibleShellNavigation(["export.manage"], labels).map(
         (item) => item.id,
       ),
+    ).toEqual(["workspace-overview"]);
+    expect(
+      getVisibleShellNavigation(["reports.read"], labels).map(
+        (item) => item.id,
+      ),
     ).toEqual(["workspace-overview", "workspace-reports"]);
     expect(
       getVisibleShellNavigation(["device.manage"], labels).map(
@@ -99,6 +105,20 @@ describe("AppShell navigation model", () => {
       "workspace-overview",
       "workspace-catalog",
       "workspace-settings",
+    ]);
+  });
+
+  it("keeps front desk navigation free of clinical records", () => {
+    expect(
+      getVisibleShellNavigation(
+        ["patient.read", "appointment.read", "billing.read"],
+        labels,
+      ).map((item) => item.id),
+    ).toEqual([
+      "workspace-overview",
+      "workspace-patients",
+      "workspace-appointments",
+      "workspace-billing",
     ]);
   });
 

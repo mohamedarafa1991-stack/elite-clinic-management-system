@@ -1,5 +1,6 @@
 import type {
   Appointment,
+  BillingDashboardSummary,
   DoctorDirectoryEntry,
   Schedule,
   ScheduleException,
@@ -49,6 +50,14 @@ export interface TodayWorkspaceLabels {
   scheduledDoctors: string;
   loadingDoctors: string;
   noDoctorsScheduled: string;
+  billingTitle: string;
+  invoicedThisMonth: string;
+  collectedThisMonth: string;
+  outstanding: string;
+  openInvoices: string;
+  recentInvoices: string;
+  noRecentInvoices: string;
+  invoiceNumber: string;
   unableToLoadAppointments: string;
 }
 
@@ -77,6 +86,14 @@ function BidiValue({
   direction?: "auto" | "ltr" | "rtl";
 }): ReactElement {
   return <span dir={direction}>{children}</span>;
+}
+
+function formatEgp(value: number, locale: WorkspaceLocale): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "EGP",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export function getAppointmentStatusClass(
@@ -129,6 +146,8 @@ export function TodayWorkspace({
   const [exceptions, setExceptions] = useState<readonly ScheduleException[]>(
     [],
   );
+  const [billingSummary, setBillingSummary] =
+    useState<BillingDashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,29 +166,39 @@ export function TodayWorkspace({
       const canReadAppointments =
         session.capabilities.includes("appointment.read");
       const canReadSchedules = session.capabilities.includes("clinical.read");
-      const [nextAppointments, nextDoctors, nextSchedules, nextExceptions] =
-        await Promise.all([
-          canReadAppointments
-            ? window.elite.clinical.listAppointments(
-                token,
-                start.toISOString(),
-                end.toISOString(),
-              )
-            : Promise.resolve([] as readonly Appointment[]),
-          canReadAppointments
-            ? window.elite.clinical.listDoctors(token)
-            : Promise.resolve([] as readonly DoctorDirectoryEntry[]),
-          canReadSchedules
-            ? window.elite.clinical.listSchedules(token)
-            : Promise.resolve([] as readonly Schedule[]),
-          canReadSchedules
-            ? window.elite.clinical.listExceptions(token)
-            : Promise.resolve([] as readonly ScheduleException[]),
-        ]);
+      const canReadBilling = session.capabilities.includes("billing.read");
+      const [
+        nextAppointments,
+        nextDoctors,
+        nextSchedules,
+        nextExceptions,
+        nextBillingSummary,
+      ] = await Promise.all([
+        canReadAppointments
+          ? window.elite.clinical.listAppointments(
+              token,
+              start.toISOString(),
+              end.toISOString(),
+            )
+          : Promise.resolve([] as readonly Appointment[]),
+        canReadAppointments
+          ? window.elite.clinical.listDoctors(token)
+          : Promise.resolve([] as readonly DoctorDirectoryEntry[]),
+        canReadSchedules
+          ? window.elite.clinical.listSchedules(token)
+          : Promise.resolve([] as readonly Schedule[]),
+        canReadSchedules
+          ? window.elite.clinical.listExceptions(token)
+          : Promise.resolve([] as readonly ScheduleException[]),
+        canReadBilling
+          ? window.elite.billing.getDashboardSummary(token)
+          : Promise.resolve(null as BillingDashboardSummary | null),
+      ]);
       setAppointments(sortAppointmentsByStart(nextAppointments));
       setDoctors(nextDoctors);
       setSchedules(nextSchedules);
       setExceptions(nextExceptions);
+      setBillingSummary(nextBillingSummary);
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -413,6 +442,82 @@ export function TodayWorkspace({
           )}
         </section>
       </div>
+      {session.capabilities.includes("billing.read") ? (
+        <section
+          className="today-billing-card"
+          aria-labelledby="today-billing-title"
+        >
+          <div className="today-card-heading">
+            <div>
+              <p className="eyebrow">{labels.billingTitle}</p>
+              <h2 id="today-billing-title">{labels.billingTitle}</h2>
+            </div>
+            <button
+              className="button ghost small"
+              type="button"
+              onClick={onOpenBilling}
+            >
+              {labels.openBilling}
+            </button>
+          </div>
+          <div className="today-billing-metrics">
+            <div>
+              <span>{labels.invoicedThisMonth}</span>
+              <strong>
+                {billingSummary
+                  ? formatEgp(billingSummary.invoicedEgp, locale)
+                  : "—"}
+              </strong>
+            </div>
+            <div>
+              <span>{labels.collectedThisMonth}</span>
+              <strong>
+                {billingSummary
+                  ? formatEgp(billingSummary.collectedEgp, locale)
+                  : "—"}
+              </strong>
+            </div>
+            <div>
+              <span>{labels.outstanding}</span>
+              <strong>
+                {billingSummary
+                  ? formatEgp(billingSummary.outstandingEgp, locale)
+                  : "—"}
+              </strong>
+            </div>
+            <div>
+              <span>{labels.openInvoices}</span>
+              <strong>{billingSummary?.openInvoiceCount ?? "—"}</strong>
+            </div>
+          </div>
+          <div className="today-invoice-list">
+            <div className="today-invoice-heading">
+              <strong>{labels.recentInvoices}</strong>
+              <span>{billingSummary?.month ?? ""}</span>
+            </div>
+            {!billingSummary || billingSummary.recentInvoices.length === 0 ? (
+              <p className="muted">{labels.noRecentInvoices}</p>
+            ) : (
+              billingSummary.recentInvoices.map((invoice) => (
+                <div className="today-invoice-row" key={invoice.invoiceNumber}>
+                  <div>
+                    <strong dir="ltr">{invoice.invoiceNumber}</strong>
+                    <span dir="ltr">{invoice.patientId}</span>
+                  </div>
+                  <div>
+                    <strong>{formatEgp(invoice.totalEgp, locale)}</strong>
+                    <small>
+                      {invoice.balanceEgp > 0
+                        ? formatEgp(invoice.balanceEgp, locale)
+                        : invoice.status}
+                    </small>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

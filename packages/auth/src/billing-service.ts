@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import {
   billingInvoiceCreateInputSchema,
+  billingDashboardSummarySchema,
   billingInvoiceSchema,
   billingPackageInputSchema,
   billingPackageSchema,
@@ -9,6 +10,7 @@ import {
   billingReceiptSchema,
   billingRefundInputSchema,
   billingRefundSchema,
+  type BillingDashboardSummary,
   type BillingInvoice,
   type BillingInvoiceCreateInput,
   type BillingPackage,
@@ -23,6 +25,18 @@ type Row = any;
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function monthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthStart(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function nextMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -213,6 +227,68 @@ export class BillingService {
       discountEgp: parsed.discountEgp,
     });
     return this.getInvoice(context, invoiceId);
+  }
+
+  public getDashboardSummary(
+    context: SessionContext,
+    referenceDate: Date = new Date(),
+  ): BillingDashboardSummary {
+    requireCapability(context, "billing.read");
+    const start = monthStart(referenceDate);
+    const end = nextMonth(start);
+    const from = start.toISOString();
+    const to = end.toISOString();
+    const rows = this.database.raw
+      .prepare(
+        `SELECT i.*, p.patient_id AS patient_display_id
+         FROM billing_invoices i
+         JOIN patients p ON p.id = i.patient_id
+         WHERE i.created_at >= ? AND i.created_at < ?
+         ORDER BY i.created_at DESC`,
+      )
+      .all(from, to) as Row[];
+    const invoices = rows.map((row) => this.mapInvoice(context, row));
+    const payments = this.database.raw
+      .prepare(
+        `SELECT COALESCE(SUM(amount_egp), 0) AS collected
+         FROM billing_payments
+         WHERE received_at >= ? AND received_at < ?
+           AND status IN ('posted', 'refunded')`,
+      )
+      .get(from, to) as Row;
+    const refunds = this.database.raw
+      .prepare(
+        `SELECT COALESCE(SUM(amount_egp), 0) AS refunded
+         FROM billing_refunds
+         WHERE refunded_at >= ? AND refunded_at < ?
+           AND status = 'posted'`,
+      )
+      .get(from, to) as Row;
+    return billingDashboardSummarySchema.parse({
+      month: monthKey(start),
+      invoicedEgp: invoices.reduce((sum, invoice) => sum + invoice.totalEgp, 0),
+      collectedEgp: Math.max(
+        0,
+        Number(payments.collected) - Number(refunds.refunded),
+      ),
+      refundedEgp: Number(refunds.refunded),
+      outstandingEgp: invoices.reduce(
+        (sum, invoice) => sum + invoice.balanceEgp,
+        0,
+      ),
+      invoiceCount: invoices.length,
+      openInvoiceCount: invoices.filter((invoice) =>
+        ["open", "partially-paid"].includes(invoice.status),
+      ).length,
+      recentInvoices: invoices.slice(0, 8).map((invoice) => ({
+        invoiceNumber: invoice.invoiceNumber,
+        patientId: invoice.patientId,
+        status: invoice.status,
+        totalEgp: invoice.totalEgp,
+        balanceEgp: invoice.balanceEgp,
+        createdAt: invoice.createdAt,
+      })),
+    });
   }
 
   public listInvoices(

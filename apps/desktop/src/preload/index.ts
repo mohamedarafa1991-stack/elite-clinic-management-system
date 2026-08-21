@@ -58,6 +58,8 @@ import type {
   BillingReceipt,
   BillingRefund,
   BillingRefundInput,
+  BillingDashboardSummary,
+  ReportsAnalytics,
   Schedule,
   ScheduleInput,
   ScheduleException,
@@ -703,6 +705,11 @@ const eliteApi = {
       ipcRenderer.invoke("billing:invoices", token, patientId) as Promise<
         readonly BillingInvoice[]
       >,
+    getDashboardSummary: (token: string) =>
+      ipcRenderer.invoke(
+        "billing:dashboard-summary",
+        token,
+      ) as Promise<BillingDashboardSummary>,
     createInvoice: (token: string, input: BillingInvoiceCreateInput) =>
       ipcRenderer.invoke(
         "billing:invoice-create",
@@ -733,6 +740,13 @@ const eliteApi = {
         refund: BillingRefund;
         invoice: BillingInvoice;
       }>,
+  },
+  reports: {
+    getAnalytics: (token: string) =>
+      ipcRenderer.invoke(
+        "reports:analytics",
+        token,
+      ) as Promise<ReportsAnalytics>,
   },
   sync: {
     registerDevice: (

@@ -207,7 +207,7 @@ export class ClinicalWorkflowService {
   }
 
   public listDepartments(context: SessionContext): readonly Department[] {
-    requireCapability(context, "clinical.read");
+    requireCapability(context, "appointment.read");
     return (
       this.database.raw
         .prepare("SELECT * FROM departments ORDER BY name_en")
@@ -251,7 +251,7 @@ export class ClinicalWorkflowService {
   }
 
   public listServices(context: SessionContext): readonly Service[] {
-    requireCapability(context, "clinical.read");
+    requireCapability(context, "appointment.read");
     return (
       this.database.raw
         .prepare("SELECT * FROM services ORDER BY name_en")

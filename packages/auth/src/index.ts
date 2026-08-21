@@ -178,6 +178,19 @@ function defaultCapabilities(role: UserRole): readonly Capability[] {
   return roleCapabilities[role];
 }
 
+function effectiveCapabilities(
+  role: UserRole,
+  stored: readonly Capability[],
+): readonly Capability[] {
+  const allowed = new Set(roleCapabilities[role]);
+  return [
+    ...new Set([
+      ...roleCapabilities[role],
+      ...stored.filter((capability) => allowed.has(capability)),
+    ]),
+  ];
+}
+
 function requireAdminContext(context: SessionContext): void {
   if (context.role !== "admin") {
     throw new Error(
@@ -490,7 +503,10 @@ export class AuthService {
       username: user.username,
       role: user.role,
       deviceId: parsed.deviceId,
-      capabilities: parseCapabilities(user.capabilities_json),
+      capabilities: effectiveCapabilities(
+        user.role,
+        parseCapabilities(user.capabilities_json),
+      ),
       expiresAt,
     };
   }
@@ -539,7 +555,10 @@ export class AuthService {
       username: row.username,
       role: row.role,
       deviceId: row.device_id,
-      capabilities: parseCapabilities(row.capabilities_json),
+      capabilities: effectiveCapabilities(
+        row.role,
+        parseCapabilities(row.capabilities_json),
+      ),
       expiresAt: row.expires_at,
     };
   }
@@ -858,6 +877,7 @@ export {
   specialtyInputSchema,
 } from "./clinical-service.js";
 export { BillingService } from "./billing-service.js";
+export { ReportsService } from "./reports-service.js";
 export {
   DrugCatalogService,
   hashDrugCatalogContent,

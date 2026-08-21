@@ -74,6 +74,7 @@ import type { PatientRelatedPersonLinkSummary } from "@elite/auth";
 import { AppShell } from "./app-shell.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
 import { TodayWorkspace } from "./today-workspace.js";
+import { ReportsWorkspace } from "./reports-workspace.js";
 import { DrugCatalogAdminPanel } from "./drug-catalog-admin-panel.js";
 import {
   buildRelatedPersonInputs,
@@ -246,7 +247,7 @@ const INTERFACE_COPY: Record<
     drugCatalog: "Drug catalog",
     drugCatalogDetail: "Egyptian medicines and updates",
     reports: "Reports & exports",
-    reportsDetail: "Signed records, FHIR, and disclosures",
+    reportsDetail: "Monthly revenue, invoices, and patient trends",
     syncDevices: "Sync & devices",
     syncDevicesDetail: "LAN health, enrollment, and recovery",
     adminSettings: "Admin settings",
@@ -316,7 +317,7 @@ const INTERFACE_COPY: Record<
     drugCatalog: "دليل الأدوية",
     drugCatalogDetail: "الأدوية المصرية والتحديثات",
     reports: "التقارير والتصدير",
-    reportsDetail: "السجلات الموقعة وFHIR والإفصاحات",
+    reportsDetail: "الإيرادات الشهرية والفواتير واتجاهات المرضى",
     syncDevices: "المزامنة والأجهزة",
     syncDevicesDetail: "حالة الشبكة والتسجيل والاسترداد",
     adminSettings: "إعدادات المدير",
@@ -2332,6 +2333,7 @@ function formatCalendarHeading(
 function ClinicalWorkflowWorkspace({
   token,
   canManage,
+  canReadClinical,
   canWriteClinical,
   canSignClinical,
   canApproveClinical,
@@ -2342,6 +2344,7 @@ function ClinicalWorkflowWorkspace({
 }: {
   token: string;
   canManage: boolean;
+  canReadClinical: boolean;
   canWriteClinical: boolean;
   canSignClinical: boolean;
   canApproveClinical: boolean;
@@ -2513,12 +2516,20 @@ function ClinicalWorkflowWorkspace({
         doctorRows,
         appointmentRows,
       ] = await Promise.all([
-        window.elite.clinical.listSpecialties(token),
+        canReadClinical
+          ? window.elite.clinical.listSpecialties(token)
+          : Promise.resolve([] as readonly Specialty[]),
         window.elite.clinical.listDepartments(token),
         window.elite.clinical.listServices(token),
-        window.elite.clinical.listSchedules(token),
-        window.elite.clinical.listExceptions(token),
-        window.elite.clinical.listIcd10Codes(token),
+        canReadClinical
+          ? window.elite.clinical.listSchedules(token)
+          : Promise.resolve([] as readonly Schedule[]),
+        canReadClinical
+          ? window.elite.clinical.listExceptions(token)
+          : Promise.resolve([] as readonly ScheduleException[]),
+        canReadClinical
+          ? window.elite.clinical.listIcd10Codes(token)
+          : Promise.resolve([] as readonly Icd10Code[]),
         window.elite.clinical.listDoctors(token),
         window.elite.clinical.listAppointments(
           token,
@@ -2546,7 +2557,7 @@ function ClinicalWorkflowWorkspace({
 
   useEffect(() => {
     void refresh();
-  }, [token, calendarView, selectedDate, calendarDoctorId]);
+  }, [token, calendarView, selectedDate, calendarDoctorId, canReadClinical]);
 
   const createAppointment = async (
     event: FormEvent<HTMLFormElement>,
@@ -3733,7 +3744,6 @@ function ClinicalWorkflowWorkspace({
       aria-labelledby="clinical-workflow-title"
     >
       <span id="workspace-records" className="workspace-anchor" />
-      <span id="workspace-reports" className="workspace-anchor" />
       <span id="workspace-settings" className="workspace-anchor" />
       <div className="card-heading">
         <div>
@@ -4419,14 +4429,16 @@ function ClinicalWorkflowWorkspace({
                   {appointment.status} · {appointment.durationMinutes} min
                 </small>
               </div>
-              <button
-                className="button secondary"
-                type="button"
-                disabled={isBusy}
-                onClick={() => void openEncounter(appointment)}
-              >
-                Open encounter
-              </button>
+              {canReadClinical ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void openEncounter(appointment)}
+                >
+                  Open encounter
+                </button>
+              ) : null}
               {appointment.status === "scheduled" ? (
                 <button
                   className="button secondary"
@@ -4461,7 +4473,7 @@ function ClinicalWorkflowWorkspace({
           ))
         )}
       </div>
-      {selectedAppointment ? (
+      {canReadClinical && selectedAppointment ? (
         <section className="encounter-panel" aria-labelledby="encounter-title">
           <div className="card-heading">
             <div>
@@ -5689,6 +5701,12 @@ function ClinicalWorkflowWorkspace({
             </div>
           ) : null}
         </section>
+      ) : null}
+      {!canReadClinical ? (
+        <p className="form-help">
+          Clinical records are restricted to clinical staff. Appointment and
+          front-desk actions remain available here.
+        </p>
       ) : null}
     </section>
   );
@@ -7353,6 +7371,22 @@ function AuthenticatedView({
               locale === "ar-EG"
                 ? "لا توجد جداول أطباء متاحة لهذا اليوم"
                 : "No doctor schedules are available for today",
+            billingTitle:
+              locale === "ar-EG" ? "ملخص الفوترة" : "Billing snapshot",
+            invoicedThisMonth:
+              locale === "ar-EG" ? "الفواتير هذا الشهر" : "Invoiced this month",
+            collectedThisMonth:
+              locale === "ar-EG" ? "المحصّل هذا الشهر" : "Collected this month",
+            outstanding: locale === "ar-EG" ? "المتبقي" : "Outstanding",
+            openInvoices:
+              locale === "ar-EG" ? "الفواتير المفتوحة" : "Open invoices",
+            recentInvoices:
+              locale === "ar-EG" ? "أحدث الفواتير" : "Recent invoices",
+            noRecentInvoices:
+              locale === "ar-EG"
+                ? "لا توجد فواتير حديثة"
+                : "No recent invoices",
+            invoiceNumber: locale === "ar-EG" ? "رقم الفاتورة" : "Invoice",
             unableToLoadAppointments:
               locale === "ar-EG"
                 ? "تعذر تحميل بيانات اليوم"
@@ -7389,11 +7423,59 @@ function AuthenticatedView({
             <DoctorWorkspace token={token} session={session} />
           </WorkspaceSection>
         ) : null}
+        {session.capabilities.includes("reports.read") ? (
+          <WorkspaceSection id="workspace-reports">
+            <ReportsWorkspace
+              token={token}
+              locale={locale}
+              labels={{
+                title:
+                  locale === "ar-EG"
+                    ? "التقارير والتحليلات"
+                    : "Reports & analytics",
+                detail:
+                  locale === "ar-EG"
+                    ? "الإيرادات الشهرية واتجاهات المرضى من بيانات مجمعة محلياً."
+                    : "Monthly revenue and patient trends from local aggregate data.",
+                revenueTitle:
+                  locale === "ar-EG" ? "الإيرادات الشهرية" : "Monthly revenue",
+                patientTrendsTitle:
+                  locale === "ar-EG" ? "اتجاهات المرضى" : "Patient trends",
+                invoiced: locale === "ar-EG" ? "الفواتير" : "Invoiced",
+                collected: locale === "ar-EG" ? "المحصّل" : "Collected",
+                refunded: locale === "ar-EG" ? "المسترد" : "Refunded",
+                newPatients: locale === "ar-EG" ? "مرضى جدد" : "New patients",
+                appointments: locale === "ar-EG" ? "المواعيد" : "Appointments",
+                completedVisits:
+                  locale === "ar-EG" ? "الزيارات المكتملة" : "Completed visits",
+                refresh: locale === "ar-EG" ? "تحديث" : "Refresh",
+                refreshing:
+                  locale === "ar-EG" ? "جارٍ التحديث…" : "Refreshing…",
+                loading:
+                  locale === "ar-EG"
+                    ? "جارٍ تحميل التقارير…"
+                    : "Loading reports…",
+                empty:
+                  locale === "ar-EG"
+                    ? "لا توجد بيانات تقرير"
+                    : "No report data is available",
+                unavailable:
+                  locale === "ar-EG"
+                    ? "التقارير غير متاحة"
+                    : "Reports are unavailable",
+                month: locale === "ar-EG" ? "الشهر" : "Month",
+                localAggregate:
+                  locale === "ar-EG" ? "مجمّع محلياً" : "Local aggregate",
+              }}
+            />
+          </WorkspaceSection>
+        ) : null}
         {session.capabilities.includes("appointment.read") ? (
           <WorkspaceSection id="workspace-appointments">
             <ClinicalWorkflowWorkspace
               token={token}
               canManage={session.capabilities.includes("module.manage")}
+              canReadClinical={session.capabilities.includes("clinical.read")}
               canWriteClinical={session.capabilities.includes("clinical.write")}
               canSignClinical={session.capabilities.includes("clinical.sign")}
               canApproveClinical={session.capabilities.includes(

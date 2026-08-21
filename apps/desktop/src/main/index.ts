@@ -1,6 +1,7 @@
 import {
   AuthService,
   BillingService,
+  ReportsService,
   DrugCatalogService,
   DoctorProfileService,
   ClinicalWorkflowService,
@@ -114,6 +115,7 @@ let medicalHistoryService: MedicalHistoryService | undefined;
 let encounterService: EncounterService | undefined;
 let clinicalService: ClinicalWorkflowService | undefined;
 let billingService: BillingService | undefined;
+let reportsService: ReportsService | undefined;
 let drugCatalogService: DrugCatalogService | undefined;
 let doctorProfileService: DoctorProfileService | undefined;
 let patientExportService: PatientExportService | undefined;
@@ -155,6 +157,7 @@ function initializeServices(): void {
     encounterService = new EncounterService(database);
     clinicalService = new ClinicalWorkflowService(database);
     billingService = new BillingService(database);
+    reportsService = new ReportsService(database);
     drugCatalogService = new DrugCatalogService(database);
     const doctorVaultKey = app.isPackaged
       ? keyProvider.getOrCreateKey()
@@ -1584,6 +1587,12 @@ function registerIpc(): void {
     (_event, token: string, patientId?: string) =>
       requireBillingService().listInvoices(serviceContext(token), patientId),
   );
+  registerIpcHandler("billing:dashboard-summary", (_event, token: string) =>
+    requireBillingService().getDashboardSummary(serviceContext(token)),
+  );
+  registerIpcHandler("reports:analytics", (_event, token: string) =>
+    requireReportsService().getAnalytics(serviceContext(token)),
+  );
   registerIpcHandler(
     "billing:invoice-create",
     (_event, token: string, input: unknown) =>
@@ -1786,6 +1795,10 @@ function requireEncounterService(): EncounterService {
 function requireBillingService(): BillingService {
   if (!billingService) throw new Error("ELITE_BILLING_SERVICE_UNAVAILABLE");
   return billingService;
+}
+function requireReportsService(): ReportsService {
+  if (!reportsService) throw new Error("ELITE_REPORTS_SERVICE_UNAVAILABLE");
+  return reportsService;
 }
 function requireDrugCatalogService(): DrugCatalogService {
   if (!drugCatalogService)

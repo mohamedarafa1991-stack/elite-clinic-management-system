@@ -11,7 +11,10 @@ import {
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { openDatabase } from "../packages/database/dist/index.js";
+import {
+  migrationVersions,
+  openDatabase,
+} from "../packages/database/dist/index.js";
 import { roleCapabilities } from "../packages/contracts/dist/index.js";
 import {
   BillingService,
@@ -23,6 +26,7 @@ import {
 
 const BASE_TIME = "2030-07-18T08:00:00.000Z";
 const ORGANIZATION_ID = "elite-clinic-cairo-synthetic";
+const CURRENT_MIGRATION = Math.max(...migrationVersions());
 const ANDROID_SCOPES = [
   "appointments",
   "patient-summary",
@@ -657,9 +661,9 @@ async function main() {
     );
     const beforeBackup = snapshot(database, { documentIds });
     assertCondition(
-      beforeBackup.schemaVersion === 22,
+      beforeBackup.schemaVersion === CURRENT_MIGRATION,
       "schema-version",
-      "Desktop database reached migration 22.",
+      `Desktop database reached migration ${CURRENT_MIGRATION}.`,
       results,
     );
     assertCondition(

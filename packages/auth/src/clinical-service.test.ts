@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "@elite/database";
-import { AuthService } from "./index.js";
+import { AuthService, type SessionContext } from "./index.js";
 import { ClinicalWorkflowService } from "./clinical-service.js";
 import { PatientIdentityService } from "./patient-service.js";
 
@@ -345,6 +345,48 @@ it("lists active doctors and filters calendar appointments by doctor and range",
         "synthetic-doctor-001",
       ),
     ).toHaveLength(0);
+  } finally {
+    fixture.database.close();
+  }
+});
+
+it("separates front-desk scheduling metadata from clinical records", async () => {
+  const fixture = await createFixture();
+  try {
+    const specialty = fixture.clinical.createSpecialty(fixture.context, {
+      code: "FRONT",
+      nameEn: "Front Desk Specialty",
+    });
+    const department = fixture.clinical.createDepartment(fixture.context, {
+      specialtyId: specialty.id,
+      code: "FRONT-OPD",
+      nameEn: "Front Desk Outpatient",
+    });
+    fixture.clinical.createService(fixture.context, {
+      departmentId: department.id,
+      code: "FRONT-CONSULT",
+      nameEn: "Front Desk Consultation",
+      durationMinutes: 15,
+      priceEgp: 200,
+    });
+    const receptionistContext: SessionContext = {
+      ...fixture.context,
+      role: "receptionist",
+      capabilities: ["appointment.read", "appointment.write"],
+    };
+    expect(fixture.clinical.listDepartments(receptionistContext)).toHaveLength(
+      1,
+    );
+    expect(fixture.clinical.listServices(receptionistContext)).toHaveLength(1);
+    expect(() => fixture.clinical.listSpecialties(receptionistContext)).toThrow(
+      "ELITE_AUTH_CAPABILITY_REQUIRED: clinical.read",
+    );
+    expect(() => fixture.clinical.listSchedules(receptionistContext)).toThrow(
+      "ELITE_AUTH_CAPABILITY_REQUIRED: clinical.read",
+    );
+    expect(() =>
+      fixture.clinical.listScheduleExceptions(receptionistContext),
+    ).toThrow("ELITE_AUTH_CAPABILITY_REQUIRED: clinical.read");
   } finally {
     fixture.database.close();
   }

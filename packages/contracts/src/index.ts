@@ -39,6 +39,7 @@ export const capabilitySchema = z.enum([
   "export.governance.send",
   "export.governance.audit",
   "export.receipt.manage",
+  "reports.read",
   "sync.read",
   "sync.write",
   "sync.manage",
@@ -79,6 +80,7 @@ export const roleCapabilities = {
     "export.governance.send",
     "export.governance.audit",
     "export.receipt.manage",
+    "reports.read",
     "sync.read",
     "sync.write",
     "sync.manage",
@@ -1932,6 +1934,58 @@ export const billingReceiptSchema = z.object({
   status: z.enum(["issued", "voided"]),
 });
 export type BillingReceipt = z.infer<typeof billingReceiptSchema>;
+
+export const billingDashboardInvoiceSchema = z.object({
+  invoiceNumber: z.string().regex(/^EL-INV-\d{6}$/),
+  patientId: patientIdSchema,
+  status: billingInvoiceStatusSchema,
+  totalEgp: z.number().int().nonnegative(),
+  balanceEgp: z.number().int().nonnegative(),
+  createdAt: isoDateTimeSchema,
+});
+export type BillingDashboardInvoice = z.infer<
+  typeof billingDashboardInvoiceSchema
+>;
+
+export const billingDashboardSummarySchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  invoicedEgp: z.number().int().nonnegative(),
+  collectedEgp: z.number().int().nonnegative(),
+  refundedEgp: z.number().int().nonnegative(),
+  outstandingEgp: z.number().int().nonnegative(),
+  invoiceCount: z.number().int().nonnegative(),
+  openInvoiceCount: z.number().int().nonnegative(),
+  recentInvoices: z.array(billingDashboardInvoiceSchema),
+});
+export type BillingDashboardSummary = z.infer<
+  typeof billingDashboardSummarySchema
+>;
+
+export const reportsRevenuePointSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  invoicedEgp: z.number().int().nonnegative(),
+  collectedEgp: z.number().int().nonnegative(),
+  refundedEgp: z.number().int().nonnegative(),
+});
+export type ReportsRevenuePoint = z.infer<typeof reportsRevenuePointSchema>;
+
+export const reportsPatientTrendPointSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  newPatients: z.number().int().nonnegative(),
+  appointments: z.number().int().nonnegative(),
+  completedVisits: z.number().int().nonnegative(),
+});
+export type ReportsPatientTrendPoint = z.infer<
+  typeof reportsPatientTrendPointSchema
+>;
+
+export const reportsAnalyticsSchema = z.object({
+  fromMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  toMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  revenue: z.array(reportsRevenuePointSchema),
+  patientTrends: z.array(reportsPatientTrendPointSchema),
+});
+export type ReportsAnalytics = z.infer<typeof reportsAnalyticsSchema>;
 
 export const scheduleInputSchema = z.object({
   doctorId: opaqueIdSchema,

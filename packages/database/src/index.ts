@@ -1459,6 +1459,19 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         ON drug_catalog_entries(snapshot_id, barcode);
     `,
   },
+  {
+    version: 23,
+    name: "admin-reports-capability",
+    sql: `
+      UPDATE users
+      SET capabilities_json = CASE
+        WHEN trim(capabilities_json) = '[]' THEN '["reports.read"]'
+        ELSE substr(trim(capabilities_json), 1, length(trim(capabilities_json)) - 1) || ',"reports.read"]'
+      END
+      WHERE role = 'admin'
+        AND instr(capabilities_json, '"reports.read"') = 0;
+    `,
+  },
 ];
 
 function now(): string {

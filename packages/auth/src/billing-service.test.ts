@@ -151,6 +151,23 @@ describe("Step 29 billing service", () => {
           reason: "Synthetic duplicate refund rejection",
         }),
       ).toThrow("ELITE_BILLING_PAYMENT_NOT_REFUNDABLE");
+      expect(
+        fixture.billing.getDashboardSummary(fixture.context, new Date()),
+      ).toMatchObject({
+        invoiceCount: 1,
+        invoicedEgp: 800,
+        collectedEgp: 500,
+        refundedEgp: 300,
+        outstandingEgp: 300,
+        openInvoiceCount: 1,
+        recentInvoices: [
+          expect.objectContaining({
+            invoiceNumber: "EL-INV-000001",
+            patientId: "EL-00001",
+            balanceEgp: 300,
+          }),
+        ],
+      });
     } finally {
       fixture.database.close();
     }

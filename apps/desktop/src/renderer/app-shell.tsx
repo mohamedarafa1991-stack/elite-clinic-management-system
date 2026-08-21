@@ -153,7 +153,7 @@ export function getVisibleShellNavigation(
       detail: labels.reportsDetail,
       icon: "R",
       group: "insights",
-      visible: hasAny("export.manage", "export.sensitive", "export.revoke"),
+      visible: has("reports.read"),
     },
     {
       id: "workspace-sync",
