@@ -158,10 +158,12 @@ try {
     if (-not $SkipAndroid) {
         Invoke-CheckedCommand -Name "pnpm" -Arguments @("android:release-check")
     }
-    if (-not $SkipReleaseReadiness) {
+    if (-not $SkipReleaseReadiness -and -not $SkipAndroid) {
         Invoke-CheckedCommand -Name "pnpm" -Arguments @("release:readiness")
-    } else {
+    } elseif ($SkipReleaseReadiness) {
         Write-SetupMessage -Level "WARN" -Message "Full release-readiness was skipped because -SkipReleaseReadiness was supplied."
+    } else {
+        Write-SetupMessage -Level "WARN" -Message "Full release-readiness was skipped because it includes Android checks and -SkipAndroid was supplied."
     }
 
     Write-SetupMessage -Level "PASS" -Message "Windows pre-pilot setup and local validation completed. Physical scenarios still require the Windows Hub and Android devices."
