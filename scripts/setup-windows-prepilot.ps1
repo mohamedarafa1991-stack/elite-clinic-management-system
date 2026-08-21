@@ -158,6 +158,7 @@ try {
     }
     Invoke-CheckedCommand -Name "pnpm" -Arguments $installArguments
 
+    Invoke-CheckedCommand -Name "pnpm" -Arguments @("build:packages")
     Invoke-CheckedCommand -Name "pnpm" -Arguments @("windows:pilot:verify")
     Invoke-CheckedCommand -Name "pnpm" -Arguments @("windows:payout-task:verify")
     Invoke-CheckedCommand -Name "pnpm" -Arguments @("test")
