@@ -131,24 +131,38 @@ class SecureSyncCoordinator(
                     trustedPublicKeyPem = profile.entity.hubTrustAnchorPem,
                 )
                 for (scope in profile.policy.allowedScopes.sorted()) {
-                    val requestNonce = LanSyncRequestFactory.newRequestNonce()
-                    val cursor = database.syncDao().getCursor(deviceId, scope)
-                    val request = LanSyncRequestFactory.buildDeltaRequest(
-                        policy = profile.policy,
-                        scope = scope,
-                        cursor = cursor?.cursor,
-                        syncSessionId = LanSyncRequestFactory.newSyncSessionId(),
-                        requestNonce = requestNonce,
-                        requestedAt = now().toString(),
-                        clientBaseVersion = cursor?.serverSequence ?: 0,
-                        maxChanges = batchSize,
-                    )
+                    var cursorValue = database.syncDao().getCursor(deviceId, scope)?.cursor
+                    var clientBaseVersion = database.syncDao().getCursor(deviceId, scope)?.serverSequence ?: 0
+                    var hasMore = true
+                    var pageCount = 0
                     try {
-                        deltaSynchronizer.requestAndApply(
-                            session = session,
-                            request = request,
-                            expectedNonce = requestNonce,
-                        )
+                        while (hasMore) {
+                            if (++pageCount > 100) {
+                                throw IllegalStateException("SYNC_PAGINATION_LIMIT_EXCEEDED")
+                            }
+                            val requestNonce = LanSyncRequestFactory.newRequestNonce()
+                            val request = LanSyncRequestFactory.buildDeltaRequest(
+                                policy = profile.policy,
+                                scope = scope,
+                                cursor = cursorValue,
+                                syncSessionId = LanSyncRequestFactory.newSyncSessionId(),
+                                requestNonce = requestNonce,
+                                requestedAt = now().toString(),
+                                clientBaseVersion = clientBaseVersion,
+                                maxChanges = batchSize,
+                            )
+                            val result = deltaSynchronizer.requestAndApply(
+                                session = session,
+                                request = request,
+                                expectedNonce = requestNonce,
+                            )
+                            if (result !is SyncVerificationResult.Accepted) {
+                                throw java.lang.SecurityException("SYNC_DELTA_RESULT_INVALID")
+                            }
+                            cursorValue = result.nextCursor
+                            clientBaseVersion = result.serverSequence
+                            hasMore = result.hasMore
+                        }
                         pulledScopes += 1
                     } catch (error: CancellationException) {
                         throw error

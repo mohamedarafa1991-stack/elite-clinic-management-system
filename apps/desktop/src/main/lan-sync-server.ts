@@ -25,6 +25,7 @@ export class LanSyncHttpServer {
     private readonly bindAddress = process.env["ELITE_SYNC_BIND_ADDRESS"] ??
       "0.0.0.0",
     private readonly port = Number(process.env["ELITE_SYNC_PORT"] ?? 8787),
+    private readonly isPackaged = false,
   ) {}
 
   public start(): Promise<void> {
@@ -38,6 +39,11 @@ export class LanSyncHttpServer {
     if (Boolean(certificatePath) !== Boolean(privateKeyPath)) {
       return Promise.reject(
         new Error("ELITE_LAN_TLS_CERTIFICATE_CONFIGURATION_INCOMPLETE"),
+      );
+    }
+    if (this.isPackaged && !(certificatePath && privateKeyPath)) {
+      return Promise.reject(
+        new Error("ELITE_LAN_TLS_REQUIRED_IN_PACKAGED_MODE"),
       );
     }
     if (certificatePath && privateKeyPath) {

@@ -1,16 +1,18 @@
 # Elite Clinic Management System: Overall Status and Remaining Milestones
 
-**Review date:** 18 August 2026  
-**Repository:** `mohamedarafa1991-stack/elite-clinic-management-system`  
-**Reviewed commit:** `502f32a` — `Add Android doctor document workspace`
+**Review date:** 21 August 2026
 
-**Branch status:** `origin/main` matches the reviewed commit. The only local untracked path is the intentionally excluded `.github/workflows/canonical-json-pr.yml`, retained locally because the active GitHub credential lacks workflow permission.
+**Repository:** `mohamedarafa1991-stack/elite-clinic-management-system`
+
+**Base commit:** `442bfb6` — `Automate monthly doctor payout CSV reports`
+
+**Working state:** Audit-remediation changes are implemented locally and pending final validation, commit, and push. The local `.github/workflows/` path remains intentionally untracked because the active GitHub credential lacks workflow permission.
 
 ## Executive assessment
 
 Elite Clinic has progressed from a secure foundation into a substantial **local-first clinic management platform**. The Windows application contains the main authentication, patient, scheduling, clinical-record, export-governance, synchronization, and billing vertical slices. The Android application contains encrypted local storage, device enrollment, secure LAN session establishment, encrypted synchronization frames, WorkManager integration, durable outbox claims, typed sync health, and a typed read-only billing-summary projection.
 
-The project is **not yet release-verified for clinical use**. The main reason is not a failing TypeScript or desktop build: the available workspace verification is green. The Android source now includes the doctor-document workspace, active enrollment selection, OpenDocument file picking, encrypted one-shot view/upload actions, and temporary in-memory image/PDF viewing. However, Android compilation, Room code generation, APK assembly, Android JVM tests, and physical-device LAN testing have not yet run because the sandbox has no Android SDK, Gradle wrapper or system Gradle, Kotlin compiler, or connected devices. The Android workstation gate described in Step 27 and the real-device matrix described in Step 28 therefore remain mandatory.[1] [2]
+The project is **not yet release-verified for clinical use**. The TypeScript workspace, desktop production build, and Android Kotlin compilation now pass in the available environment. The audit-remediation branch adds cursor-drained synchronization, role-derived LAN capabilities, refund largest-remainder allocation, negative earnings visibility, packaged-mode TLS refusal, payout single-instance locking, a Keystore-backed Android PIN/biometric/inactivity gate, and an Admin backup/restore IPC workflow. Physical Windows packaging, signed artifacts, Android APK assembly/install, two-device LAN testing, and a clean-machine restore drill remain mandatory.[1] [2]
 
 The second category of remaining work is product completeness. The repository does not yet provide every original business requirement, especially the Egyptian drug-catalog integration and update-review workflow, dedicated reporting/analytics, verified operational backup and restoration procedures, Android billing UI and billing write operations, and final configurable approval policies for large discounts and refunds.
 
@@ -18,23 +20,23 @@ The second category of remaining work is product completeness. The repository do
 
 ## Current implementation status
 
-| Area                                       |           Status | Assessment                                                                                                                                                                                                                                                                    |
-| ------------------------------------------ | ---------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secure foundation and repository structure |            Green | Monorepo, contracts, encrypted storage boundaries, migrations, audit patterns, desktop and Android project structures are implemented.                                                                                                                                        |
-| Authentication and role enforcement        |            Green | Initial administrator bootstrap, login/session handling, role capabilities, device identity, and enrollment workflows are present.                                                                                                                                            |
-| Patient identity and relationships         |            Green | Sequential patient IDs, duplicate detection, guardian/related-person links, merge-review workflow, and controlled merge operations are implemented.                                                                                                                           |
-| Scheduling and clinical configuration      |            Green | Specialties, departments, services, doctors, schedules, exceptions, appointment workflows, and configurable working-day patterns are represented.                                                                                                                             |
-| Clinical records                           |            Green | Medical history, encounters, ICD-10 support, signed notes, amendments, effective-record projection, field-level diffs, and conflict handling are implemented.                                                                                                                 |
-| Export and governance                      |      Green/Amber | Signed patient packages, PDF/FHIR/ZIP workflows, formal validation, redaction, expiration/revocation, recipients, consent evidence, registry lifecycle, key rotation/recovery, and status packages are implemented; production operational drills remain.                     |
-| Windows Hub and LAN synchronization        |      Green/Amber | Secure session establishment, TLS, signed grants, encrypted frames, delta/outbox routes, TLS recovery, and desktop harnesses are implemented; Windows production packaging and LAN deployment still require workstation validation.                                           |
-| Android local-first synchronization        |            Amber | The source implementation includes SQLCipher, Room, WorkManager, secure LAN sessions, failure classification, health persistence, durable leases, billing-summary projection, and the secure doctor-document transport/UI; Android build and device execution remain pending. |
-| Android doctor-document workspace          |            Amber | Active enrollment selection, LAN-only document view/upload, OpenDocument MIME/size validation, in-memory image/PDF rendering, and explicit byte clearing are implemented; Kotlin compilation and physical-device permission/LAN tests remain pending.                         |
-| Service catalog and EGP billing            | Green on Windows | Admin-managed packages, EGP invoices, price snapshots, discounts with reasons, partial payments, receipts, refunds, reconciliation, audit events, and desktop UI are implemented.                                                                                             |
-| Android billing                            |        Amber/Red | Android can receive and validate minimized `BillingInvoice` summaries through the new `billing-summary` scope. Android billing UI and Android-originated billing writes are not implemented.                                                                                  |
-| Egyptian drug catalog                      |              Red | The requested `eg-drugs` integration, automatic source update detection, administrator review, and controlled distribution are not yet implemented.                                                                                                                           |
-| Reporting and analytics                    |        Amber/Red | Operational data exists, but a dedicated reporting/analytics module and validated clinical/financial report set are not yet established as a release milestone.                                                                                                               |
-| Backup and restoration                     |        Amber/Red | Encrypted storage and export mechanisms exist, but a complete administrator backup, restore, rotation, recovery, and disaster-recovery drill is still required.                                                                                                               |
-| Production packaging and operations        |            Amber | The build configurations exist, but signed Windows installer verification, Android APK release signing, upgrade/rollback testing, certificate/trust-anchor operations, and deployment runbooks remain.                                                                        |
+| Area                                       |           Status | Assessment                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ---------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secure foundation and repository structure |            Green | Monorepo, contracts, encrypted storage boundaries, migrations, audit patterns, desktop and Android project structures are implemented.                                                                                                                    |
+| Authentication and role enforcement        |            Green | Initial administrator bootstrap, login/session handling, role capabilities, device identity, and enrollment workflows are present.                                                                                                                        |
+| Patient identity and relationships         |            Green | Sequential patient IDs, duplicate detection, guardian/related-person links, merge-review workflow, and controlled merge operations are implemented.                                                                                                       |
+| Scheduling and clinical configuration      |            Green | Specialties, departments, services, doctors, schedules, exceptions, appointment workflows, and configurable working-day patterns are represented.                                                                                                         |
+| Clinical records                           |            Green | Medical history, encounters, ICD-10 support, signed notes, amendments, effective-record projection, field-level diffs, and conflict handling are implemented.                                                                                             |
+| Export and governance                      |      Green/Amber | Signed patient packages, PDF/FHIR/ZIP workflows, formal validation, redaction, expiration/revocation, recipients, consent evidence, registry lifecycle, key rotation/recovery, and status packages are implemented; production operational drills remain. |
+| Windows Hub and LAN synchronization        |      Green/Amber | Role-derived LAN capabilities, signed grants, encrypted frames, cursor-drained delta/outbox routes, and packaged-mode TLS refusal are implemented; Windows production packaging and LAN deployment still require workstation validation.                  |
+| Android local-first synchronization        |            Amber | SQLCipher, Room, WorkManager, secure LAN sessions, failure classification, health persistence, durable leases, billing-summary projection, document transport/UI, and the new app-lock gate are implemented; physical-device execution remains pending.   |
+| Android doctor-document workspace          |            Amber | Active enrollment selection, LAN-only document view/upload, OpenDocument MIME/size validation, in-memory image/PDF rendering, and explicit byte clearing are implemented; Kotlin compilation and physical-device permission/LAN tests remain pending.     |
+| Service catalog and EGP billing            | Green on Windows | Admin-managed packages, EGP invoices, price snapshots, discounts with reasons, partial payments, receipts, refunds, reconciliation, audit events, and desktop UI are implemented.                                                                         |
+| Android billing                            |        Amber/Red | Android can receive and validate minimized `BillingInvoice` summaries through the new `billing-summary` scope. Android billing UI and Android-originated billing writes are not implemented.                                                              |
+| Egyptian drug catalog                      |              Red | The requested `eg-drugs` integration, automatic source update detection, administrator review, and controlled distribution are not yet implemented.                                                                                                       |
+| Reporting and analytics                    |        Amber/Red | Operational data exists, but a dedicated reporting/analytics module and validated clinical/financial report set are not yet established as a release milestone.                                                                                           |
+| Backup and restoration                     |            Amber | Admin-gated backup/restore now copies encrypted database and document-vault files with manifest hashes and restart-after-restore behavior; production key-recovery and clean-machine restore drills remain required.                                      |
+| Production packaging and operations        |            Amber | Packaged TLS refusal, scheduled payout locking, and non-interactive task configuration are implemented; signed Windows installer/APK artifacts, upgrade/rollback testing, certificate/trust-anchor operations, and deployment runbooks remain.            |
 
 ## What has been completed from the original plan
 
@@ -84,10 +86,11 @@ The latest available workspace gate passed after the billing synchronization cha
 | Prettier formatting check                  |                                            Passed |
 | Git whitespace check                       |                                            Passed |
 | Node syntax check for Android build helper |                                            Passed |
-| Android Gradle build and JVM tests         |    Not executed; toolchain unavailable in sandbox |
+| Android Gradle Kotlin compilation          |                                            Passed |
+| Android JVM tests and APK assembly         |                                Partially verified |
 | Physical Android LAN matrix                | Not executed; devices and workstation unavailable |
 
-The latest commits form a coherent sequence: Step 27 prepared the Android build gate, Step 28 prepared the real-device synchronization harness, Step 29 implemented desktop billing, commit `c541580` completed Android billing-summary synchronization, commit `9156b24` implemented doctor profiles and the encrypted Windows document vault, and commit `502f32a` added the Android doctor-document workspace.[9]
+The repository now has an uncommitted audit-remediation increment on top of `442bfb6`. It fixes findings F-01 through F-08 in source and tests, records F-09 signing/CI governance requirements, and refreshes F-11 status documentation. F-10 remains intentionally local until a GitHub credential with workflow permission is available.[9]
 
 ## Remaining milestones
 
@@ -117,7 +120,7 @@ This milestone should explicitly confirm that Android billing is intentionally r
 
 ### Milestone 4 — Backup, restoration, and operational recovery
 
-Implement or formalize encrypted backup and restoration for the Windows Hub and Android devices, then perform a documented recovery drill. The drill should cover database backup integrity, key availability, administrator authorization, restore to a clean machine, migration replay, export verification, trust-anchor recovery, lost-device revocation, and rollback after an interrupted upgrade.
+The Windows Hub now exposes Admin-gated backup and restore operations. The backup package preserves the encrypted database and encrypted doctor-document vault, records migration metadata and SHA-256 file hashes, and restore validates every manifest entry before replacing local files and restarting the Hub. The remaining gate is operational: perform the clean-machine recovery drill, confirm OS-backed key availability, and record trust-anchor recovery, lost-device revocation, and interrupted-upgrade rollback evidence.
 
 This milestone should also produce operational runbooks for daily Hub startup, certificate renewal, trust-anchor rotation, device enrollment/revocation, USB export handling, export-key recovery, and incident response.
 
@@ -166,7 +169,7 @@ Production sign-off should require all release gates to be green, no unresolved 
 
 ## Immediate next action
 
-The next practical action is **not another large feature**. It is to execute Milestones 0–2 on the Android/Windows workstation: finalize the few billing and operational decisions, run the Step 27 Android build gate including the new document workspace, and then run the Step 28 synthetic two-device LAN matrix with document view/upload scenarios. Those results will determine whether the current Android architecture is ready to move into operational hardening or whether any source-level corrections are needed before adding the drug catalog and reporting modules.
+The next practical action is final validation rather than another large feature. Run the full TypeScript and desktop gates, assemble and sign the Android APK and Windows installer on the supported workstations, execute the 23 physical pilot scenarios with synthetic data, and perform the new backup/restore drill. After those results are recorded, request GitHub workflow permission separately so the local CI workflow can be published without weakening repository controls.
 
 ## References
 

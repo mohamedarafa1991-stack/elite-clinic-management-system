@@ -357,16 +357,13 @@ export class BillingService {
         .get(doctorId, month.from, month.to) as Row;
       const collectedEgp = Number(row.collected);
       const refundedEgp = Number(row.refunded);
-      const earningsEgp = Math.max(0, Number(row.earnings));
+      const earningsEgp = Number(row.earnings);
       return {
         month: month.key,
         collectedEgp,
         refundedEgp,
         earningsEgp,
-        clinicRetainedEgp: Math.max(
-          0,
-          collectedEgp - refundedEgp - earningsEgp,
-        ),
+        clinicRetainedEgp: collectedEgp - refundedEgp - earningsEgp,
         invoiceCount: Number(row.invoice_count),
       };
     });
@@ -1005,11 +1002,13 @@ export class BillingService {
         allocated_amount_egp, amount_egp, event_at)
        VALUES (?, ?, ?, ?, NULL, ?, 'refund', ?, ?, ?)`,
     );
-    for (const row of rows) {
-      const allocatedAmountEgp = Math.floor(
-        (amountEgp * Number(row.allocated_amount_egp)) /
-          Number(payment.amount_egp),
-      );
+    const refundAllocations = this.allocateProportionally(
+      amountEgp,
+      rows.map((row) => Number(row.allocated_amount_egp)),
+    );
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      const allocatedAmountEgp = refundAllocations[index]!;
       const earningsAmountEgp =
         Number(row.allocated_amount_egp) > 0
           ? Math.floor(

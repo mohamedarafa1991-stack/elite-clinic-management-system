@@ -155,6 +155,19 @@ export interface DeviceSummary {
   createdAt: string;
 }
 
+export interface BackupManifestSummary {
+  formatVersion: number;
+  createdAt: string;
+  operatorUserId: string;
+  databaseMigrationVersion: number;
+  files: readonly { path: string; size: number; sha256: string }[];
+}
+
+export interface BackupResultSummary {
+  packagePath: string;
+  manifest: BackupManifestSummary;
+}
+
 export interface EnrollmentRequestSummary {
   requestId: string;
   device: DeviceSummary;
@@ -218,6 +231,26 @@ const eliteApi = {
         "app:lan-sync-restart",
         token,
       ) as Promise<LanSyncStatus>,
+  },
+  backup: {
+    create: (
+      token: string,
+      destinationPath: string,
+    ): Promise<BackupResultSummary> =>
+      ipcRenderer.invoke(
+        "backup:create",
+        token,
+        destinationPath,
+      ) as Promise<BackupResultSummary>,
+    restore: (
+      token: string,
+      packagePath: string,
+    ): Promise<BackupResultSummary> =>
+      ipcRenderer.invoke(
+        "backup:restore",
+        token,
+        packagePath,
+      ) as Promise<BackupResultSummary>,
   },
   patients: {
     search: (token: string, filters?: PatientSearchFilters) =>

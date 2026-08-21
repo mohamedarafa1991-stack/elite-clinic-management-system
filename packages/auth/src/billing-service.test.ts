@@ -193,6 +193,77 @@ describe("Step 29 billing service", () => {
           invoiceCount: 1,
         },
       });
+      const paymentEarning = fixture.database.raw
+        .prepare(
+          "SELECT * FROM billing_doctor_earnings WHERE payment_id = ? AND event_type = 'payment' LIMIT 1",
+        )
+        .get(firstPayment.payment.id) as Record<string, unknown>;
+      fixture.database.raw
+        .prepare(
+          "UPDATE billing_doctor_earnings SET allocated_amount_egp = 2, amount_egp = 2 WHERE id = ?",
+        )
+        .run(paymentEarning["id"]);
+      const secondInvoiceLineId = "synthetic-earnings-invoice-line-2";
+      fixture.database.raw
+        .prepare(
+          `INSERT INTO billing_invoice_lines
+           (id, invoice_id, service_id, package_id, quantity, description_en,
+            unit_price_egp, line_total_egp, doctor_id, doctor_fee_egp,
+            compensation_type, compensation_share_bps, compensation_share_amount_egp)
+           VALUES (?, ?, ?, NULL, 1, ?, 500, 500, ?, 500, 'percentage', 6000, NULL)`,
+        )
+        .run(
+          secondInvoiceLineId,
+          paymentEarning["invoice_id"],
+          service.id,
+          "Synthetic second earnings line",
+          doctorId,
+        );
+      fixture.database.raw
+        .prepare(
+          `INSERT INTO billing_doctor_earnings
+           (id, invoice_line_id, doctor_id, invoice_id, payment_id, refund_id, event_type,
+            allocated_amount_egp, amount_egp, event_at)
+           VALUES (?, ?, ?, ?, ?, NULL, 'payment', 1, 1, ?)`,
+        )
+        .run(
+          "synthetic-earnings-second-line",
+          secondInvoiceLineId,
+          doctorId,
+          paymentEarning["invoice_id"],
+          firstPayment.payment.id,
+          new Date().toISOString(),
+        );
+      const laterRefund = fixture.billing.refundPayment(fixture.context, {
+        paymentId: firstPayment.payment.id,
+        amountEgp: 1,
+        reason: "Synthetic remainder allocation",
+      });
+      const refundAllocation = Number(
+        (
+          fixture.database.raw
+            .prepare(
+              "SELECT COALESCE(SUM(allocated_amount_egp), 0) AS allocated FROM billing_doctor_earnings WHERE refund_id = ?",
+            )
+            .get(laterRefund.refund.id) as Record<string, unknown>
+        )["allocated"],
+      );
+      expect(refundAllocation).toBe(1);
+      fixture.database.raw
+        .prepare(
+          "UPDATE billing_doctor_earnings SET event_at = ? WHERE refund_id = ?",
+        )
+        .run("2030-02-05T10:00:00.000Z", laterRefund.refund.id);
+      const laterMonthEarnings = fixture.billing.getDoctorEarnings(
+        doctor,
+        doctorId,
+        new Date("2030-03-15T00:00:00.000Z"),
+        2,
+      );
+      expect(laterMonthEarnings.monthly[0]).toMatchObject({
+        month: "2030-02",
+        earningsEgp: -1,
+      });
       expect(() =>
         fixture.billing.getDoctorEarnings(doctor, fixture.context.userId),
       ).toThrow("ELITE_BILLING_EARNINGS_OWNER_REQUIRED");

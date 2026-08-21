@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import {
   canonicalJson,
+  roleCapabilities,
   sessionGrantSchema,
   sessionInitDescriptorSchema,
   sessionInitRequestSchema,
@@ -168,14 +169,16 @@ export class LanSessionService {
       signerKeyId: signed.keyId,
       signerKeyVersion: signed.keyVersion,
     });
+    const role = String(record["role"]) as UserRole;
+    const capabilities: Capability[] = [...roleCapabilities[role]];
     const context: SessionContext = {
       sessionId,
       token: `lan-${randomBytes(24).toString("hex")}`,
       userId: descriptor.userId,
       username: descriptor.userId,
-      role: String(record["role"]) as UserRole,
+      role,
       deviceId: descriptor.deviceId,
-      capabilities: ["sync.read", "sync.write"] as Capability[],
+      capabilities,
       expiresAt: validUntil,
     };
     return {

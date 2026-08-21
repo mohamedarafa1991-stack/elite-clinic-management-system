@@ -509,6 +509,7 @@ export const syncDeltaResponseSchema = z.object({
   conflicts: z.array(syncResourceConflictSchema).max(5000),
   redactions: z.array(opaqueIdSchema).max(5000),
   nextCursor: z.string().trim().min(1).max(256),
+  hasMore: z.boolean(),
   responseNonce: z.string().trim().min(16).max(128),
   responseIntegrity: z.string().regex(/^[a-f0-9]{64}$/),
   signatureAlgorithm: z.literal("ed25519"),

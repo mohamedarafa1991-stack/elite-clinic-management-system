@@ -71,6 +71,76 @@ function payloadHash(payload: Record<string, unknown>): string {
   return sha256(stableJson(payload));
 }
 
+interface SyncCursor {
+  version: 1;
+  scope: SyncScope;
+  updatedAt: string;
+  resourceId: string;
+}
+
+interface SyncPage {
+  changes: readonly Record<string, unknown>[];
+  nextCursor: string;
+  hasMore: boolean;
+  fullSyncRequired: boolean;
+}
+
+function encodeCursor(cursor: SyncCursor): string {
+  return `v1:${Buffer.from(stableJson(cursor), "utf8").toString("base64url")}`;
+}
+
+function decodeCursor(value: string | undefined): SyncCursor | undefined {
+  if (!value?.startsWith("v1:")) return undefined;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value.slice(3), "base64url").toString("utf8"),
+    ) as Partial<SyncCursor>;
+    if (
+      parsed.version !== 1 ||
+      !syncScopeSchema.safeParse(parsed.scope).success ||
+      typeof parsed.updatedAt !== "string" ||
+      typeof parsed.resourceId !== "string"
+    )
+      return undefined;
+    return parsed as SyncCursor;
+  } catch {
+    return undefined;
+  }
+}
+
+function cursorPredicate(
+  updatedAtColumn: string,
+  resourceIdColumn: string,
+  cursor: SyncCursor | undefined,
+): { sql: string; params: readonly string[] } {
+  if (!cursor) return { sql: "", params: [] };
+  return {
+    sql: ` AND (${updatedAtColumn} > ? OR (${updatedAtColumn} = ? AND ${resourceIdColumn} > ?))`,
+    params: [cursor.updatedAt, cursor.updatedAt, cursor.resourceId],
+  };
+}
+
+function pageRows(
+  rows: Row[],
+  limit: number,
+  scope: SyncScope,
+  cursor: SyncCursor | undefined,
+): { rows: Row[]; nextCursor: string; hasMore: boolean } {
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  const nextCursor = last
+    ? encodeCursor({
+        version: 1,
+        scope,
+        updatedAt: String(last.updatedAt),
+        resourceId: String(last.id),
+      })
+    : cursor && cursor.scope === scope
+      ? encodeCursor(cursor)
+      : encodeCursor({ version: 1, scope, updatedAt: "", resourceId: "" });
+  return { rows: page, nextCursor, hasMore: rows.length > limit };
+}
+
 export class SynchronizationService {
   public constructor(
     private readonly database: EliteDatabase,
@@ -288,31 +358,40 @@ export class SynchronizationService {
         "ELITE_SYNC_SCOPE_DENIED: requested scope is not allowed",
       );
     }
+    const cursor = decodeCursor(parsed.cursor);
+    if (parsed.cursor && !cursor) {
+      throw new Error("ELITE_SYNC_CURSOR_INVALID: refresh is required");
+    }
+    if (cursor && cursor.scope !== parsed.scope) {
+      throw new Error("ELITE_SYNC_CURSOR_SCOPE_MISMATCH: refresh is required");
+    }
     const serverSequence = this.currentServerSequence();
-    const sameCursor = parsed.cursor === String(serverSequence);
-    const changes = sameCursor
-      ? []
-      : this.buildChanges(parsed.scope, context, parsed.maxChanges);
+    const page: SyncPage = this.buildChanges(
+      parsed.scope,
+      context,
+      parsed.maxChanges,
+      cursor,
+    );
     const generatedAt = this.clock();
     const validUntil = new Date(
       Date.parse(generatedAt) + 5 * 60 * 1000,
     ).toISOString();
-    const nextCursor = String(serverSequence);
     const responseWithoutIntegrity = {
       protocolVersion: 1 as const,
       organizationId: policy.organizationId,
       deviceId: policy.deviceId,
       syncSessionId: parsed.syncSessionId,
       scope: parsed.scope,
-      serverCursor: nextCursor,
+      serverCursor: page.nextCursor,
       serverSequence,
       generatedAt,
       validUntil,
-      fullSyncRequired: false,
-      changes,
+      fullSyncRequired: page.fullSyncRequired,
+      changes: page.changes,
       conflicts: [],
       redactions: [],
-      nextCursor,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
       responseNonce: parsed.requestNonce,
       responseIntegrity: "0".repeat(64),
     };
@@ -332,10 +411,10 @@ export class SynchronizationService {
       parsed.syncSessionId,
       parsed.scope,
       "success",
-      changes.length,
+      page.changes.length,
       0,
       0,
-      sameCursor ? "cursor-current" : "snapshot-delivered",
+      page.hasMore ? "snapshot-page" : "snapshot-complete",
     );
     return response;
   }
@@ -481,9 +560,16 @@ export class SynchronizationService {
     scope: SyncScope,
     context: SessionContext,
     maxChanges: number,
-  ): readonly Record<string, unknown>[] {
+    cursor: SyncCursor | undefined,
+  ): SyncPage {
     const limit = Math.min(maxChanges, MAX_CHANGES);
+    const queryLimit = Math.min(limit + 1, MAX_CHANGES + 1);
     if (scope === "appointments") {
+      const filter = cursorPredicate(
+        "appointments.updated_at",
+        "appointments.id",
+        cursor,
+      );
       const rows = this.database.raw
         .prepare(
           `SELECT appointments.id, patients.patient_id AS patientId, appointments.department_id AS departmentId,
@@ -491,54 +577,67 @@ export class SynchronizationService {
                   appointments.scheduled_end AS scheduledEnd, appointments.status, appointments.visit_type AS visitType,
                   appointments.is_walk_in AS isWalkIn, appointments.updated_at AS updatedAt, appointments.version
            FROM appointments INNER JOIN patients ON patients.id = appointments.patient_id
-           WHERE patients.status = 'active' ORDER BY appointments.updated_at ASC LIMIT ?`,
+           WHERE patients.status = 'active'${filter.sql}
+           ORDER BY appointments.updated_at ASC, appointments.id ASC LIMIT ?`,
         )
-        .all(limit) as Row[];
-      return rows.map((row) =>
-        this.change(
-          "Appointment",
-          String(row.id),
-          Number(row.version),
-          String(row.updatedAt),
-          {
-            appointmentId: row.id,
-            patientId: row.patientId,
-            departmentId: row.departmentId,
-            doctorId: row.doctorId,
-            scheduledStart: row.scheduledStart,
-            scheduledEnd: row.scheduledEnd,
-            status: row.status,
-            visitType: row.visitType,
-            isWalkIn: Boolean(row.isWalkIn),
-          },
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) =>
+          this.change(
+            "Appointment",
+            String(row.id),
+            Number(row.version),
+            String(row.updatedAt),
+            {
+              appointmentId: row.id,
+              patientId: row.patientId,
+              departmentId: row.departmentId,
+              doctorId: row.doctorId,
+              scheduledStart: row.scheduledStart,
+              scheduledEnd: row.scheduledEnd,
+              status: row.status,
+              visitType: row.visitType,
+              isWalkIn: Boolean(row.isWalkIn),
+            },
+          ),
         ),
-      );
+      };
     }
     if (scope === "patient-summary") {
+      const filter = cursorPredicate("updated_at", "id", cursor);
       const rows = this.database.raw
         .prepare(
           `SELECT id, patient_id AS patientId, name_en AS nameEn, name_ar AS nameAr, dob, sex, phone,
                   status, updated_at AS updatedAt, version FROM patients
-           WHERE status = 'active' ORDER BY updated_at ASC LIMIT ?`,
+           WHERE status = 'active'${filter.sql}
+           ORDER BY updated_at ASC, id ASC LIMIT ?`,
         )
-        .all(limit) as Row[];
-      return rows.map((row) =>
-        this.change(
-          "Patient",
-          String(row.id),
-          Number(row.version),
-          String(row.updatedAt),
-          {
-            patientId: row.patientId,
-            nameEn: row.nameEn,
-            ...(context.role === "admin" || context.role === "doctor"
-              ? { nameAr: row.nameAr, dob: row.dob, sex: row.sex }
-              : {}),
-            phone: row.phone,
-            status: row.status,
-          },
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) =>
+          this.change(
+            "Patient",
+            String(row.id),
+            Number(row.version),
+            String(row.updatedAt),
+            {
+              patientId: row.patientId,
+              nameEn: row.nameEn,
+              ...(context.role === "admin" || context.role === "doctor"
+                ? { nameAr: row.nameAr, dob: row.dob, sex: row.sex }
+                : {}),
+              phone: row.phone,
+              status: row.status,
+            },
+          ),
         ),
-      );
+      };
     }
     if (scope === "encounter-summary" || scope === "clinical-notes") {
       if (
@@ -550,6 +649,11 @@ export class SynchronizationService {
           "ELITE_SYNC_SCOPE_DENIED: clinical note scope requires a clinician role",
         );
       }
+      const filter = cursorPredicate(
+        "encounters.updated_at",
+        "encounters.id",
+        cursor,
+      );
       const rows = this.database.raw
         .prepare(
           `SELECT encounters.id, patients.patient_id AS patientId, encounters.appointment_id AS appointmentId,
@@ -558,36 +662,42 @@ export class SynchronizationService {
                   encounters.updated_at AS updatedAt, encounters.version, encounters.subjective, encounters.objective,
                   encounters.assessment, encounters.plan, encounters.follow_up AS followUp
            FROM encounters INNER JOIN patients ON patients.id = encounters.patient_id
-           WHERE patients.status = 'active' ORDER BY encounters.updated_at ASC LIMIT ?`,
+           WHERE patients.status = 'active'${filter.sql}
+           ORDER BY encounters.updated_at ASC, encounters.id ASC LIMIT ?`,
         )
-        .all(limit) as Row[];
-      return rows.map((row) =>
-        this.change(
-          "Encounter",
-          String(row.id),
-          Number(row.version),
-          String(row.updatedAt),
-          {
-            encounterId: row.id,
-            patientId: row.patientId,
-            appointmentId: row.appointmentId,
-            authorUserId: row.authorUserId,
-            encounterAt: row.encounterAt,
-            status: row.status,
-            signedAt: row.signedAt,
-            signedByUserId: row.signedByUserId,
-            ...(scope === "clinical-notes"
-              ? {
-                  subjective: row.subjective,
-                  objective: row.objective,
-                  assessment: row.assessment,
-                  plan: row.plan,
-                  followUp: row.followUp,
-                }
-              : {}),
-          },
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) =>
+          this.change(
+            "Encounter",
+            String(row.id),
+            Number(row.version),
+            String(row.updatedAt),
+            {
+              encounterId: row.id,
+              patientId: row.patientId,
+              appointmentId: row.appointmentId,
+              authorUserId: row.authorUserId,
+              encounterAt: row.encounterAt,
+              status: row.status,
+              signedAt: row.signedAt,
+              signedByUserId: row.signedByUserId,
+              ...(scope === "clinical-notes"
+                ? {
+                    subjective: row.subjective,
+                    objective: row.objective,
+                    assessment: row.assessment,
+                    plan: row.plan,
+                    followUp: row.followUp,
+                  }
+                : {}),
+            },
+          ),
         ),
-      );
+      };
     }
     if (scope === "billing-summary") {
       if (!context.capabilities.includes("billing.read")) {
@@ -595,6 +705,7 @@ export class SynchronizationService {
           "ELITE_SYNC_SCOPE_DENIED: billing summary requires billing-read capability",
         );
       }
+      const filter = cursorPredicate("i.updated_at", "i.id", cursor);
       const rows = this.database.raw
         .prepare(
           `SELECT i.id, i.invoice_number AS invoiceNumber, patients.patient_id AS patientId,
@@ -608,57 +719,70 @@ export class SynchronizationService {
                       WHERE p.invoice_id = i.id AND r.status = 'posted'), 0)) AS paidEgp
            FROM billing_invoices i
            INNER JOIN patients ON patients.id = i.patient_id
-           WHERE patients.status = 'active'
-           ORDER BY i.updated_at ASC LIMIT ?`,
+           WHERE patients.status = 'active'${filter.sql}
+           ORDER BY i.updated_at ASC, i.id ASC LIMIT ?`,
         )
-        .all(limit) as Row[];
-      return rows.map((row) => {
-        const paidEgp = Number(row.paidEgp);
-        const totalEgp = Number(row.totalEgp);
-        return this.change(
-          "BillingInvoice",
-          String(row.id),
-          Number(row.version),
-          String(row.updatedAt),
-          {
-            invoiceNumber: row.invoiceNumber,
-            patientId: row.patientId,
-            currency: row.currency,
-            status: row.status,
-            subtotalEgp: Number(row.subtotalEgp),
-            discountEgp: Number(row.discountEgp),
-            totalEgp,
-            paidEgp,
-            balanceEgp: Math.max(0, totalEgp - paidEgp),
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          },
-        );
-      });
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) => {
+          const paidEgp = Number(row.paidEgp);
+          const totalEgp = Number(row.totalEgp);
+          return this.change(
+            "BillingInvoice",
+            String(row.id),
+            Number(row.version),
+            String(row.updatedAt),
+            {
+              invoiceNumber: row.invoiceNumber,
+              patientId: row.patientId,
+              currency: row.currency,
+              status: row.status,
+              subtotalEgp: Number(row.subtotalEgp),
+              discountEgp: Number(row.discountEgp),
+              totalEgp,
+              paidEgp,
+              balanceEgp: Math.max(0, totalEgp - paidEgp),
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+            },
+          );
+        }),
+      };
     }
     if (scope === "export-governance") {
+      const filter = cursorPredicate("status_changed_at", "package_id", cursor);
       const rows = this.database.raw
         .prepare(
-          `SELECT package_id AS packageId, status, status_changed_at AS statusChangedAt,
-                  package_hash AS packageHash, manifest_hash AS manifestHash
-           FROM export_packages ORDER BY status_changed_at ASC LIMIT ?`,
+          `SELECT package_id AS id, package_id AS packageId, status, status_changed_at AS updatedAt,
+                  status_changed_at AS statusChangedAt, package_hash AS packageHash, manifest_hash AS manifestHash
+           FROM export_packages
+           WHERE 1 = 1${filter.sql}
+           ORDER BY status_changed_at ASC, package_id ASC LIMIT ?`,
         )
-        .all(limit) as Row[];
-      return rows.map((row) =>
-        this.change(
-          "ExportPackage",
-          String(row.packageId),
-          1,
-          String(row.statusChangedAt),
-          {
-            packageId: row.packageId,
-            status: row.status,
-            statusChangedAt: row.statusChangedAt,
-            packageHash: row.packageHash,
-            manifestHash: row.manifestHash,
-          },
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) =>
+          this.change(
+            "ExportPackage",
+            String(row.packageId),
+            1,
+            String(row.statusChangedAt),
+            {
+              packageId: row.packageId,
+              status: row.status,
+              statusChangedAt: row.statusChangedAt,
+              packageHash: row.packageHash,
+              manifestHash: row.manifestHash,
+            },
+          ),
         ),
-      );
+      };
     }
     throw new Error("ELITE_SYNC_SCOPE_UNSUPPORTED: scope is not implemented");
   }

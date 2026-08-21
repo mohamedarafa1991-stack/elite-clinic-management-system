@@ -40,7 +40,7 @@ $scheduleAt = Get-Date -Hour 7 -Minute 0 -Second 0
 $trigger = New-ScheduledTaskTrigger -Monthly -DaysOfMonth 1 -At $scheduleAt
 $principal = New-ScheduledTaskPrincipal `
   -UserId "$env:USERDOMAIN\$env:USERNAME" `
-  -LogonType InteractiveToken `
+  -LogonType S4U `
   -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
@@ -54,7 +54,7 @@ Register-ScheduledTask `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description "Exports the previous Cairo calendar month doctor payout CSV from collected payments and refunds." `
+  -Description "Exports the previous Cairo calendar month doctor payout CSV from collected payments and refunds. The packaged Hub enforces a single payout lock." `
   -Force | Out-Null
 
 Write-Output "DOCTOR_PAYOUT_TASK_INSTALLED: $TaskName"

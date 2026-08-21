@@ -13,7 +13,7 @@ const requiredFragments = [
   "New-ScheduledTaskTrigger -Monthly -DaysOfMonth 1",
   "StartWhenAvailable",
   "Unregister-ScheduledTask",
-  "InteractiveToken",
+  "S4U",
 ];
 const missing = requiredFragments.filter(
   (fragment) => !source.includes(fragment),

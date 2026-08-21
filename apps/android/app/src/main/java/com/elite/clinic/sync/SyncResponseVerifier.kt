@@ -17,6 +17,7 @@ sealed interface SyncVerificationResult {
         val scope: String,
         val serverSequence: Long,
         val nextCursor: String,
+        val hasMore: Boolean,
         val changeCount: Int,
     ) : SyncVerificationResult
 
@@ -117,6 +118,11 @@ object SyncResponseVerifier {
             scope = requiredString("scope") ?: return SyncVerificationResult.Rejected("SYNC_SCOPE_MISSING"),
             serverSequence = json.optLong("serverSequence", -1L),
             nextCursor = requiredString("nextCursor") ?: return SyncVerificationResult.Rejected("SYNC_CURSOR_MISSING"),
+            hasMore = if (!json.has("hasMore")) {
+                return SyncVerificationResult.Rejected("SYNC_PAGINATION_FLAG_MISSING")
+            } else {
+                json.optBoolean("hasMore")
+            },
             changeCount = changes.length(),
         )
     }

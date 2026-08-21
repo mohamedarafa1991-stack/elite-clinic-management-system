@@ -43,7 +43,13 @@ import {
 import { dirname, join } from "node:path";
 import { ElectronSafeStorageKeyProvider } from "./key-provider.js";
 import { fileURLToPath } from "node:url";
-import { existsSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
 import { LanSyncHttpServer } from "./lan-sync-server.js";
 import {
@@ -108,6 +114,7 @@ import {
 import { ElectronExportSigner } from "./export-signer.js";
 import { renderPatientExportPdf } from "./export-pdf.js";
 import { FileSystemDoctorDocumentVault } from "./doctor-document-vault.js";
+import { DesktopBackupRestoreService } from "./backup-restore.js";
 import { createIpcRegistrar } from "./ipc-registration.js";
 import {
   defaultDoctorPayoutReportDirectory,
@@ -137,6 +144,7 @@ let androidEnrollmentService: AndroidEnrollmentService | undefined;
 let lanSessionService: LanSessionService | undefined;
 let lanSyncServer: LanSyncHttpServer | undefined;
 let exportSigner: ElectronExportSigner | undefined;
+let backupRestoreService: DesktopBackupRestoreService | undefined;
 let serviceError: string | undefined;
 let lanSyncStatus: LanSyncStatus = {
   state: "starting",
@@ -163,6 +171,12 @@ function initializeServices(): void {
           mode: "test" as const,
         };
     database = openDatabase(options);
+    backupRestoreService = new DesktopBackupRestoreService(
+      database,
+      filename,
+      join(app.getPath("userData"), "doctor-documents"),
+      app.getVersion(),
+    );
     authService = new AuthService(database);
     patientService = new PatientIdentityService(database);
     medicalHistoryService = new MedicalHistoryService(database);
@@ -220,6 +234,9 @@ async function startLanSyncServer(): Promise<void> {
   const server = new LanSyncHttpServer(
     new LanSyncFrameRouter(synchronizationService, doctorProfileService),
     lanSessionService,
+    undefined,
+    undefined,
+    app.isPackaged,
   );
   lanSyncServer = server;
   try {
@@ -387,6 +404,14 @@ function requireAndroidEnrollmentService(): AndroidEnrollmentService {
   }
   return androidEnrollmentService;
 }
+function requireBackupRestoreService(): DesktopBackupRestoreService {
+  if (!backupRestoreService) {
+    throw new Error(
+      "ELITE_BACKUP_SERVICE_UNAVAILABLE: backup service is unavailable",
+    );
+  }
+  return backupRestoreService;
+}
 function requireExportSigner(): ElectronExportSigner {
   if (!exportSigner) {
     throw new Error(
@@ -467,37 +492,60 @@ async function runScheduledDoctorPayoutReport(): Promise<void> {
   }
   const outputDirectory = payoutReportOutputDirectory();
   const reportMonth = previousCairoReportMonth();
-  const currentStatus = readPayoutScheduleStatus(
-    app.getPath("userData"),
-    outputDirectory,
-  );
-  if (
-    currentStatus.lastReportMonth === reportMonth &&
-    currentStatus.lastOutputFileName &&
-    existsSync(join(outputDirectory, currentStatus.lastOutputFileName))
-  ) {
-    console.log(
-      `DOCTOR_PAYOUT_REPORT_ALREADY_EXISTS: ${join(outputDirectory, currentStatus.lastOutputFileName)}`,
+  const lockPath = join(app.getPath("userData"), "doctor-payout-report.lock");
+  let lockFd: number;
+  try {
+    lockFd = openSync(lockPath, "wx");
+    writeFileSync(
+      lockFd,
+      JSON.stringify({
+        pid: process.pid,
+        reportMonth,
+        startedAt: new Date().toISOString(),
+      }),
+      "utf8",
     );
-    return;
+  } catch {
+    throw new Error(
+      "ELITE_BILLING_PAYOUT_REPORT_ALREADY_RUNNING: another payout report process holds the lock",
+    );
   }
   try {
-    const result = runDoctorPayoutReport(
-      scheduledPayoutContext(),
-      { reportMonth },
-      "scheduled",
+    const currentStatus = readPayoutScheduleStatus(
+      app.getPath("userData"),
+      outputDirectory,
     );
-    console.log(`DOCTOR_PAYOUT_REPORT_CREATED: ${result.filePath}`);
-  } catch (error) {
-    const { lastError: _lastError, ...statusWithoutError } = currentStatus;
-    writePayoutScheduleStatus(app.getPath("userData"), {
-      ...statusWithoutError,
-      lastError:
-        error instanceof Error
-          ? error.message
-          : "Scheduled payout report failed",
-    });
-    throw error;
+    if (
+      currentStatus.lastReportMonth === reportMonth &&
+      currentStatus.lastOutputFileName &&
+      existsSync(join(outputDirectory, currentStatus.lastOutputFileName))
+    ) {
+      console.log(
+        `DOCTOR_PAYOUT_REPORT_ALREADY_EXISTS: ${join(outputDirectory, currentStatus.lastOutputFileName)}`,
+      );
+      return;
+    }
+    try {
+      const result = runDoctorPayoutReport(
+        scheduledPayoutContext(),
+        { reportMonth },
+        "scheduled",
+      );
+      console.log(`DOCTOR_PAYOUT_REPORT_CREATED: ${result.filePath}`);
+    } catch (error) {
+      const { lastError: _lastError, ...statusWithoutError } = currentStatus;
+      writePayoutScheduleStatus(app.getPath("userData"), {
+        ...statusWithoutError,
+        lastError:
+          error instanceof Error
+            ? error.message
+            : "Scheduled payout report failed",
+      });
+      throw error;
+    }
+  } finally {
+    closeSync(lockFd);
+    unlinkSync(lockPath);
   }
 }
 
@@ -608,6 +656,28 @@ function registerIpc(): void {
       ),
   );
 
+  registerIpcHandler(
+    "backup:create",
+    (_event, token: string, destinationPath: string) =>
+      requireBackupRestoreService().createBackup(
+        serviceContext(token),
+        destinationPath,
+      ),
+  );
+  registerIpcHandler(
+    "backup:restore",
+    (_event, token: string, packagePath: string) => {
+      const result = requireBackupRestoreService().restoreBackup(
+        serviceContext(token),
+        packagePath,
+      );
+      setImmediate(() => {
+        app.relaunch();
+        app.exit(0);
+      });
+      return result;
+    },
+  );
   registerIpcHandler("app:security-status", () => ({
     electronVersion: process.versions.electron,
     chromiumVersion: process.versions.chrome,

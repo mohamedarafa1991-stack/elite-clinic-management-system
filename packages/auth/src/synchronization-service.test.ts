@@ -173,6 +173,26 @@ describe("SynchronizationService", () => {
       });
       androidDevice(database, admin.userId);
       syntheticPatientAndAppointment(database, admin.userId);
+      database.raw
+        .prepare(
+          `INSERT INTO appointments
+           (id, patient_id, department_id, doctor_id, scheduled_start, scheduled_end, status, visit_type, is_walk_in, notes, created_at, created_by_user_id, updated_at, updated_by_user_id, version)
+           VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, 0, ?, ?, ?, ?, ?, 3)`,
+        )
+        .run(
+          "sync-appointment-row-2",
+          "sync-patient-row",
+          "sync-department",
+          admin.userId,
+          "2030-03-03T09:00:00.000Z",
+          "2030-03-03T09:15:00.000Z",
+          "Synthetic appointment two",
+          "Synthetic second appointment",
+          "2030-03-01T01:00:00.000Z",
+          admin.userId,
+          "2030-03-01T02:00:00.000Z",
+          admin.userId,
+        );
       const service = new SynchronizationService(
         database,
         syntheticSigner(),
@@ -210,8 +230,10 @@ describe("SynchronizationService", () => {
         knownPolicyVersion: 1,
         requestNonce: "nonce-delta-0000001",
         requestedAt: "2030-03-02T10:00:00.000Z",
+        maxChanges: 1,
       });
       expect(delta.changes).toHaveLength(1);
+      expect(delta.hasMore).toBe(true);
       expect(delta.changes[0]).toMatchObject({
         resourceType: "Appointment",
         resourceId: "sync-appointment-row",
@@ -234,8 +256,26 @@ describe("SynchronizationService", () => {
         knownPolicyVersion: 1,
         requestNonce: "nonce-delta-0000002",
         requestedAt: "2030-03-02T10:00:00.000Z",
+        maxChanges: 1,
       });
-      expect(replay.changes).toEqual([]);
+      expect(replay.changes).toHaveLength(1);
+      expect(replay.hasMore).toBe(false);
+      const complete = service.getDelta(mobile, {
+        protocolVersion: 1,
+        organizationId: "elite-clinic",
+        deviceId: "sync-android-device",
+        userId: admin.userId,
+        syncSessionId: "sync-session-0001",
+        scope: "appointments",
+        cursor: replay.nextCursor,
+        clientBaseVersion: 0,
+        knownPolicyVersion: 1,
+        requestNonce: "nonce-delta-0000003",
+        requestedAt: "2030-03-02T10:00:00.000Z",
+        maxChanges: 1,
+      });
+      expect(complete.changes).toEqual([]);
+      expect(complete.hasMore).toBe(false);
     } finally {
       database.close();
     }

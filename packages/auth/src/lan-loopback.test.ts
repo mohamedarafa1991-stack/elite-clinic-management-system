@@ -1,6 +1,10 @@
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { createServer, request as httpRequest, type Server } from "node:http";
-import { canonicalJson, syncDeltaResponseSchema } from "@elite/contracts";
+import {
+  canonicalJson,
+  roleCapabilities,
+  syncDeltaResponseSchema,
+} from "@elite/contracts";
 import { openDatabase } from "@elite/database";
 import { describe, expect, it } from "vitest";
 import {
@@ -92,7 +96,10 @@ describe("Step 22 LAN loopback integration", () => {
 
       const router = new LanSyncFrameRouter(synchronization);
       const sessionService = new LanSessionService(database, signer);
-      server = await startLoopbackServer(router, sessionService);
+      let establishedCapabilities: readonly string[] = [];
+      server = await startLoopbackServer(router, sessionService, (context) => {
+        establishedCapabilities = context.capabilities;
+      });
       const address = server.address();
       if (!address || typeof address === "string")
         throw new Error("LOOPBACK_PORT_UNAVAILABLE");
@@ -139,6 +146,7 @@ describe("Step 22 LAN loopback integration", () => {
       const grant = grantResponse.body as Record<string, unknown>;
       expect(grant["messageType"]).toBe("session-grant");
       expect(verifyGrant(grant, signer.publicKeyPem)).toBe(true);
+      expect(establishedCapabilities).toEqual(roleCapabilities.admin);
       const replayResponse = await postJson(
         `${baseUrl}/sync/session-init`,
         sessionInit,
@@ -373,6 +381,7 @@ function seedActiveEnrollment(
 function startLoopbackServer(
   router: LanSyncFrameRouter,
   sessionService: LanSessionService,
+  onEstablished?: (context: { capabilities: readonly string[] }) => void,
 ): Promise<Server> {
   const server = createServer(async (request, response) => {
     try {
@@ -383,6 +392,7 @@ function startLoopbackServer(
           JSON.parse(body) as Parameters<LanSessionService["establish"]>[0],
           NOW,
         );
+        onEstablished?.(established.context);
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(JSON.stringify(established.grant));
         return;
