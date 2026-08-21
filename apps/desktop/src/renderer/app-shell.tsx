@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import type { SessionSummary } from "../preload/index.cjs";
-import type { WorkspaceLocale } from "./workspace-model.js";
+import type { WorkspaceLocale, WorkspaceTheme } from "./workspace-model.js";
 
 export type ShellNavigationGroup =
   "today" | "front-desk" | "clinical" | "operations" | "insights" | "system";
@@ -12,6 +12,10 @@ export interface ShellLabels {
   workingLocally: string;
   encryptedStore: string;
   interfaceLanguage: string;
+  visualTheme?: string;
+  lightTheme?: string;
+  darkTheme?: string;
+  highContrastTheme?: string;
   signOut: string;
   workspaceLabel: string;
   primaryNavigationLabel: string;
@@ -45,6 +49,8 @@ export interface ShellLabels {
   syncDevicesDetail: string;
   adminSettings: string;
   adminSettingsDetail: string;
+  more?: string;
+  moreDetail?: string;
 }
 
 export interface ShellNavigationItem {
@@ -60,7 +66,11 @@ export interface AppShellProps {
   locale: WorkspaceLocale;
   labels: ShellLabels;
   onLocaleChange: (locale: WorkspaceLocale) => void;
+  theme?: WorkspaceTheme;
+  onThemeChange?: (theme: WorkspaceTheme) => void;
   onLogout: () => Promise<void>;
+  activeSection: string;
+  onSectionChange: (sectionId: string) => void;
   children: ReactElement;
 }
 
@@ -203,55 +213,71 @@ function formatRoleLabel(
   return role;
 }
 
-function getGroupLabel(
-  group: ShellNavigationGroup,
-  labels: ShellLabels,
-): string {
-  return {
-    today: labels.todayGroup,
-    "front-desk": labels.frontDeskGroup,
-    clinical: labels.clinicalGroup,
-    operations: labels.operationsGroup,
-    insights: labels.insightsGroup,
-    system: labels.systemGroup,
-  }[group];
-}
-
-const NAVIGATION_GROUPS: readonly ShellNavigationGroup[] = [
-  "today",
-  "front-desk",
-  "clinical",
-  "operations",
-  "insights",
-  "system",
-];
+const PRIMARY_NAVIGATION_IDS = new Set([
+  "workspace-overview",
+  "workspace-patients",
+  "workspace-appointments",
+  "workspace-doctors",
+  "workspace-billing",
+]);
 
 export function AppShell({
   session,
   locale,
   labels,
   onLocaleChange,
+  theme,
+  onThemeChange,
   onLogout,
+  activeSection,
+  onSectionChange,
   children,
 }: AppShellProps): ReactElement {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [activeSection, setActiveSection] = useState("workspace-overview");
+  const [isMoreExpanded, setIsMoreExpanded] = useState(false);
   const navigation = useMemo(
     () => getVisibleShellNavigation(session.capabilities, labels),
     [labels, session.capabilities],
   );
-
-  useEffect(() => {
-    const syncFromHash = (): void => {
-      const section = window.location.hash.slice(1);
-      if (section && navigation.some((item) => item.id === section)) {
-        setActiveSection(section);
-      }
-    };
-    syncFromHash();
-    window.addEventListener("hashchange", syncFromHash);
-    return () => window.removeEventListener("hashchange", syncFromHash);
-  }, [navigation]);
+  const primaryNavigation = useMemo(
+    () => navigation.filter((item) => PRIMARY_NAVIGATION_IDS.has(item.id)),
+    [navigation],
+  );
+  const secondaryNavigation = useMemo(
+    () => navigation.filter((item) => !PRIMARY_NAVIGATION_IDS.has(item.id)),
+    [navigation],
+  );
+  const isMoreActive = secondaryNavigation.some(
+    (item) => item.id === activeSection,
+  );
+  const showMore = isMoreExpanded || isMoreActive;
+  const moreLabel = labels.more ?? (locale === "ar-EG" ? "المزيد" : "More");
+  const moreDetail =
+    labels.moreDetail ??
+    (locale === "ar-EG"
+      ? "التقارير والإعدادات والأدوات"
+      : "Reports, settings, and tools");
+  const renderNavigationLink = (item: ShellNavigationItem): ReactElement => (
+    <a
+      className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
+      href={`#${item.id}`}
+      key={item.id}
+      aria-current={activeSection === item.id ? "page" : undefined}
+      onClick={(event) => {
+        event.preventDefault();
+        onSectionChange(item.id);
+        if (!PRIMARY_NAVIGATION_IDS.has(item.id)) setIsMoreExpanded(true);
+      }}
+    >
+      <span className="sidebar-link-icon" aria-hidden="true">
+        {item.icon}
+      </span>
+      <span className="sidebar-link-copy">
+        <strong>{item.label}</strong>
+        <small>{item.detail}</small>
+      </span>
+    </a>
+  );
 
   return (
     <div
@@ -285,36 +311,35 @@ export function AppShell({
         </button>
         <nav className="sidebar-nav">
           <p className="sidebar-label">{labels.workspaceLabel}</p>
-          {NAVIGATION_GROUPS.map((group) => {
-            const items = navigation.filter((item) => item.group === group);
-            if (items.length === 0) return null;
-            return (
-              <div className="sidebar-group" key={group}>
-                <p className="sidebar-group-label">
-                  {getGroupLabel(group, labels)}
-                </p>
-                {items.map((item) => (
-                  <a
-                    className={`sidebar-link${activeSection === item.id ? " is-active" : ""}`}
-                    href={`#${item.id}`}
-                    key={item.id}
-                    aria-current={
-                      activeSection === item.id ? "page" : undefined
-                    }
-                    onClick={() => setActiveSection(item.id)}
-                  >
-                    <span className="sidebar-link-icon" aria-hidden="true">
-                      {item.icon}
-                    </span>
-                    <span className="sidebar-link-copy">
-                      <strong>{item.label}</strong>
-                      <small>{item.detail}</small>
-                    </span>
-                  </a>
-                ))}
-              </div>
-            );
-          })}
+          <div className="sidebar-group sidebar-primary-group">
+            {primaryNavigation.map(renderNavigationLink)}
+          </div>
+          {secondaryNavigation.length > 0 ? (
+            <div className="sidebar-group sidebar-more-group">
+              <button
+                className={`sidebar-more-toggle${showMore ? " is-open" : ""}`}
+                type="button"
+                aria-expanded={showMore}
+                onClick={() => setIsMoreExpanded((current) => !current)}
+              >
+                <span className="sidebar-link-icon" aria-hidden="true">
+                  ⋯
+                </span>
+                <span className="sidebar-link-copy">
+                  <strong>{moreLabel}</strong>
+                  <small>{moreDetail}</small>
+                </span>
+                <span className="sidebar-more-chevron" aria-hidden="true">
+                  {showMore ? "⌃" : "⌄"}
+                </span>
+              </button>
+              {showMore ? (
+                <div className="sidebar-secondary-nav">
+                  {secondaryNavigation.map(renderNavigationLink)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </nav>
         <div className="sidebar-footer">
           <span className="local-status-dot" aria-hidden="true" />
@@ -346,6 +371,26 @@ export function AppShell({
                 <option value="ar-EG">العربية</option>
               </select>
             </label>
+            {theme && onThemeChange ? (
+              <label className="theme-control">
+                <span className="visually-hidden">
+                  {labels.visualTheme ?? "Theme"}
+                </span>
+                <select
+                  aria-label={labels.visualTheme ?? "Theme"}
+                  value={theme}
+                  onChange={(event) =>
+                    onThemeChange(event.target.value as WorkspaceTheme)
+                  }
+                >
+                  <option value="light">{labels.lightTheme ?? "Light"}</option>
+                  <option value="dark">{labels.darkTheme ?? "Dark"}</option>
+                  <option value="high-contrast">
+                    {labels.highContrastTheme ?? "High contrast"}
+                  </option>
+                </select>
+              </label>
+            ) : null}
             <span className="topbar-status">
               <span className="local-status-dot" aria-hidden="true" />
               {labels.localFirst}

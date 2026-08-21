@@ -1,6 +1,8 @@
 import type {
   Appointment,
   BillingDashboardSummary,
+  Patient,
+  Department,
   DoctorDirectoryEntry,
   Schedule,
   ScheduleException,
@@ -43,6 +45,21 @@ export interface TodayWorkspaceLabels {
   offlineValidDetail: string;
   minuteShort: string;
   quickActions: string;
+  quickFindPatient: string;
+  quickFindPatientDetail: string;
+  quickAppointments: string;
+  quickAppointmentsDetail: string;
+  quickPayment: string;
+  quickPaymentDetail: string;
+  frontDeskView: string;
+  allView: string;
+  departmentFilter: string;
+  allDepartments: string;
+  waitingRoom: string;
+  waitingColumn: string;
+  inConsultationColumn: string;
+  completedColumn: string;
+  noPatientsInColumn: string;
   openPatients: string;
   openAppointments: string;
   openDoctors: string;
@@ -141,7 +158,11 @@ export function TodayWorkspace({
   onOpenBilling,
 }: TodayWorkspaceProps): ReactElement {
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [patients, setPatients] = useState<readonly Patient[]>([]);
+  const [departments, setDepartments] = useState<readonly Department[]>([]);
   const [doctors, setDoctors] = useState<readonly DoctorDirectoryEntry[]>([]);
+  const [dashboardView, setDashboardView] = useState<"front-desk" | "all">("front-desk");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [schedules, setSchedules] = useState<readonly Schedule[]>([]);
   const [exceptions, setExceptions] = useState<readonly ScheduleException[]>(
     [],
@@ -165,10 +186,13 @@ export function TodayWorkspace({
     try {
       const canReadAppointments =
         session.capabilities.includes("appointment.read");
+      const canReadPatients = session.capabilities.includes("patient.read");
       const canReadSchedules = session.capabilities.includes("clinical.read");
       const canReadBilling = session.capabilities.includes("billing.read");
       const [
         nextAppointments,
+        nextPatients,
+        nextDepartments,
         nextDoctors,
         nextSchedules,
         nextExceptions,
@@ -181,6 +205,12 @@ export function TodayWorkspace({
               end.toISOString(),
             )
           : Promise.resolve([] as readonly Appointment[]),
+        canReadPatients
+          ? window.elite.patients.search(token, { limit: 200 })
+          : Promise.resolve([] as readonly Patient[]),
+        canReadAppointments
+          ? window.elite.clinical.listDepartments(token)
+          : Promise.resolve([] as readonly Department[]),
         canReadAppointments
           ? window.elite.clinical.listDoctors(token)
           : Promise.resolve([] as readonly DoctorDirectoryEntry[]),
@@ -195,6 +225,8 @@ export function TodayWorkspace({
           : Promise.resolve(null as BillingDashboardSummary | null),
       ]);
       setAppointments(sortAppointmentsByStart(nextAppointments));
+      setPatients(nextPatients);
+      setDepartments(nextDepartments);
       setDoctors(nextDoctors);
       setSchedules(nextSchedules);
       setExceptions(nextExceptions);
@@ -214,8 +246,21 @@ export function TodayWorkspace({
     void refresh();
   }, [token]);
 
+  const visibleAppointments = appointments.filter(
+    (appointment) =>
+      !departmentFilter || appointment.departmentId === departmentFilter,
+  );
   const { waitingCount, completedCount, nextAppointment } =
-    getTodayAppointmentMetrics(appointments);
+    getTodayAppointmentMetrics(visibleAppointments);
+  const waitingAppointments = visibleAppointments.filter(
+    (appointment) => appointment.status === "scheduled" || appointment.status === "arrived",
+  );
+  const inConsultationAppointments = visibleAppointments.filter(
+    (appointment) => appointment.status === "in-consultation",
+  );
+  const completedAppointments = visibleAppointments.filter(
+    (appointment) => appointment.status === "completed",
+  );
   const scheduledDoctors = getDoctorsScheduledToday(
     doctors,
     schedules,
@@ -260,43 +305,86 @@ export function TodayWorkspace({
           </button>
         </div>
       </div>
-      <div className="today-quick-actions" aria-label={labels.quickActions}>
-        <span className="today-quick-actions-label">{labels.quickActions}</span>
-        <div className="today-quick-action-list">
+      <div className="today-view-controls" aria-label={labels.waitingRoom}>
+        <div className="today-view-switch" role="tablist" aria-label={labels.waitingRoom}>
           <button
-            className="button secondary small"
+            className={`today-view-tab${dashboardView === "front-desk" ? " is-active" : ""}`}
             type="button"
-            onClick={onFindPatient}
+            role="tab"
+            aria-selected={dashboardView === "front-desk"}
+            onClick={() => setDashboardView("front-desk")}
           >
-            {labels.openPatients}
+            {labels.frontDeskView}
           </button>
           <button
-            className="button secondary small"
+            className={`today-view-tab${dashboardView === "all" ? " is-active" : ""}`}
             type="button"
-            onClick={onOpenAppointments}
+            role="tab"
+            aria-selected={dashboardView === "all"}
+            onClick={() => setDashboardView("all")}
           >
-            {labels.openAppointments}
-          </button>
-          <button
-            className="button secondary small"
-            type="button"
-            onClick={onOpenDoctors}
-          >
-            {labels.openDoctors}
-          </button>
-          <button
-            className="button secondary small"
-            type="button"
-            onClick={onOpenBilling}
-          >
-            {labels.openBilling}
+            {labels.allView}
           </button>
         </div>
+        {departments.length > 0 ? (
+          <label className="today-department-filter">
+            <span>{labels.departmentFilter}</span>
+            <select
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+            >
+              <option value="">{labels.allDepartments}</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.nameEn}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
+      <section className="today-task-launcher" aria-labelledby="today-task-launcher-title">
+        <div className="today-card-heading">
+          <div>
+            <p className="eyebrow">{labels.quickActions}</p>
+            <h2 id="today-task-launcher-title">{labels.quickActions}</h2>
+          </div>
+        </div>
+        <div className="today-task-grid">
+          {session.capabilities.includes("patient.read") ? (
+            <button className="today-task-card" type="button" onClick={onFindPatient}>
+              <span className="today-task-icon" aria-hidden="true">P</span>
+              <strong>{labels.quickFindPatient}</strong>
+              <small>{labels.quickFindPatientDetail}</small>
+            </button>
+          ) : null}
+          {session.capabilities.includes("appointment.read") ? (
+            <button className="today-task-card" type="button" onClick={onOpenAppointments}>
+              <span className="today-task-icon" aria-hidden="true">A</span>
+              <strong>{labels.quickAppointments}</strong>
+              <small>{labels.quickAppointmentsDetail}</small>
+            </button>
+          ) : null}
+          {session.capabilities.includes("billing.read") ? (
+            <button className="today-task-card" type="button" onClick={onOpenBilling}>
+              <span className="today-task-icon" aria-hidden="true">EGP</span>
+              <strong>{labels.quickPayment}</strong>
+              <small>{labels.quickPaymentDetail}</small>
+            </button>
+          ) : null}
+          {session.capabilities.includes("doctor.profile.read") ? (
+            <button className="today-task-card" type="button" onClick={onOpenDoctors}>
+              <span className="today-task-icon" aria-hidden="true">Dr</span>
+              <strong>{labels.openDoctors}</strong>
+              <small>{labels.scheduledDoctors}</small>
+            </button>
+          ) : null}
+        </div>
+      </section>
       <div className="today-metrics" aria-label="Today summary">
         <div className="today-metric">
           <span>{labels.appointments}</span>
-          <strong>{isLoading ? "—" : appointments.length}</strong>
+          <strong>{isLoading ? "—" : visibleAppointments.length}</strong>
           <small>{labels.scheduledToday}</small>
         </div>
         <div className="today-metric">
@@ -327,13 +415,15 @@ export function TodayWorkspace({
       </div>
       <div className="today-grid">
         <section
-          className="today-card"
+          className="today-card today-queue-card"
           aria-labelledby="today-appointments-title"
         >
           <div className="today-card-heading">
             <div>
               <p className="eyebrow">{labels.clinicQueue}</p>
-              <h2 id="today-appointments-title">{labels.todaysAppointments}</h2>
+              <h2 id="today-appointments-title">
+                {dashboardView === "front-desk" ? labels.waitingRoom : labels.todaysAppointments}
+              </h2>
             </div>
             <span className="status ok">{labels.localData}</span>
           </div>
@@ -344,36 +434,75 @@ export function TodayWorkspace({
           ) : null}
           {isLoading ? (
             <p className="muted">{labels.loadingAppointments}</p>
-          ) : appointments.length === 0 ? (
+          ) : visibleAppointments.length === 0 ? (
             <div className="today-empty-state">
               <strong>{labels.noAppointments}</strong>
               <p>{labels.queueDescription}</p>
             </div>
+          ) : dashboardView === "front-desk" ? (
+            <div className="today-queue-columns" aria-live="polite">
+              {[
+                { key: "waiting", title: labels.waitingColumn, items: waitingAppointments },
+                { key: "consultation", title: labels.inConsultationColumn, items: inConsultationAppointments },
+                { key: "completed", title: labels.completedColumn, items: completedAppointments },
+              ].map((column) => (
+                <div className={`today-queue-column queue-${column.key}`} key={column.key}>
+                  <div className="today-queue-column-heading">
+                    <strong>{column.title}</strong>
+                    <span>{column.items.length}</span>
+                  </div>
+                  {column.items.length === 0 ? (
+                    <p className="muted">{labels.noPatientsInColumn}</p>
+                  ) : (
+                    column.items.map((appointment) => {
+                      const patient = patients.find(
+                        (item) => item.patientId === appointment.patientId,
+                      );
+                      return (
+                        <article className="today-queue-card-item" key={appointment.id}>
+                          <time dateTime={appointment.scheduledStart}>
+                            {formatTime(appointment.scheduledStart)}
+                          </time>
+                          <strong>{patient?.nameEn ?? appointment.patientId}</strong>
+                          <span>
+                            <BidiValue direction="ltr">{appointment.patientId}</BidiValue>
+                            {" · "}{appointment.visitType}
+                          </span>
+                          <small>{appointment.doctorId ?? labels.noDoctorsScheduled}</small>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="today-appointment-list" aria-live="polite">
-              {appointments.map((appointment) => (
-                <article className="today-appointment-row" key={appointment.id}>
-                  <time dateTime={appointment.scheduledStart}>
-                    {formatTime(appointment.scheduledStart)}
-                  </time>
-                  <div className="today-appointment-main">
-                    <strong>
-                      <BidiValue direction="ltr">
-                        {appointment.patientId}
-                      </BidiValue>
-                    </strong>
-                    <span>
-                      {appointment.visitType} · {appointment.durationMinutes}{" "}
-                      {labels.minuteShort}
+              {visibleAppointments.map((appointment) => {
+                const patient = patients.find(
+                  (item) => item.patientId === appointment.patientId,
+                );
+                return (
+                  <article className="today-appointment-row" key={appointment.id}>
+                    <time dateTime={appointment.scheduledStart}>
+                      {formatTime(appointment.scheduledStart)}
+                    </time>
+                    <div className="today-appointment-main">
+                      <strong>{patient?.nameEn ?? appointment.patientId}</strong>
+                      <span>
+                        <BidiValue direction="ltr">{appointment.patientId}</BidiValue>
+                        {" · "}{appointment.visitType} · {appointment.durationMinutes}{" "}
+                        {labels.minuteShort}
+                      </span>
+                    </div>
+                    <span
+                      className={`status ${getAppointmentStatusClass(appointment.status)}`}
+                    >
+                      {formatStatusLabel(appointment.status)}
                     </span>
-                  </div>
-                  <span
-                    className={`status ${getAppointmentStatusClass(appointment.status)}`}
-                  >
-                    {formatStatusLabel(appointment.status)}
-                  </span>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

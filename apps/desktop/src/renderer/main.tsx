@@ -28,6 +28,7 @@ import type {
   BillingPackage,
   BillingPayment,
   BillingPaymentInput,
+  BillingReceipt,
   BillingRefundInput,
   BillingDoctorPayoutExportResult,
   BillingDoctorPayoutScheduleStatus,
@@ -74,6 +75,7 @@ import type {
 } from "@elite/contracts";
 import type { PatientRelatedPersonLinkSummary } from "@elite/auth";
 import { AppShell } from "./app-shell.js";
+import type { WorkspaceTheme } from "./workspace-model.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
 import { TodayWorkspace } from "./today-workspace.js";
 import { ReportsWorkspace } from "./reports-workspace.js";
@@ -392,6 +394,28 @@ function useInterfaceLocale(): readonly [
   return [locale, setLocale] as const;
 }
 
+function useWorkspaceTheme(): readonly [
+  WorkspaceTheme,
+  (theme: WorkspaceTheme) => void,
+] {
+  const [theme, setThemeState] = useState<WorkspaceTheme>(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem("elite-clinic-theme");
+    return saved === "dark" || saved === "high-contrast" ? saved : "light";
+  });
+
+  const setTheme = (nextTheme: WorkspaceTheme): void => {
+    setThemeState(nextTheme);
+    window.localStorage.setItem("elite-clinic-theme", nextTheme);
+  };
+
+  useEffect(() => {
+    document.documentElement.dataset["theme"] = theme;
+  }, [theme]);
+
+  return [theme, setTheme] as const;
+}
+
 function formatLocalizedDate(
   value: string | Date,
   locale: InterfaceLocale,
@@ -470,6 +494,153 @@ function ErrorMessage({
       {message}
     </p>
   ) : null;
+}
+
+function receptionistFriendlyError(
+  reason: unknown,
+  fallback: string,
+): string {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  if (message.includes("ELITE_BILLING_PATIENT_NOT_ACTIVE")) {
+    return "This patient is not active. Choose an active patient before creating a bill.";
+  }
+  if (message.includes("ELITE_PATIENT_NOT_FOUND")) {
+    return "We could not find that patient. Search again by name, phone, or patient number.";
+  }
+  if (message.includes("ELITE_APPOINTMENT")) {
+    return "This appointment could not be saved. Check the patient, doctor, and time, then try again.";
+  }
+  if (message.includes("ELITE_AUTH_CAPABILITY_REQUIRED")) {
+    return "You cannot perform this action. Ask an Admin if you believe you should have access.";
+  }
+  return message.startsWith("ELITE_") ? fallback : message || fallback;
+}
+
+function PatientLookup({
+  token,
+  selectedPatient,
+  onSelect,
+  onClear,
+  label = "Find patient",
+  helper = "Search by name, phone, or patient number."
+}: {
+  token: string;
+  selectedPatient: Patient | null;
+  onSelect: (patient: Patient) => void;
+  onClear: () => void;
+  label?: string;
+  helper?: string;
+}): ReactElement {
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<readonly Patient[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const search = async (): Promise<void> => {
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setMatches([]);
+      setError("Enter at least 2 characters to search.");
+      return;
+    }
+    setIsSearching(true);
+    setError(null);
+    try {
+      const nextMatches = await window.elite.patients.search(token, {
+        query: normalized,
+        limit: 8,
+      });
+      setMatches(nextMatches);
+      if (nextMatches.length === 0) {
+        setError("No matching patients found. Check the spelling or number.");
+      }
+    } catch (reason: unknown) {
+      setMatches([]);
+      setError(
+        receptionistFriendlyError(
+          reason,
+          "Unable to search patients. Check the spelling or try again.",
+        ),
+      );
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  if (selectedPatient) {
+    return (
+      <div className="patient-lookup selected" aria-live="polite">
+        <div className="patient-lookup-label-row">
+          <strong>{label}</strong>
+          <span className="status ok">Selected</span>
+        </div>
+        <div className="patient-lookup-selected-card">
+          <span className="patient-avatar" aria-hidden="true">
+            {selectedPatient.nameEn.trim().slice(0, 2).toUpperCase() || "PT"}
+          </span>
+          <span>
+            <strong>{selectedPatient.nameEn}</strong>
+            <small dir="ltr">{selectedPatient.patientId} · {selectedPatient.phone}</small>
+          </span>
+          <button className="button secondary small" type="button" onClick={onClear}>
+            Change patient
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="patient-lookup">
+      <div className="patient-lookup-label-row">
+        <strong>{label}</strong>
+        <small>{helper}</small>
+      </div>
+      <div className="patient-lookup-controls">
+        <input
+          aria-label={label}
+          placeholder="Name, phone, or EL-00001"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void search();
+            }
+          }}
+        />
+        <button className="button secondary" type="button" onClick={() => void search()} disabled={isSearching}>
+          {isSearching ? "Searching…" : "Find patient"}
+        </button>
+      </div>
+      {error ? <p className="form-help error" role="alert">{error}</p> : null}
+      {matches.length > 0 ? (
+        <div className="patient-lookup-results" role="listbox" aria-label="Matching patients">
+          {matches.map((patient) => (
+            <button
+              className="patient-lookup-result"
+              type="button"
+              key={patient.id}
+              onClick={() => {
+                onSelect(patient);
+                setMatches([]);
+                setQuery("");
+              }}
+            >
+              <span>
+                <strong>{patient.nameEn}</strong>
+                <small dir="ltr">{patient.patientId} · {patient.phone}</small>
+              </span>
+              <span className="status info">Select</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function BootstrapForm({
@@ -940,14 +1111,25 @@ function DevicePanel({ token }: { token: string }): ReactElement {
   );
 }
 
+type PatientDetailTab =
+  | "overview"
+  | "visits"
+  | "appointments"
+  | "billing"
+  | "contacts";
+
 function PatientWorkspace({
   token,
   session,
   locale,
+  onOpenAppointments,
+  onOpenBilling,
 }: {
   token: string;
   session: SessionSummary;
   locale: InterfaceLocale;
+  onOpenAppointments: () => void;
+  onOpenBilling: () => void;
 }): ReactElement {
   const [patients, setPatients] = useState<readonly Patient[]>([]);
   const [query, setQuery] = useState("");
@@ -963,11 +1145,17 @@ function PatientWorkspace({
     "quick",
   );
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [patientDetailTab, setPatientDetailTab] =
+    useState<PatientDetailTab>("overview");
   const [relatedLinks, setRelatedLinks] = useState<
     readonly PatientRelatedPersonLinkSummary[]
   >([]);
   const [medicalHistory, setMedicalHistory] = useState<
     readonly MedicalHistoryEntry[]
+  >([]);
+  const [patientAppointments, setPatientAppointments] = useState<
+    readonly Appointment[]
   >([]);
   const [medicalHistoryForm, setMedicalHistoryForm] =
     useState<MedicalHistoryFormState | null>(null);
@@ -1010,7 +1198,10 @@ function PatientWorkspace({
       );
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "Unable to load patients",
+        receptionistFriendlyError(
+          reason,
+          "Patients could not be loaded. Check the search and try again.",
+        ),
       );
     }
   };
@@ -1071,9 +1262,10 @@ function PatientWorkspace({
       await refresh();
     } catch (reasonValue: unknown) {
       setError(
-        reasonValue instanceof Error
-          ? reasonValue.message
-          : "Unable to register patient",
+        receptionistFriendlyError(
+          reasonValue,
+          "The patient could not be registered. Check the name and phone number, then try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -1098,9 +1290,10 @@ function PatientWorkspace({
       await createPatient(input);
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "Unable to check duplicate patients",
+        receptionistFriendlyError(
+          reason,
+          "We could not check for an existing patient. Try again before saving.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -1109,6 +1302,8 @@ function PatientWorkspace({
 
   const selectPatient = async (patient: Patient): Promise<void> => {
     setSelectedPatient(patient);
+    setShowRegistrationForm(false);
+    setPatientDetailTab("overview");
     setNameEn(patient.nameEn);
     setNameAr(patient.nameAr ?? "");
     setDob(patient.dob ?? "");
@@ -1129,6 +1324,17 @@ function PatientWorkspace({
       setMedicalHistory(
         patientCapabilities.canReadClinical
           ? await window.elite.medicalHistory.list(token, patient.patientId)
+          : [],
+      );
+      setPatientAppointments(
+        session.capabilities.includes("appointment.read")
+          ? await window.elite.clinical.listAppointments(
+              token,
+              undefined,
+              undefined,
+              undefined,
+              patient.patientId,
+            )
           : [],
       );
     } catch (reason: unknown) {
@@ -1381,9 +1587,10 @@ function PatientWorkspace({
       await refresh();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "Unable to save patient profile",
+        receptionistFriendlyError(
+          reason,
+          "The patient profile could not be saved. Check the details and try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -1420,8 +1627,11 @@ function PatientWorkspace({
 
   const clearSelectedPatient = (): void => {
     setSelectedPatient(null);
+    setShowRegistrationForm(false);
+    setPatientDetailTab("overview");
     setRelatedLinks([]);
     setMedicalHistory([]);
+    setPatientAppointments([]);
     setMedicalHistoryForm(null);
     setEditingMedicalHistory(null);
     setMedicalHistoryArchiveReason("");
@@ -1453,7 +1663,10 @@ function PatientWorkspace({
       await refresh();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "Unable to archive patient",
+        receptionistFriendlyError(
+          reason,
+          "The patient could not be archived. Ask an Admin if the problem continues.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -1461,7 +1674,7 @@ function PatientWorkspace({
   };
 
   return (
-    <section className="card" aria-labelledby="patients-title">
+    <section className="card patient-workspace" aria-labelledby="patients-title">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Step 4</p>
@@ -1509,9 +1722,19 @@ function PatientWorkspace({
         >
           Search
         </button>
+        {!selectedPatient && !showRegistrationForm ? (
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => setShowRegistrationForm(true)}
+          >
+            Register new patient
+          </button>
+        ) : null}
       </div>
-      <form
-        className="form patient-registration"
+      {showRegistrationForm || selectedPatient ? (
+        <form
+          className="form patient-registration"
         onSubmit={(event) => {
           if (selectedPatient) void saveProfile(event);
           else void submit(event);
@@ -1605,7 +1828,8 @@ function PatientWorkspace({
         <button className="button primary" type="submit" disabled={isBusy}>
           {selectedPatient ? "Check and save profile" : "Check and register"}
         </button>
-      </form>
+        </form>
+      ) : null}
       {duplicateReview.visible ? (
         <div className="duplicate-panel" role="alert">
           <h3>Possible duplicate patients</h3>
@@ -1667,41 +1891,81 @@ function PatientWorkspace({
           </div>
         </div>
       ) : null}
-      <div className="patient-list" aria-live="polite">
+      <div className="patient-profile-table" aria-live="polite">
         {patients.length === 0 ? (
           <p className="muted">No active patients match this search.</p>
         ) : null}
-        {patients.map((patient) => (
-          <article className="patient-row" key={patient.id}>
-            <div>
-              <strong>{patient.patientId}</strong>
-              <span>{patient.nameEn}</span>
-              <small>
-                {patient.phone} · {patient.completenessStatus} ·{" "}
-                {patient.status}
-              </small>
-            </div>
-            <button
-              className="button secondary"
-              type="button"
-              disabled={isBusy}
-              onClick={() => void selectPatient(patient)}
-            >
-              Open profile
-            </button>
-            {patientCapabilities.canArchivePatient &&
-            patient.status === "active" ? (
-              <button
-                className="button danger"
-                type="button"
-                disabled={isBusy}
-                onClick={() => void archive(patient)}
-              >
-                Archive
-              </button>
-            ) : null}
-          </article>
-        ))}
+        {patients.map((patient) => {
+          const initials = patient.nameEn.trim().slice(0, 2).toUpperCase();
+          return (
+            <article className="patient-profile-row" key={patient.id}>
+              <div className="patient-profile-card-heading">
+                <span className="patient-avatar" aria-hidden="true">
+                  {initials || "PT"}
+                </span>
+                <div>
+                  <strong>{patient.nameEn}</strong>
+                  <BidiValue direction="ltr" className="patient-profile-id">
+                    {patient.patientId}
+                  </BidiValue>
+                  {patient.nameAr ? (
+                    <small dir="rtl">{patient.nameAr}</small>
+                  ) : null}
+                </div>
+                <span
+                  className={`status ${patient.status === "active" ? "ok" : "warn"}`}
+                >
+                  {formatStatusLabel(patient.status, locale)}
+                </span>
+              </div>
+              <div className="patient-profile-card-facts">
+                <span>
+                  <small>Phone</small>
+                  <BidiValue direction="ltr">{patient.phone}</BidiValue>
+                </span>
+                <span>
+                  <small>Date of birth</small>
+                  <span>
+                    {patient.dob
+                      ? formatLocalizedDate(patient.dob, locale, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : locale === "ar-EG"
+                        ? "غير مسجل"
+                        : "Not recorded"}
+                  </span>
+                </span>
+                <span>
+                  <small>Record completeness</small>
+                  <span>{formatStatusLabel(patient.completenessStatus, locale)}</span>
+                </span>
+              </div>
+              <div className="patient-profile-card-actions">
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void selectPatient(patient)}
+                >
+                  Open profile
+                </button>
+                {patientCapabilities.canArchivePatient &&
+                patient.status === "active" ? (
+                  <button
+                    className="button danger"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void archive(patient)}
+                  >
+                    Archive
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
       {selectedPatient ? (
         <div className="profile-summary">
@@ -1712,12 +1976,49 @@ function PatientWorkspace({
                 {selectedPatient.patientId} · {selectedPatient.nameEn}
               </h3>
             </div>
-            <span
-              className={`status ${selectedPatient.status === "active" ? "ok" : "warn"}`}
-            >
-              {selectedPatient.status}
-            </span>
+            <div className="button-row">
+              <button
+                className="button secondary small"
+                type="button"
+                onClick={() => setShowRegistrationForm(true)}
+              >
+                Edit profile
+              </button>
+              <span
+                className={`status ${selectedPatient.status === "active" ? "ok" : "warn"}`}
+              >
+                {selectedPatient.status}
+              </span>
+            </div>
           </div>
+          <nav className="patient-detail-tabs" aria-label="Patient profile sections">
+            {([
+              ["overview", "Overview"],
+              ["visits", "Visits"],
+              ["appointments", "Appointments"],
+              ["billing", "Billing"],
+              ["contacts", "Contacts"],
+            ] as const).map(([tab, label]) => {
+              const isClinicalTab = tab === "visits";
+              const isBillingTab = tab === "billing";
+              const disabled =
+                (isClinicalTab && !patientCapabilities.canReadClinical) ||
+                (isBillingTab && !session.capabilities.includes("billing.read"));
+              return (
+                <button
+                  className={`patient-detail-tab${patientDetailTab === tab ? " is-active" : ""}`}
+                  type="button"
+                  key={tab}
+                  disabled={disabled}
+                  aria-selected={patientDetailTab === tab}
+                  onClick={() => setPatientDetailTab(tab)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+          {patientDetailTab === "overview" ? (
           <dl className="status-grid profile-grid">
             <div>
               <dt>English name</dt>
@@ -1738,7 +2039,39 @@ function PatientWorkspace({
               </dd>
             </div>
           </dl>
-          {patientCapabilities.canReadClinical ? (
+          ) : null}
+          {patientDetailTab === "visits" && patientCapabilities.canReadClinical ? (
+            <>
+            <section className="visit-history-panel" aria-labelledby="visit-history-title">
+              <div className="related-person-heading">
+                <div>
+                  <h4 id="visit-history-title">Visit history</h4>
+                  <p className="form-help">Appointments and visit status are shown from the clinic record.</p>
+                </div>
+                <span className="status info">{patientAppointments.length}</span>
+              </div>
+              {patientAppointments.length === 0 ? (
+                <p className="muted">No visits recorded for this patient.</p>
+              ) : (
+                <div className="visit-history-list">
+                  {patientAppointments.map((appointment) => (
+                    <article className="visit-history-row" key={appointment.id}>
+                      <time dateTime={appointment.scheduledStart}>
+                        {formatLocalizedDate(appointment.scheduledStart, locale, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </time>
+                      <div>
+                        <strong>{appointment.visitType}</strong>
+                        <span>{formatStatusLabel(appointment.status, locale)}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
             <section
               className="medical-history-section"
               aria-labelledby="medical-history-title"
@@ -1968,7 +2301,10 @@ function PatientWorkspace({
                 </form>
               ) : null}
             </section>
+            </>
           ) : null}
+          {patientDetailTab === "contacts" ? (
+          <>
           <div className="related-person-heading">
             <h4>Related persons and guardians</h4>
             {patientCapabilities.canManageRelatedPersons ? (
@@ -2236,6 +2572,30 @@ function PatientWorkspace({
               </button>
             </form>
           ) : null}
+          </>
+          ) : null}
+          {patientDetailTab === "appointments" ? (
+            <section className="patient-tab-handoff">
+              <h4>Appointments for this patient</h4>
+              <p>Open the appointment calendar to book, check in, or review this patient’s visits.</p>
+              <button className="button primary" type="button" onClick={onOpenAppointments}>
+                Open appointments
+              </button>
+            </section>
+          ) : null}
+          {patientDetailTab === "billing" ? (
+            <section className="patient-tab-handoff">
+              <h4>Payments for this patient</h4>
+              <p>Open billing to create an invoice, record a payment, or issue a receipt for this patient.</p>
+              {session.capabilities.includes("billing.read") ? (
+                <button className="button primary" type="button" onClick={onOpenBilling}>
+                  Open billing
+                </button>
+              ) : (
+                <p className="muted">Billing is not available for this account.</p>
+              )}
+            </section>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -2344,6 +2704,7 @@ function ClinicalWorkflowWorkspace({
   canExport,
   canSensitiveExport,
   canRevoke,
+  isReceptionist,
 }: {
   token: string;
   canManage: boolean;
@@ -2355,6 +2716,7 @@ function ClinicalWorkflowWorkspace({
   canExport: boolean;
   canSensitiveExport: boolean;
   canRevoke: boolean;
+  isReceptionist: boolean;
 }): ReactElement {
   const [specialties, setSpecialties] = useState<readonly Specialty[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
@@ -2364,6 +2726,8 @@ function ClinicalWorkflowWorkspace({
     [],
   );
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [selectedAppointmentPatient, setSelectedAppointmentPatient] =
+    useState<Patient | null>(null);
   const [icd10Codes, setIcd10Codes] = useState<readonly Icd10Code[]>([]);
   const [selectedAppointment, setSelectedAppointment] =
     useState<Appointment | null>(null);
@@ -2497,6 +2861,7 @@ function ClinicalWorkflowWorkspace({
   const [departmentId, setDepartmentId] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [visitType, setVisitType] = useState("consultation");
+  const [appointmentStep, setAppointmentStep] = useState<1 | 2 | 3 | 4>(1);
   const [scheduledStart, setScheduledStart] = useState("");
   const [specialtyCode, setSpecialtyCode] = useState("");
   const [specialtyName, setSpecialtyName] = useState("");
@@ -2505,6 +2870,7 @@ function ClinicalWorkflowWorkspace({
   const [serviceCode, setServiceCode] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const refresh = async (): Promise<void> => {
@@ -2566,11 +2932,34 @@ function ClinicalWorkflowWorkspace({
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
+    if (!selectedAppointmentPatient) {
+      setError("Choose a patient before booking the appointment.");
+      return;
+    }
+    const proposedStart = new Date(scheduledStart).getTime();
+    const selectedService = services.find((service) => service.id === serviceId);
+    const proposedDuration = selectedService?.durationMinutes ?? 15;
+    const proposedEnd = proposedStart + proposedDuration * 60_000;
+    const hasVisibleConflict = appointments.some((appointment) => {
+      if (appointment.status === "cancelled" || appointment.status === "no-show") {
+        return false;
+      }
+      const appointmentStart = new Date(appointment.scheduledStart).getTime();
+      const appointmentEnd = new Date(appointment.scheduledEnd).getTime();
+      const samePatient = appointment.patientId === selectedAppointmentPatient.patientId;
+      const sameDoctor = Boolean(appointmentDoctorId) && appointment.doctorId === appointmentDoctorId;
+      return (samePatient || sameDoctor) && proposedStart < appointmentEnd && proposedEnd > appointmentStart;
+    });
+    if (hasVisibleConflict) {
+      setError("This patient or doctor already has an appointment at that time. Choose another time or doctor.");
+      return;
+    }
     setIsBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const input: AppointmentCreateInput = {
-        patientId,
+        patientId: selectedAppointmentPatient.patientId,
         departmentId,
         ...(appointmentDoctorId ? { doctorId: appointmentDoctorId } : {}),
         ...(serviceId ? { serviceId } : {}),
@@ -2579,14 +2968,19 @@ function ClinicalWorkflowWorkspace({
         isWalkIn: false,
       };
       await window.elite.clinical.createAppointment(token, input);
+      const bookedPatientName = selectedAppointmentPatient.nameEn;
+      setSelectedAppointmentPatient(null);
       setPatientId("");
       setScheduledStart("");
+      setAppointmentStep(1);
+      setNotice(`Appointment booked for ${bookedPatientName}.`);
       await refresh();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "Unable to create appointment",
+        receptionistFriendlyError(
+          reason,
+          "The appointment could not be saved. Check the details and try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -2595,22 +2989,34 @@ function ClinicalWorkflowWorkspace({
 
   const updateStatus = async (
     appointment: Appointment,
-    status: "arrived" | "in-consultation" | "completed" | "cancelled",
+    status: Appointment["status"],
+    reason = "Updated from front desk appointment workspace",
   ): Promise<void> => {
     setIsBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await window.elite.clinical.updateAppointmentStatus(
         token,
         appointment.id,
-        { status, reason: "Updated from clinical workflow workspace" },
+        { status, reason },
       );
       await refresh();
+      setNotice(
+        status === "arrived"
+          ? "Patient checked in successfully."
+          : status === "no-show"
+            ? "Appointment marked as no-show."
+            : status === "cancelled"
+              ? "Appointment cancelled."
+              : "Appointment status updated.",
+      );
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "Unable to update appointment status",
+        receptionistFriendlyError(
+          reason,
+          "The appointment status could not be updated. Try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -3740,6 +4146,26 @@ function ClinicalWorkflowWorkspace({
   );
   const selectedMonth = parseLocalDate(selectedDate).getMonth();
   const displayedEncounter = selectedEffectiveEncounter ?? selectedEncounter;
+  const continueAppointmentWizard = (): void => {
+    if (appointmentStep === 1 && !selectedAppointmentPatient) {
+      setError("Choose a patient before continuing.");
+      return;
+    }
+    if (appointmentStep === 2 && !departmentId) {
+      setError("Choose a department before continuing.");
+      return;
+    }
+    if (appointmentStep === 3 && !scheduledStart) {
+      setError("Choose the appointment date and time before continuing.");
+      return;
+    }
+    setError(null);
+    setAppointmentStep((current) => (current < 4 ? ((current + 1) as 1 | 2 | 3 | 4) : current));
+  };
+  const previousAppointmentStep = (): void => {
+    setError(null);
+    setAppointmentStep((current) => (current > 1 ? ((current - 1) as 1 | 2 | 3 | 4) : current));
+  };
 
   return (
     <section
@@ -3750,97 +4176,166 @@ function ClinicalWorkflowWorkspace({
       <span id="workspace-settings" className="workspace-anchor" />
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Step 5</p>
-          <h2 id="clinical-workflow-title">Clinical workflow</h2>
+          <p className="eyebrow">Front desk</p>
+          <h2 id="clinical-workflow-title">Appointments and check-in</h2>
         </div>
-        <span className="status ok">Offline-ready</span>
+        <span className="status ok">Saved on this computer</span>
       </div>
       <ErrorMessage message={error} />
+      {notice ? <p className="success" role="status">{notice}</p> : null}
       <form
-        className="appointment-form"
+        className="appointment-form appointment-wizard"
         onSubmit={(event) => void createAppointment(event)}
       >
-        <h3>Reserve appointment</h3>
-        <div className="form-grid">
-          <label>
-            Patient ID
-            <input
-              required
-              placeholder="EL-00001"
-              value={patientId}
-              onChange={(event) => setPatientId(event.target.value)}
-            />
-          </label>
-          <label>
-            Department
-            <select
-              required
-              value={departmentId}
-              onChange={(event) => setDepartmentId(event.target.value)}
-            >
-              <option value="">Select department</option>
-              {departments
-                .filter((item) => item.status === "active")
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nameEn}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            Doctor
-            <select
-              value={appointmentDoctorId}
-              onChange={(event) => setAppointmentDoctorId(event.target.value)}
-            >
-              <option value="">Any available doctor</option>
-              {doctors.map((doctor) => (
-                <option key={doctor.id} value={doctor.id}>
-                  {doctor.displayNameEn}
-                  {doctor.isClinicalApprover ? " · Approver" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Service
-            <select
-              value={serviceId}
-              onChange={(event) => setServiceId(event.target.value)}
-            >
-              <option value="">Default 15-minute slot</option>
-              {services
-                .filter((item) => item.status === "active")
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nameEn} · {item.durationMinutes} min · EGP{" "}
-                    {item.priceEgp}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            Visit type
-            <input
-              required
-              value={visitType}
-              onChange={(event) => setVisitType(event.target.value)}
-            />
-          </label>
-          <label>
-            Start time
-            <input
-              required
-              type="datetime-local"
-              value={scheduledStart}
-              onChange={(event) => setScheduledStart(event.target.value)}
-            />
-          </label>
+        <div className="appointment-wizard-heading">
+          <div>
+            <p className="eyebrow">Step {appointmentStep} of 4</p>
+            <h3>Book an appointment</h3>
+          </div>
+          <ol className="appointment-wizard-steps" aria-label="Appointment steps">
+            {["Patient", "Doctor and service", "Date and time", "Confirm"].map((step, index) => (
+              <li className={appointmentStep === index + 1 ? "is-active" : appointmentStep > index + 1 ? "is-complete" : ""} key={step}>
+                <span>{index + 1}</span>
+                <small>{step}</small>
+              </li>
+            ))}
+          </ol>
         </div>
-        <button className="button primary" type="submit" disabled={isBusy}>
-          Reserve appointment
-        </button>
+        {appointmentStep === 1 ? (
+          <PatientLookup
+            token={token}
+            selectedPatient={selectedAppointmentPatient}
+            onSelect={(patient) => {
+              setSelectedAppointmentPatient(patient);
+              setPatientId(patient.patientId);
+              setError(null);
+            }}
+            onClear={() => {
+              setSelectedAppointmentPatient(null);
+              setPatientId("");
+            }}
+            label="Which patient is this appointment for?"
+            helper="Search by the patient’s name, phone, or patient number."
+          />
+        ) : null}
+        {appointmentStep === 2 ? (
+          <div className="form-grid">
+            <label>
+              Department
+              <select
+                required
+                value={departmentId}
+                onChange={(event) => setDepartmentId(event.target.value)}
+              >
+                <option value="">Select department</option>
+                {departments
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Doctor
+              <select
+                value={appointmentDoctorId}
+                onChange={(event) => setAppointmentDoctorId(event.target.value)}
+              >
+                <option value="">Any available doctor</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.displayNameEn}
+                    {doctor.isClinicalApprover ? " · Approver" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Service
+              <select
+                value={serviceId}
+                onChange={(event) => setServiceId(event.target.value)}
+              >
+                <option value="">Default 15-minute slot</option>
+                {services
+                  .filter((item) => item.status === "active")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nameEn} · {item.durationMinutes} min · EGP{" "}
+                      {item.priceEgp}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {appointmentStep === 3 ? (
+          <div className="form-grid">
+            <label>
+              Visit type
+              <select
+                required
+                value={visitType}
+                onChange={(event) => setVisitType(event.target.value)}
+              >
+                <option value="consultation">Consultation</option>
+                <option value="follow-up">Follow-up</option>
+                <option value="procedure">Procedure</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Start time
+              <input
+                required
+                type="datetime-local"
+                value={scheduledStart}
+                onChange={(event) => setScheduledStart(event.target.value)}
+              />
+            </label>
+          </div>
+        ) : null}
+        {appointmentStep === 4 ? (
+          <div className="appointment-confirmation">
+            <h4>Check the appointment before saving</h4>
+            <dl className="status-grid">
+              <div>
+                <dt>Patient</dt>
+                <dd>{selectedAppointmentPatient?.nameEn ?? "Not selected"}</dd>
+              </div>
+              <div>
+                <dt>Department</dt>
+                <dd>{departments.find((item) => item.id === departmentId)?.nameEn ?? "Not selected"}</dd>
+              </div>
+              <div>
+                <dt>Doctor</dt>
+                <dd>{doctors.find((item) => item.id === appointmentDoctorId)?.displayNameEn ?? "Any available doctor"}</dd>
+              </div>
+              <div>
+                <dt>When</dt>
+                <dd>{scheduledStart ? new Date(scheduledStart).toLocaleString() : "Not selected"}</dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+        <div className="button-row appointment-wizard-actions">
+          {appointmentStep > 1 ? (
+            <button className="button secondary" type="button" onClick={previousAppointmentStep}>
+              Back
+            </button>
+          ) : null}
+          {appointmentStep < 4 ? (
+            <button className="button primary" type="button" onClick={continueAppointmentWizard}>
+              Continue
+            </button>
+          ) : (
+            <button className="button primary" type="submit" disabled={isBusy}>
+              Book appointment
+            </button>
+          )}
+        </div>
       </form>
       {canManage ? (
         <>
@@ -4443,15 +4938,57 @@ function ClinicalWorkflowWorkspace({
                 </button>
               ) : null}
               {appointment.status === "scheduled" ? (
-                <button
-                  className="button secondary"
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => void updateStatus(appointment, "arrived")}
-                >
-                  Check in
-                </button>
-              ) : appointment.status === "arrived" ? (
+                <>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() =>
+                      void updateStatus(
+                        appointment,
+                        "arrived",
+                        "Patient checked in at front desk",
+                      )
+                    }
+                  >
+                    Check in
+                  </button>
+                  {isReceptionist ? (
+                    <>
+                      <button
+                        className="button small secondary"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          void updateStatus(
+                            appointment,
+                            "no-show",
+                            "Patient did not arrive",
+                          )
+                        }
+                      >
+                        Mark no-show
+                      </button>
+                      <button
+                        className="button small danger"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          if (window.confirm("Cancel this appointment?")) {
+                            void updateStatus(
+                              appointment,
+                              "cancelled",
+                              "Cancelled by front desk",
+                            );
+                          }
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : null}
+                </>
+              ) : !isReceptionist && appointment.status === "arrived" ? (
                 <button
                   className="button secondary"
                   type="button"
@@ -4460,17 +4997,19 @@ function ClinicalWorkflowWorkspace({
                     void updateStatus(appointment, "in-consultation")
                   }
                 >
-                  Start
+                  Start consultation
                 </button>
-              ) : appointment.status === "in-consultation" ? (
+              ) : !isReceptionist && appointment.status === "in-consultation" ? (
                 <button
                   className="button primary"
                   type="button"
                   disabled={isBusy}
                   onClick={() => void updateStatus(appointment, "completed")}
                 >
-                  Complete
+                  Complete visit
                 </button>
+              ) : appointment.status === "arrived" ? (
+                <span className="status info">Waiting for clinical team</span>
               ) : null}
             </article>
           ))
@@ -6111,7 +6650,15 @@ function BillingWorkspace({
   const [packages, setPackages] = useState<readonly BillingPackage[]>([]);
   const [services, setServices] = useState<readonly Service[]>([]);
   const [invoices, setInvoices] = useState<readonly BillingInvoice[]>([]);
-  const [patientId, setPatientId] = useState("");
+  const [selectedBillingPatient, setSelectedBillingPatient] =
+    useState<Patient | null>(null);
+  const [billingAppointments, setBillingAppointments] = useState<readonly Appointment[]>([]);
+  const [selectedBillingAppointmentId, setSelectedBillingAppointmentId] = useState("");
+  const [receiptPreview, setReceiptPreview] = useState<{
+    payment: BillingPayment;
+    receipt: BillingReceipt;
+    invoice: BillingInvoice;
+  } | null>(null);
   const [serviceId, setServiceId] = useState("");
   const [packageId, setPackageId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -6146,6 +6693,25 @@ function BillingWorkspace({
   );
   const canWriteBilling = session.capabilities.includes("billing.write");
   const canRefund = session.capabilities.includes("billing.refund");
+
+  const selectBillingPatient = async (patient: Patient): Promise<void> => {
+    setSelectedBillingPatient(patient);
+    setSelectedBillingAppointmentId("");
+    setError(null);
+    try {
+      setBillingAppointments(
+        await window.elite.clinical.listAppointments(
+          token,
+          undefined,
+          undefined,
+          undefined,
+          patient.patientId,
+        ),
+      );
+    } catch {
+      setBillingAppointments([]);
+    }
+  };
 
   const refresh = async (): Promise<void> => {
     setError(null);
@@ -6249,7 +6815,14 @@ function BillingWorkspace({
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
-    if (!patientId || (!serviceId && !packageId)) return;
+    if (!selectedBillingPatient) {
+      setError("Choose a patient before creating the bill.");
+      return;
+    }
+    if (!serviceId && !packageId) {
+      setError("Choose a service or package before creating the bill.");
+      return;
+    }
     setIsBusy(true);
     setError(null);
     setNotice(null);
@@ -6258,7 +6831,10 @@ function BillingWorkspace({
         ? { serviceId, quantity: Number(quantity) }
         : { packageId, quantity: Number(quantity) };
       const input: BillingInvoiceCreateInput = {
-        patientId,
+        patientId: selectedBillingPatient.patientId,
+        ...(selectedBillingAppointmentId
+          ? { appointmentId: selectedBillingAppointmentId }
+          : {}),
         lines: [line],
         discountEgp: Number(discountEgp),
         ...(discountReason.trim()
@@ -6274,7 +6850,10 @@ function BillingWorkspace({
       setNotice(`Invoice ${invoice.invoiceNumber} created.`);
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "Unable to create invoice",
+        receptionistFriendlyError(
+          reason,
+          "The bill could not be created. Check the patient and service, then try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -6300,6 +6879,7 @@ function BillingWorkspace({
       };
       const result = await window.elite.billing.postPayment(token, input);
       const payment = result.payment as BillingPayment;
+      setReceiptPreview(result);
       setRefundPaymentId(payment.id);
       setPaymentAmount("");
       setPaymentReference("");
@@ -6307,7 +6887,10 @@ function BillingWorkspace({
       await refresh();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "Unable to post payment",
+        receptionistFriendlyError(
+          reason,
+          "The payment could not be recorded. Check the amount and try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -6334,7 +6917,10 @@ function BillingWorkspace({
       await refresh();
     } catch (reason: unknown) {
       setError(
-        reason instanceof Error ? reason.message : "Unable to record refund",
+        receptionistFriendlyError(
+          reason,
+          "The payment correction could not be recorded. Check the details and try again.",
+        ),
       );
     } finally {
       setIsBusy(false);
@@ -6345,17 +6931,53 @@ function BillingWorkspace({
     <section className="card" aria-labelledby="billing-title">
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Step 29 · Finance</p>
-          <h2 id="billing-title">Service billing and receipts</h2>
+          <p className="eyebrow">Front desk</p>
+          <h2 id="billing-title">Payments and receipts</h2>
         </div>
-        <span className="status ok">EGP · local-first</span>
+        <span className="status ok">Saved on this computer</span>
       </div>
       <p className="form-help">
-        Prices are captured on the invoice at creation time. Payments, receipts,
-        partial payments, and refunds are recorded as audited ledger events.
+        Choose the patient first, then create a bill or record a payment. Every receipt is saved safely for the clinic.
       </p>
       <ErrorMessage message={error} />
       {notice ? <p className="status ok">{notice}</p> : null}
+      {receiptPreview ? (
+        <section className="receipt-preview" aria-labelledby="receipt-preview-title">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Payment complete</p>
+              <h3 id="receipt-preview-title">Receipt preview</h3>
+            </div>
+            <span className="status ok">{receiptPreview.receipt.receiptNumber}</span>
+          </div>
+          <dl className="status-grid receipt-preview-grid">
+            <div>
+              <dt>Patient</dt>
+              <dd>{selectedBillingPatient?.nameEn ?? receiptPreview.invoice.patientId}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd>{formatEgp(receiptPreview.receipt.amountEgp)}</dd>
+            </div>
+            <div>
+              <dt>Invoice</dt>
+              <dd>{receiptPreview.invoice.invoiceNumber}</dd>
+            </div>
+            <div>
+              <dt>Issued</dt>
+              <dd>{new Date(receiptPreview.receipt.issuedAt).toLocaleString()}</dd>
+            </div>
+          </dl>
+          <div className="button-row">
+            <button className="button primary" type="button" onClick={() => window.print()}>
+              Print / save PDF
+            </button>
+            <button className="button secondary" type="button" onClick={() => setReceiptPreview(null)}>
+              Close preview
+            </button>
+          </div>
+        </section>
+      ) : null}
       <DoctorEarningsPanel token={token} session={session} locale={locale} />
       {canManagePayoutReports ? (
         <section
@@ -6476,36 +7098,40 @@ function BillingWorkspace({
           </button>
         </form>
       ) : null}
-      <div id="workspace-catalog" className="workspace-anchor-section">
-        <DrugCatalogAdminPanel token={token} canManage={canManageCatalog} />
-      </div>
-      <div className="form-section">
-        <h3>Available catalog</h3>
-        <div className="patient-list">
-          {services.map((service) => (
-            <div className="patient-row" key={service.id}>
-              <span>
-                <strong>{service.nameEn}</strong>
-                <small>
-                  {service.code} · {formatEgp(service.priceEgp)}
-                </small>
-              </span>
-              <span className="status ok">Active</span>
+      {canManageCatalog ? (
+        <>
+          <div id="workspace-catalog" className="workspace-anchor-section">
+            <DrugCatalogAdminPanel token={token} canManage={canManageCatalog} />
+          </div>
+          <div className="form-section">
+            <h3>Available catalog</h3>
+            <div className="patient-list">
+              {services.map((service) => (
+                <div className="patient-row" key={service.id}>
+                  <span>
+                    <strong>{service.nameEn}</strong>
+                    <small>
+                      {service.code} · {formatEgp(service.priceEgp)}
+                    </small>
+                  </span>
+                  <span className="status ok">Active</span>
+                </div>
+              ))}
+              {packages.map((pkg) => (
+                <div className="patient-row" key={pkg.id}>
+                  <span>
+                    <strong>{pkg.nameEn}</strong>
+                    <small>
+                      {pkg.code} · {formatEgp(pkg.priceEgp)}
+                    </small>
+                  </span>
+                  <span className="status ok">{pkg.status}</span>
+                </div>
+              ))}
             </div>
-          ))}
-          {packages.map((pkg) => (
-            <div className="patient-row" key={pkg.id}>
-              <span>
-                <strong>{pkg.nameEn}</strong>
-                <small>
-                  {pkg.code} · {formatEgp(pkg.priceEgp)}
-                </small>
-              </span>
-              <span className="status ok">{pkg.status}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        </>
+      ) : null}
       {canWriteBilling ? (
         <form
           className="form-section"
@@ -6513,15 +7139,34 @@ function BillingWorkspace({
         >
           <h3>Create invoice</h3>
           <div className="form-grid">
-            <label>
-              Patient ID
-              <input
-                required
-                placeholder="EL-00001"
-                value={patientId}
-                onChange={(event) => setPatientId(event.target.value)}
-              />
-            </label>
+            <PatientLookup
+              token={token}
+              selectedPatient={selectedBillingPatient}
+              onSelect={(patient) => void selectBillingPatient(patient)}
+              onClear={() => {
+                setSelectedBillingPatient(null);
+                setBillingAppointments([]);
+                setSelectedBillingAppointmentId("");
+              }}
+              label="Which patient is this bill for?"
+              helper="Find the patient before choosing a service or payment."
+            />
+            {billingAppointments.length > 0 ? (
+              <label>
+                Link to appointment (optional)
+                <select
+                  value={selectedBillingAppointmentId}
+                  onChange={(event) => setSelectedBillingAppointmentId(event.target.value)}
+                >
+                  <option value="">No appointment link</option>
+                  {billingAppointments.map((appointment) => (
+                    <option key={appointment.id} value={appointment.id}>
+                      {new Date(appointment.scheduledStart).toLocaleString()} · {appointment.visitType} · {formatStatusLabel(appointment.status, locale)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label>
               Service
               <select
@@ -6946,7 +7591,7 @@ function DoctorWorkspace({
   };
 
   return (
-    <section className="card" aria-labelledby="doctor-workspace-title">
+    <section className="card doctor-workspace" aria-labelledby="doctor-workspace-title">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Staff records</p>
@@ -6960,20 +7605,53 @@ function DoctorWorkspace({
       </p>
       <ErrorMessage message={error} />
       {notice ? <p className="success">{notice}</p> : null}
-      <label>
-        Doctor
-        <select
-          value={selectedDoctorId}
-          onChange={(event) => void loadDoctor(event.target.value)}
-        >
-          <option value="">Select doctor</option>
-          {profiles.map((item) => (
-            <option key={item.doctorId} value={item.doctorId}>
-              {item.displayNameEn}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="doctor-profile-grid" aria-label="Doctor profiles">
+        {profiles.length === 0 ? (
+          <p className="muted">No doctor profiles are available.</p>
+        ) : null}
+        {profiles.map((item) => {
+          const initials = item.displayNameEn.trim().slice(0, 2).toUpperCase();
+          const fee = item.consultationFeeEgp == null
+            ? "Fee not set"
+            : new Intl.NumberFormat("en-EG", {
+                style: "currency",
+                currency: "EGP",
+                maximumFractionDigits: 0,
+              }).format(item.consultationFeeEgp);
+          return (
+            <button
+              className={`doctor-profile-card${selectedDoctorId === item.doctorId ? " is-selected" : ""}`}
+              type="button"
+              disabled={isBusy}
+              aria-pressed={selectedDoctorId === item.doctorId}
+              onClick={() => void loadDoctor(item.doctorId)}
+            >
+              <span className="doctor-profile-card-heading">
+                <span className="doctor-avatar" aria-hidden="true">
+                  {initials || "DR"}
+                </span>
+                <span>
+                  <strong>{item.displayNameEn}</strong>
+                  <small>{item.displayNameAr ?? "Arabic name not recorded"}</small>
+                </span>
+              </span>
+              <span className="doctor-profile-card-facts">
+                <span>{item.specialtyIds.length} specialties</span>
+                <span>{item.clinicRoom ?? "Room not assigned"}</span>
+                <span dir="ltr">{fee}</span>
+              </span>
+              <span className="doctor-profile-card-footer">
+                <span className={`status ${item.isActive ? "ok" : "warn"}`}>
+                  {item.isActive ? "Active" : "Inactive"}
+                </span>
+                <span className="doctor-license-state">
+                  License: {item.licenseVerificationStatus}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
       {profile && form ? (
         <>
           <form
@@ -7362,15 +8040,22 @@ function AuthenticatedView({
   session,
   locale,
   onLocaleChange,
+  theme,
+  onThemeChange,
   onLogout,
 }: {
   token: string;
   session: SessionSummary;
   locale: InterfaceLocale;
   onLocaleChange: (locale: InterfaceLocale) => void;
+  theme: WorkspaceTheme;
+  onThemeChange: (theme: WorkspaceTheme) => void;
   onLogout: () => void;
 }): ReactElement {
   const [error, setError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<string>(() =>
+    window.location.hash.slice(1) || "workspace-overview",
+  );
   const logout = async (): Promise<void> => {
     try {
       await window.elite.auth.logout(token);
@@ -7381,11 +8066,45 @@ function AuthenticatedView({
   };
 
   const openWorkspace = (id: string): void => {
-    window.location.hash = id;
-    document
-      .getElementById(id)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveSection(id);
+    window.history.replaceState(null, "", `#${id}`);
   };
+
+  const canOpenClinicalWorkspace = session.capabilities.some((capability) =>
+    [
+      "appointment.read",
+      "clinical.read",
+      "clinical.write",
+      "clinical.sign",
+      "clinical.approve",
+    ].includes(capability),
+  );
+
+  const activeWorkspaceIsVisible =
+    activeSection === "workspace-overview" ||
+    (activeSection === "workspace-patients" &&
+      session.capabilities.includes("patient.read")) ||
+    (activeSection === "workspace-appointments" &&
+      session.capabilities.includes("appointment.read")) ||
+    (activeSection === "workspace-doctors" &&
+      session.capabilities.includes("doctor.profile.read")) ||
+    (activeSection === "workspace-billing" &&
+      session.capabilities.includes("billing.read")) ||
+    (activeSection === "workspace-reports" &&
+      session.capabilities.includes("reports.read")) ||
+    (activeSection === "workspace-sync" &&
+      session.role === "admin" &&
+      session.capabilities.includes("device.manage")) ||
+    (["workspace-records", "workspace-settings"].includes(activeSection) &&
+      canOpenClinicalWorkspace);
+
+  useEffect(() => {
+    if (!activeWorkspaceIsVisible) {
+      openWorkspace("workspace-overview");
+    }
+  }, [activeWorkspaceIsVisible]);
+
+  const isActiveWorkspace = (id: string): boolean => activeSection === id;
 
   return (
     <AppShell
@@ -7398,6 +8117,11 @@ function AuthenticatedView({
         workingLocally: copy(locale, "workingLocally"),
         encryptedStore: copy(locale, "encryptedStore"),
         interfaceLanguage: copy(locale, "interfaceLanguage"),
+        visualTheme: locale === "ar-EG" ? "المظهر" : "Theme",
+        lightTheme: locale === "ar-EG" ? "فاتح" : "Light",
+        darkTheme: locale === "ar-EG" ? "داكن" : "Dark",
+        highContrastTheme:
+          locale === "ar-EG" ? "تباين عالٍ" : "High contrast",
         signOut: copy(locale, "signOut"),
         workspaceLabel: locale === "ar-EG" ? "مساحة العمل" : "Workspace",
         primaryNavigationLabel:
@@ -7436,11 +8160,16 @@ function AuthenticatedView({
         adminSettingsDetail: copy(locale, "adminSettingsDetail"),
       }}
       onLocaleChange={onLocaleChange}
+      theme={theme}
+      onThemeChange={onThemeChange}
       onLogout={logout}
+      activeSection={activeSection}
+      onSectionChange={openWorkspace}
     >
-      <section className="workspace-stack" aria-label="Clinic workspaces">
+      <section className="workspace-stack workspace-tabs" aria-label="Clinic workspaces">
         <ErrorMessage message={error} />
-        <TodayWorkspace
+        {isActiveWorkspace("workspace-overview") ? (
+          <TodayWorkspace
           token={token}
           session={session}
           locale={locale}
@@ -7476,12 +8205,50 @@ function AuthenticatedView({
             offlineValidDetail: copy(locale, "offlineValidDetail"),
             minuteShort: locale === "ar-EG" ? "دقيقة" : "min",
             quickActions:
-              locale === "ar-EG" ? "اختصارات سريعة" : "Quick actions",
-            openPatients: locale === "ar-EG" ? "فتح المرضى" : "Open patients",
+              session.role === "receptionist"
+                ? locale === "ar-EG"
+                  ? "ماذا تريد أن تفعل؟"
+                  : "What do you need to do?"
+                : locale === "ar-EG"
+                  ? "اختصارات سريعة"
+                  : "Quick actions",
+            quickFindPatient:
+              locale === "ar-EG" ? "البحث عن مريض" : "Find a patient",
+            quickFindPatientDetail:
+              locale === "ar-EG"
+                ? "ابحث بالاسم أو الهاتف أو رقم المريض"
+                : "Search by name, phone, or patient number",
+            quickAppointments:
+              locale === "ar-EG" ? "مواعيد اليوم" : "Today’s appointments",
+            quickAppointmentsDetail:
+              locale === "ar-EG"
+                ? "سجّل الوصول وتابع قائمة الانتظار"
+                : "Check in patients and follow the queue",
+            quickPayment:
+              locale === "ar-EG" ? "استلام دفعة" : "Take a payment",
+            quickPaymentDetail:
+              locale === "ar-EG"
+                ? "اختر المريض وسجّل المبلغ وأصدر الإيصال"
+                : "Choose the patient, record the amount, and issue a receipt",
+            frontDeskView: locale === "ar-EG" ? "الاستقبال" : "Front Desk",
+            allView: locale === "ar-EG" ? "الكل" : "All",
+            departmentFilter: locale === "ar-EG" ? "القسم" : "Department",
+            allDepartments: locale === "ar-EG" ? "كل الأقسام" : "All departments",
+            waitingRoom: locale === "ar-EG" ? "غرفة الانتظار" : "Waiting room",
+            waitingColumn: locale === "ar-EG" ? "في الانتظار" : "Waiting",
+            inConsultationColumn:
+              locale === "ar-EG" ? "داخل الكشف" : "In consultation",
+            completedColumn: locale === "ar-EG" ? "مكتمل" : "Completed",
+            noPatientsInColumn:
+              locale === "ar-EG" ? "لا يوجد مرضى هنا" : "No patients here",
+            openPatients:
+              locale === "ar-EG" ? "البحث عن مريض" : "Find a patient",
             openAppointments:
-              locale === "ar-EG" ? "فتح المواعيد" : "Open appointments",
-            openDoctors: locale === "ar-EG" ? "فتح الأطباء" : "Open doctors",
-            openBilling: locale === "ar-EG" ? "فتح الفوترة" : "Open billing",
+              locale === "ar-EG"
+                ? "مواعيد اليوم"
+                : "Today’s appointments",
+            openDoctors: locale === "ar-EG" ? "الأطباء" : "Doctors",
+            openBilling: locale === "ar-EG" ? "استلام دفعة" : "Take payment",
             scheduledDoctors:
               locale === "ar-EG"
                 ? "الأطباء المجدولون اليوم"
@@ -7523,30 +8290,42 @@ function AuthenticatedView({
           onFindPatient={() => openWorkspace("workspace-patients")}
           onOpenAppointments={() => openWorkspace("workspace-appointments")}
           onOpenDoctors={() => openWorkspace("workspace-doctors")}
-          onOpenBilling={() => openWorkspace("workspace-billing")}
-        />
+            onOpenBilling={() => openWorkspace("workspace-billing")}
+          />
+        ) : null}
         {session.role === "admin" &&
-        session.capabilities.includes("device.manage") ? (
+        session.capabilities.includes("device.manage") &&
+        isActiveWorkspace("workspace-sync") ? (
           <WorkspaceSection id="workspace-sync">
             <DevicePanel token={token} />
           </WorkspaceSection>
         ) : null}
-        {session.capabilities.includes("patient.read") ? (
+        {session.capabilities.includes("patient.read") &&
+        isActiveWorkspace("workspace-patients") ? (
           <WorkspaceSection id="workspace-patients">
-            <PatientWorkspace token={token} session={session} locale={locale} />
+            <PatientWorkspace
+              token={token}
+              session={session}
+              locale={locale}
+              onOpenAppointments={() => openWorkspace("workspace-appointments")}
+              onOpenBilling={() => openWorkspace("workspace-billing")}
+            />
           </WorkspaceSection>
         ) : null}
-        {session.capabilities.includes("billing.read") ? (
+        {session.capabilities.includes("billing.read") &&
+        isActiveWorkspace("workspace-billing") ? (
           <WorkspaceSection id="workspace-billing">
             <BillingWorkspace token={token} session={session} locale={locale} />
           </WorkspaceSection>
         ) : null}
-        {session.capabilities.includes("doctor.profile.read") ? (
+        {session.capabilities.includes("doctor.profile.read") &&
+        isActiveWorkspace("workspace-doctors") ? (
           <WorkspaceSection id="workspace-doctors">
             <DoctorWorkspace token={token} session={session} />
           </WorkspaceSection>
         ) : null}
-        {session.capabilities.includes("reports.read") ? (
+        {session.capabilities.includes("reports.read") &&
+        isActiveWorkspace("workspace-reports") ? (
           <WorkspaceSection id="workspace-reports">
             <ReportsWorkspace
               token={token}
@@ -7593,8 +8372,13 @@ function AuthenticatedView({
             />
           </WorkspaceSection>
         ) : null}
-        {session.capabilities.includes("appointment.read") ? (
-          <WorkspaceSection id="workspace-appointments">
+        {session.capabilities.includes("appointment.read") &&
+        ([
+          "workspace-appointments",
+          "workspace-records",
+          "workspace-settings",
+        ].includes(activeSection)) ? (
+          <WorkspaceSection id={activeSection}>
             <ClinicalWorkflowWorkspace
               token={token}
               canManage={session.capabilities.includes("module.manage")}
@@ -7613,11 +8397,13 @@ function AuthenticatedView({
                 "export.sensitive",
               )}
               canRevoke={session.capabilities.includes("export.revoke")}
+              isReceptionist={session.role === "receptionist"}
             />
           </WorkspaceSection>
         ) : null}
         {session.role === "admin" &&
-        session.capabilities.includes("patient.merge") ? (
+        session.capabilities.includes("patient.merge") &&
+        isActiveWorkspace("workspace-patients") ? (
           <WorkspaceSection id="workspace-patient-review">
             <MergeReviewQueue token={token} />
           </WorkspaceSection>
@@ -7717,6 +8503,7 @@ function LanSyncRecoveryNotice({
 
 function FoundationStatus(): ReactElement {
   const [locale, setLocale] = useInterfaceLocale();
+  const [theme, setTheme] = useWorkspaceTheme();
   const [security, setSecurity] = useState<EliteSecurityStatus | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -7845,6 +8632,8 @@ function FoundationStatus(): ReactElement {
           session={session}
           locale={locale}
           onLocaleChange={setLocale}
+          theme={theme}
+          onThemeChange={setTheme}
           onLogout={handleLogout}
         />
       ) : null}

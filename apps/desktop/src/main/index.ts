@@ -1967,12 +1967,20 @@ function registerIpc(): void {
   );
   registerIpcHandler(
     "clinical:appointments",
-    (_event, token: string, from?: string, to?: string, doctorId?: string) =>
+    (
+      _event,
+      token: string,
+      from?: string,
+      to?: string,
+      doctorId?: string,
+      patientId?: string,
+    ) =>
       requireClinicalService().listAppointments(
         serviceContext(token),
         from,
         to,
         doctorId,
+        patientId,
       ),
   );
   registerIpcHandler(

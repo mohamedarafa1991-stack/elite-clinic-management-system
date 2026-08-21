@@ -148,7 +148,7 @@ interface LocalFoundationDao {
         BillingSummaryEntity::class,
         SyncImportEventEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class EliteDatabase : RoomDatabase() {
@@ -295,6 +295,14 @@ abstract class EliteDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE sync_resource_metadata ADD COLUMN payloadJson TEXT",
+                )
+            }
+        }
+
         fun create(
             context: Context,
             deviceKeyStore: DeviceKeyStore,
@@ -309,7 +317,14 @@ abstract class EliteDatabase : RoomDatabase() {
             check(deviceKeyStore != null) { "Device key store is required" }
             return Room.databaseBuilder(context, EliteDatabase::class.java, "elite-local.db")
                 .openHelperFactory(encryptedFactory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                )
                 .fallbackToDestructiveMigrationOnDowngrade(false)
                 .build()
         }

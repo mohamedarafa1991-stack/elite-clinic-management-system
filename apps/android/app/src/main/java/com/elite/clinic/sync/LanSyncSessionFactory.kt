@@ -70,7 +70,7 @@ class LanSyncSessionFactory(
         require(!requestedInstant.isAfter(Instant.now().plusSeconds(30))) {
             "ELITE_LAN_SESSION_REQUESTED_AT_IN_FUTURE"
         }
-        require(requestedScopes.isNotEmpty() && requestedScopes.size <= 6) {
+        require(requestedScopes.isNotEmpty() && requestedScopes.size <= 7) {
             "ELITE_LAN_SESSION_SCOPES_INVALID"
         }
         require(requestedScopes.distinct().size == requestedScopes.size) {

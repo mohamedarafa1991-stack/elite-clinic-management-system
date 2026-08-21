@@ -576,16 +576,18 @@ export class ClinicalWorkflowService {
     from?: string,
     to?: string,
     doctorId?: string,
+    patientId?: string,
   ): readonly Appointment[] {
     requireCapability(context, "appointment.read");
     const query = appointmentCalendarQuerySchema.parse({
       ...(from ? { from } : {}),
       ...(to ? { to } : {}),
       ...(doctorId ? { doctorId } : {}),
+      ...(patientId ? { patientId } : {}),
     });
     const rows = this.database.raw
       .prepare(
-        "SELECT a.*, p.patient_id AS patient_display_id FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE (? IS NULL OR a.scheduled_start >= ?) AND (? IS NULL OR a.scheduled_start < ?) AND (? IS NULL OR a.doctor_id = ?) ORDER BY a.scheduled_start",
+        "SELECT a.*, p.patient_id AS patient_display_id FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE (? IS NULL OR a.scheduled_start >= ?) AND (? IS NULL OR a.scheduled_start < ?) AND (? IS NULL OR a.doctor_id = ?) AND (? IS NULL OR p.patient_id = ?) ORDER BY a.scheduled_start",
       )
       .all(
         query.from ?? null,
@@ -594,6 +596,8 @@ export class ClinicalWorkflowService {
         query.to ?? null,
         query.doctorId ?? null,
         query.doctorId ?? null,
+        query.patientId ?? null,
+        query.patientId ?? null,
       ) as Array<Record<string, any>>;
     return rows.map(mapAppointment);
   }

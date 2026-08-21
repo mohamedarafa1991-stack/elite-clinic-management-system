@@ -26,7 +26,7 @@ class SyncConnectionProfileRepository(
         val offlineAccessUntil = parseInstant(entity.offlineAccessUntil) ?: return null
         if (!expiresAt.isAfter(now) || !offlineAccessUntil.isAfter(now)) return null
         val scopes = parseScopes(entity.allowedScopesJson)
-        if (scopes.isEmpty() || scopes.size > 6) return null
+        if (scopes.isEmpty() || scopes.size > 7) return null
         return ActiveSyncConnectionProfile(
             entity = entity,
             policy = SyncDevicePolicy(

@@ -62,6 +62,7 @@ class SyncRepository(
                         payloadHash = change.getString("payloadHash"),
                         operation = operation,
                         redacted = operation == "redact" || payload == null,
+                        payloadJson = payload?.toString(),
                     ),
                 )
                 if (verification.scope == "billing-summary" && resourceType == "BillingInvoice") {

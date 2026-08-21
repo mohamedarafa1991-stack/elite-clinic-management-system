@@ -58,7 +58,7 @@ function requireReason(reason: string): string {
 
 function parseScopes(value: string): readonly SyncScope[] {
   const parsed = JSON.parse(value) as unknown;
-  const result = syncScopeSchema.array().max(6).safeParse(parsed);
+  const result = syncScopeSchema.array().max(7).safeParse(parsed);
   if (!result.success) {
     throw new Error(
       "ELITE_SYNC_POLICY_CORRUPT: allowed synchronization scopes are invalid",
@@ -69,6 +69,18 @@ function parseScopes(value: string): readonly SyncScope[] {
 
 function payloadHash(payload: Record<string, unknown>): string {
   return sha256(stableJson(payload));
+}
+
+function jsonStringArray(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 interface SyncCursor {
@@ -699,6 +711,75 @@ export class SynchronizationService {
         ),
       };
     }
+    if (scope === "doctor-summary") {
+      if (!context.capabilities.includes("doctor.profile.read")) {
+        throw new Error(
+          "ELITE_SYNC_SCOPE_DENIED: doctor profile summary requires doctor-profile-read capability",
+        );
+      }
+      const filter = cursorPredicate(
+        "COALESCE(dp.updated_at, u.updated_at)",
+        "u.id",
+        cursor,
+      );
+      const rows = this.database.raw
+        .prepare(
+          `SELECT u.id, u.display_name_en AS displayNameEn, u.display_name_ar AS displayNameAr,
+                  u.is_clinical_approver AS isClinicalApprover,
+                  u.updated_at AS userUpdatedAt, dp.professional_registration_number AS professionalRegistrationNumber,
+                  dp.license_expiry AS licenseExpiry, dp.license_verification_status AS licenseVerificationStatus,
+                  dp.specialty_ids_json AS specialtyIdsJson, dp.department_ids_json AS departmentIdsJson,
+                  dp.qualifications, dp.biography, dp.languages_json AS languagesJson,
+                  dp.phone, dp.email, dp.clinic_room AS clinicRoom,
+                  dp.consultation_fee_egp AS consultationFeeEgp,
+                  COALESCE(dp.updated_at, u.updated_at) AS updatedAt,
+                  COALESCE(dp.version, 1) AS version,
+                  COALESCE((SELECT COUNT(*) FROM doctor_documents d
+                    WHERE d.doctor_id = u.id AND d.status = 'active'), 0) AS documentCount
+           FROM users u LEFT JOIN doctor_profiles dp ON dp.doctor_id = u.id
+           WHERE u.role = 'doctor' AND u.is_active = 1${filter.sql}
+           ORDER BY updatedAt ASC, u.id ASC LIMIT ?`,
+        )
+        .all(...filter.params, queryLimit) as Row[];
+      const page = pageRows(rows, limit, scope, cursor);
+      return {
+        ...page,
+        fullSyncRequired: false,
+        changes: page.rows.map((row) =>
+          this.change(
+            "DoctorProfile",
+            String(row.id),
+            Number(row.version),
+            String(row.updatedAt),
+            {
+              doctorId: row.id,
+              displayNameEn: row.displayNameEn,
+              ...(row.displayNameAr ? { displayNameAr: row.displayNameAr } : {}),
+              ...(row.professionalRegistrationNumber
+                ? { professionalRegistrationNumber: row.professionalRegistrationNumber }
+                : {}),
+              ...(row.licenseExpiry ? { licenseExpiry: row.licenseExpiry } : {}),
+              licenseVerificationStatus: row.licenseVerificationStatus ?? "unverified",
+              specialtyIds: jsonStringArray(row.specialtyIdsJson),
+              departmentIds: jsonStringArray(row.departmentIdsJson),
+              ...(row.qualifications ? { qualifications: row.qualifications } : {}),
+              ...(row.biography ? { biography: row.biography } : {}),
+              languages: jsonStringArray(row.languagesJson),
+              ...(row.phone ? { phone: row.phone } : {}),
+              ...(row.email ? { email: row.email } : {}),
+              ...(row.clinicRoom ? { clinicRoom: row.clinicRoom } : {}),
+              ...(row.consultationFeeEgp != null
+                ? { consultationFeeEgp: Number(row.consultationFeeEgp) }
+                : {}),
+              isClinicalApprover: Boolean(row.isClinicalApprover),
+              isActive: true,
+              updatedAt: row.updatedAt,
+              documentCount: Number(row.documentCount),
+            },
+          ),
+        ),
+      };
+    }
     if (scope === "billing-summary") {
       if (!context.capabilities.includes("billing.read")) {
         throw new Error(
@@ -793,7 +874,8 @@ export class SynchronizationService {
       | "Patient"
       | "Encounter"
       | "ExportPackage"
-      | "BillingInvoice",
+      | "BillingInvoice"
+      | "DoctorProfile",
     resourceId: string,
     version: number,
     updatedAt: string,

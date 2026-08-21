@@ -29,6 +29,7 @@ data class SyncResourceMetadataEntity(
     val payloadHash: String,
     val operation: String,
     val redacted: Boolean,
+    val payloadJson: String? = null,
 )
 
 @Entity(

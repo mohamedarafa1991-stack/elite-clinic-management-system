@@ -7,6 +7,7 @@ import type {
 } from "@elite/contracts";
 
 export type WorkspaceLocale = "en-EG" | "ar-EG";
+export type WorkspaceTheme = "light" | "dark" | "high-contrast";
 
 export interface PatientContextModel {
   primaryName: string;

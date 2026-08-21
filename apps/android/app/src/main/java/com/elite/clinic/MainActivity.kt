@@ -66,7 +66,7 @@ class MainActivity : FragmentActivity() {
                             onPin = ::unlockWithPin,
                             onBiometric = ::launchBiometricPrompt,
                         )
-                        else -> DoctorDocumentWorkspace(application)
+                        else -> ClinicWorkspace(application)
                     }
                 }
             }

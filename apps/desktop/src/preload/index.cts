@@ -607,6 +607,7 @@ const eliteApi = {
       from?: string,
       to?: string,
       doctorId?: string,
+      patientId?: string,
     ) =>
       ipcRenderer.invoke(
         "clinical:appointments",
@@ -614,6 +615,7 @@ const eliteApi = {
         from,
         to,
         doctorId,
+        patientId,
       ) as Promise<readonly Appointment[]>,
     createAppointment: (token: string, input: AppointmentCreateInput) =>
       ipcRenderer.invoke(
