@@ -19,9 +19,7 @@ if (mode === "win" && process.platform !== "win32") {
 
 function quoteWindowsArgument(value) {
   const text = String(value);
-  return /[\s"]/.test(text)
-    ? `"${text.replaceAll('"', '\\"')}"`
-    : text;
+  return /[\s"]/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text;
 }
 
 function run(command, args) {
@@ -42,7 +40,19 @@ function run(command, args) {
   execFileSync(command, args, { cwd: root, stdio: "inherit" });
 }
 
-rmSync(staging, { recursive: true, force: true });
+try {
+  rmSync(staging, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 500,
+  });
+} catch (error) {
+  throw new Error(
+    `DESKTOP_PACKAGE_STAGING_LOCKED: close the Elite Clinic app and any Node/electron-builder process, then retry packaging: ${staging}`,
+    { cause: error },
+  );
+}
 mkdirSync(join(root, ".packaging"), { recursive: true });
 
 run("pnpm", ["build:packages"]);
