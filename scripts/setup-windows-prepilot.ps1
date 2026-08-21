@@ -61,7 +61,16 @@ function Get-ToolVersion {
         [string]$Name,
         [string[]]$Arguments
     )
-    $output = (& $Name @Arguments 2>&1 | Out-String).Trim()
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Java writes -version to stderr on Windows; merge it into the captured output
+        # without allowing the global Stop policy to turn valid version output into a failure.
+        $ErrorActionPreference = "Continue"
+        $output = (& $Name @Arguments 2>&1 | Out-String).Trim()
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     Add-Content -LiteralPath $logPath -Value $output
     return $output
 }
