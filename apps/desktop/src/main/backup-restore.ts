@@ -44,7 +44,9 @@ function sha256(path: string): string {
 function collectFiles(root: string, relative = ""): BackupFile[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const relativePath = relative ? join(relative, entry.name) : entry.name;
+    const relativePath = (
+      relative ? join(relative, entry.name) : entry.name
+    ).replaceAll("\\", "/");
     const absolutePath = join(root, entry.name);
     if (entry.isDirectory()) return collectFiles(absolutePath, relativePath);
     const stats = statSync(absolutePath);
