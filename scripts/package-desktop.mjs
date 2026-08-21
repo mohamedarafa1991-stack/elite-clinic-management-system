@@ -14,7 +14,9 @@ if (mode === "win" && process.platform !== "win32") {
 }
 
 function run(command, args) {
-  execFileSync(command, args, { cwd: root, stdio: "inherit" });
+  const executable =
+    process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
+  execFileSync(executable, args, { cwd: root, stdio: "inherit" });
 }
 
 rmSync(staging, { recursive: true, force: true });
