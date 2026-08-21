@@ -75,6 +75,7 @@ import { AppShell } from "./app-shell.js";
 import { PatientContextBanner } from "./patient-context-banner.js";
 import { TodayWorkspace } from "./today-workspace.js";
 import { ReportsWorkspace } from "./reports-workspace.js";
+import { DoctorEarningsPanel } from "./doctor-earnings-panel.js";
 import { DrugCatalogAdminPanel } from "./drug-catalog-admin-panel.js";
 import {
   buildRelatedPersonInputs,
@@ -6099,9 +6100,11 @@ function formatEgp(amount: number): string {
 function BillingWorkspace({
   token,
   session,
+  locale,
 }: {
   token: string;
   session: SessionSummary;
+  locale: InterfaceLocale;
 }): ReactElement {
   const [packages, setPackages] = useState<readonly BillingPackage[]>([]);
   const [services, setServices] = useState<readonly Service[]>([]);
@@ -6299,6 +6302,7 @@ function BillingWorkspace({
       </p>
       <ErrorMessage message={error} />
       {notice ? <p className="status ok">{notice}</p> : null}
+      <DoctorEarningsPanel token={token} session={session} locale={locale} />
       {canManageCatalog ? (
         <form
           className="form-section"
@@ -7415,7 +7419,7 @@ function AuthenticatedView({
         ) : null}
         {session.capabilities.includes("billing.read") ? (
           <WorkspaceSection id="workspace-billing">
-            <BillingWorkspace token={token} session={session} />
+            <BillingWorkspace token={token} session={session} locale={locale} />
           </WorkspaceSection>
         ) : null}
         {session.capabilities.includes("doctor.profile.read") ? (

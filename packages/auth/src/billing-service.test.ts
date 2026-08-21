@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { roleCapabilities } from "@elite/contracts";
 import { openDatabase } from "@elite/database";
 import { BillingService } from "./billing-service.js";
 import { ClinicalWorkflowService } from "./clinical-service.js";
@@ -43,6 +44,140 @@ async function createFixture() {
 }
 
 describe("Step 29 billing service", () => {
+  it("snapshots doctor fees and calculates collected earnings with refund adjustments", async () => {
+    const fixture = await createFixture();
+    const doctorId = "synthetic-doctor-earnings";
+    try {
+      fixture.database.raw
+        .prepare(
+          `INSERT INTO users
+           (id, username, display_name_en, display_name_ar, role, capabilities_json,
+            is_clinical_approver, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, 'doctor', ?, 0, 1, ?, ?)`,
+        )
+        .run(
+          doctorId,
+          "doctor.synthetic.earnings",
+          "Synthetic Earnings Doctor",
+          JSON.stringify(roleCapabilities.doctor),
+          new Date().toISOString(),
+          new Date().toISOString(),
+        );
+      const doctor: SessionContext = {
+        ...fixture.context,
+        userId: doctorId,
+        username: "doctor.synthetic.earnings",
+        role: "doctor",
+        capabilities: roleCapabilities.doctor,
+      };
+      const specialty = fixture.clinical.createSpecialty(fixture.context, {
+        code: "SYN-EARN",
+        nameEn: "Synthetic Earnings",
+      });
+      const department = fixture.clinical.createDepartment(fixture.context, {
+        specialtyId: specialty.id,
+        code: "SYN-EARN-DEP",
+        nameEn: "Synthetic Earnings Department",
+      });
+      const service = fixture.clinical.createService(fixture.context, {
+        departmentId: department.id,
+        code: "EARN-CONSULT",
+        nameEn: "Synthetic Earnings Consultation",
+        durationMinutes: 30,
+        priceEgp: 300,
+      });
+      const patient = fixture.patients.registerPatient(fixture.context, {
+        registrationMode: "full",
+        nameEn: "Synthetic Earnings Patient",
+        phone: "+201000000098",
+      });
+      const appointment = fixture.clinical.createAppointment(fixture.context, {
+        patientId: patient.patient.patientId,
+        departmentId: department.id,
+        serviceId: service.id,
+        doctorId,
+        scheduledStart: "2030-01-05T10:00:00.000Z",
+        visitType: "consultation",
+        isWalkIn: false,
+      });
+      const rule = fixture.billing.createCompensationRule(fixture.context, {
+        doctorId,
+        serviceId: service.id,
+        feeEgp: 500,
+        compensationType: "percentage",
+        shareBps: 6000,
+        effectiveFrom: "2020-01-01T00:00:00.000Z",
+      });
+      expect(rule).toMatchObject({
+        doctorId,
+        serviceId: service.id,
+        feeEgp: 500,
+        compensationType: "percentage",
+        shareBps: 6000,
+      });
+      const invoice = fixture.billing.createInvoice(fixture.context, {
+        patientId: patient.patient.patientId,
+        appointmentId: appointment.id,
+        lines: [{ serviceId: service.id, quantity: 1 }],
+        discountEgp: 0,
+      });
+      expect(invoice).toMatchObject({
+        subtotalEgp: 500,
+        totalEgp: 500,
+        lines: [
+          expect.objectContaining({
+            doctorId,
+            doctorFeeEgp: 500,
+            compensationType: "percentage",
+            compensationShareBps: 6000,
+          }),
+        ],
+      });
+      const receptionist: SessionContext = {
+        ...fixture.context,
+        role: "receptionist",
+        capabilities: roleCapabilities.receptionist,
+      };
+      const restrictedInvoice = fixture.billing.getInvoice(
+        receptionist,
+        invoice.id,
+      );
+      expect(restrictedInvoice.lines[0]).not.toHaveProperty("doctorId");
+      expect(restrictedInvoice.lines[0]).not.toHaveProperty("doctorFeeEgp");
+      const firstPayment = fixture.billing.postPayment(fixture.context, {
+        invoiceId: invoice.id,
+        amountEgp: 250,
+        method: "cash",
+      });
+      fixture.billing.postPayment(fixture.context, {
+        invoiceId: invoice.id,
+        amountEgp: 250,
+        method: "card",
+      });
+      fixture.billing.refundPayment(fixture.context, {
+        paymentId: firstPayment.payment.id,
+        amountEgp: 100,
+        reason: "Synthetic earnings adjustment",
+      });
+      const earnings = fixture.billing.getDoctorEarnings(doctor);
+      expect(earnings.monthly.at(-1)).toMatchObject({
+        collectedEgp: 500,
+        refundedEgp: 100,
+        earningsEgp: 240,
+        clinicRetainedEgp: 160,
+        invoiceCount: 1,
+      });
+      expect(() =>
+        fixture.billing.getDoctorEarnings(doctor, fixture.context.userId),
+      ).toThrow("ELITE_BILLING_EARNINGS_OWNER_REQUIRED");
+      expect(() =>
+        fixture.billing.getDoctorEarnings(receptionist, doctorId),
+      ).toThrow("ELITE_AUTH_CAPABILITY_REQUIRED: billing.earnings.read");
+    } finally {
+      fixture.database.close();
+    }
+  });
+
   it("creates an EGP invoice, supports partial payment, receipts, and refunds", async () => {
     const fixture = await createFixture();
     try {

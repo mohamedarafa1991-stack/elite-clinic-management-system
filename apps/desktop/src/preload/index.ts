@@ -59,6 +59,9 @@ import type {
   BillingRefund,
   BillingRefundInput,
   BillingDashboardSummary,
+  BillingDoctorCompensationRule,
+  BillingDoctorCompensationRuleInput,
+  DoctorEarningsAnalytics,
   ReportsAnalytics,
   Schedule,
   ScheduleInput,
@@ -710,6 +713,27 @@ const eliteApi = {
         "billing:dashboard-summary",
         token,
       ) as Promise<BillingDashboardSummary>,
+    listCompensationRules: (token: string, doctorId?: string) =>
+      ipcRenderer.invoke(
+        "billing:compensation-rules",
+        token,
+        doctorId,
+      ) as Promise<readonly BillingDoctorCompensationRule[]>,
+    createCompensationRule: (
+      token: string,
+      input: BillingDoctorCompensationRuleInput,
+    ) =>
+      ipcRenderer.invoke(
+        "billing:compensation-rule-create",
+        token,
+        input,
+      ) as Promise<BillingDoctorCompensationRule>,
+    getDoctorEarnings: (token: string, doctorId?: string) =>
+      ipcRenderer.invoke(
+        "billing:doctor-earnings",
+        token,
+        doctorId,
+      ) as Promise<DoctorEarningsAnalytics>,
     createInvoice: (token: string, input: BillingInvoiceCreateInput) =>
       ipcRenderer.invoke(
         "billing:invoice-create",

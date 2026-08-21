@@ -1472,6 +1472,62 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         AND instr(capabilities_json, '"reports.read"') = 0;
     `,
   },
+  {
+    version: 24,
+    name: "doctor-compensation-and-earnings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS billing_doctor_compensation_rules (
+        id TEXT PRIMARY KEY NOT NULL,
+        doctor_id TEXT NOT NULL REFERENCES users(id),
+        service_id TEXT NOT NULL REFERENCES services(id),
+        fee_egp INTEGER NOT NULL CHECK (fee_egp >= 0),
+        compensation_type TEXT NOT NULL CHECK (compensation_type IN ('percentage', 'fixed')),
+        share_bps INTEGER CHECK (share_bps IS NULL OR share_bps BETWEEN 0 AND 10000),
+        share_amount_egp INTEGER CHECK (share_amount_egp IS NULL OR share_amount_egp >= 0),
+        effective_from TEXT NOT NULL,
+        effective_to TEXT,
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1,
+        CHECK (effective_to IS NULL OR effective_to > effective_from),
+        CHECK (
+          (compensation_type = 'percentage' AND share_bps IS NOT NULL AND share_amount_egp IS NULL)
+          OR (compensation_type = 'fixed' AND share_bps IS NULL AND share_amount_egp IS NOT NULL)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_compensation_rules_lookup
+        ON billing_doctor_compensation_rules(doctor_id, service_id, effective_from, effective_to);
+      ALTER TABLE billing_invoice_lines ADD COLUMN doctor_id TEXT REFERENCES users(id);
+      ALTER TABLE billing_invoice_lines ADD COLUMN doctor_fee_egp INTEGER CHECK (doctor_fee_egp IS NULL OR doctor_fee_egp >= 0);
+      ALTER TABLE billing_invoice_lines ADD COLUMN compensation_type TEXT CHECK (compensation_type IS NULL OR compensation_type IN ('percentage', 'fixed'));
+      ALTER TABLE billing_invoice_lines ADD COLUMN compensation_share_bps INTEGER CHECK (compensation_share_bps IS NULL OR compensation_share_bps BETWEEN 0 AND 10000);
+      ALTER TABLE billing_invoice_lines ADD COLUMN compensation_share_amount_egp INTEGER CHECK (compensation_share_amount_egp IS NULL OR compensation_share_amount_egp >= 0);
+      CREATE INDEX IF NOT EXISTS idx_billing_invoice_lines_doctor
+        ON billing_invoice_lines(doctor_id, invoice_id);
+      CREATE TABLE IF NOT EXISTS billing_doctor_earnings (
+        id TEXT PRIMARY KEY NOT NULL,
+        invoice_line_id TEXT NOT NULL REFERENCES billing_invoice_lines(id),
+        doctor_id TEXT NOT NULL REFERENCES users(id),
+        invoice_id TEXT NOT NULL REFERENCES billing_invoices(id),
+        payment_id TEXT REFERENCES billing_payments(id),
+        refund_id TEXT REFERENCES billing_refunds(id),
+        event_type TEXT NOT NULL CHECK (event_type IN ('payment', 'refund')),
+        allocated_amount_egp INTEGER NOT NULL CHECK (allocated_amount_egp >= 0),
+        amount_egp INTEGER NOT NULL CHECK (amount_egp >= 0),
+        event_at TEXT NOT NULL,
+        CHECK ((event_type = 'payment' AND payment_id IS NOT NULL AND refund_id IS NULL)
+          OR (event_type = 'refund' AND refund_id IS NOT NULL AND payment_id IS NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_billing_doctor_earnings_doctor_event
+        ON billing_doctor_earnings(doctor_id, event_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_doctor_earnings_payment_line
+        ON billing_doctor_earnings(payment_id, invoice_line_id)
+        WHERE payment_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_doctor_earnings_refund_line
+        ON billing_doctor_earnings(refund_id, invoice_line_id)
+        WHERE refund_id IS NOT NULL;
+    `,
+  },
 ];
 
 function now(): string {

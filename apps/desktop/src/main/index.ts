@@ -52,6 +52,7 @@ import type { LanSyncStatus } from "../preload/index.js";
 import {
   appointmentCreateInputSchema,
   appointmentStatusUpdateSchema,
+  billingDoctorCompensationRuleInputSchema,
   billingInvoiceCreateInputSchema,
   billingPackageInputSchema,
   billingPaymentInputSchema,
@@ -1589,6 +1590,30 @@ function registerIpc(): void {
   );
   registerIpcHandler("billing:dashboard-summary", (_event, token: string) =>
     requireBillingService().getDashboardSummary(serviceContext(token)),
+  );
+  registerIpcHandler(
+    "billing:compensation-rules",
+    (_event, token: string, doctorId?: string) =>
+      requireBillingService().listCompensationRules(
+        serviceContext(token),
+        doctorId,
+      ),
+  );
+  registerIpcHandler(
+    "billing:compensation-rule-create",
+    (_event, token: string, input: unknown) =>
+      requireBillingService().createCompensationRule(
+        serviceContext(token),
+        parseIpcInput(billingDoctorCompensationRuleInputSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "billing:doctor-earnings",
+    (_event, token: string, doctorId?: string) =>
+      requireBillingService().getDoctorEarnings(
+        serviceContext(token),
+        doctorId,
+      ),
   );
   registerIpcHandler("reports:analytics", (_event, token: string) =>
     requireReportsService().getAnalytics(serviceContext(token)),

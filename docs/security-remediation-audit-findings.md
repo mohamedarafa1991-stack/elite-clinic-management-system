@@ -43,16 +43,16 @@ This is the safe boundary supported by the current SQLCipher API. The factory’
 
 The final unified readiness run passed all eight local gates:
 
-| Gate                                                     | Result                                                                                                                        |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| TypeScript contract, database, domain, and desktop tests | Passed; the authentication suite now contains 51 tests.                                                                       |
-| TypeScript typecheck                                     | Passed.                                                                                                                       |
-| Desktop production build                                 | Passed.                                                                                                                       |
-| Existing desktop archive verification                    | Passed.                                                                                                                       |
-| Android release pipeline                                 | Passed; JVM tests, lint, release APK assembly, static checks, and archive checks succeeded.                                   |
-| Synthetic clinic-day rehearsal                           | Passed; migration 23, billing, document vault, six sync scopes, offline queue, and encrypted backup/restore checks succeeded. |
-| Formatting                                               | Passed.                                                                                                                       |
-| Git whitespace validation                                | Passed.                                                                                                                       |
+| Gate                                                     | Result                                                                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript contract, database, domain, and desktop tests | Passed; the authentication suite now contains 51 tests.                                                                                            |
+| TypeScript typecheck                                     | Passed.                                                                                                                                            |
+| Desktop production build                                 | Passed.                                                                                                                                            |
+| Existing desktop archive verification                    | Passed.                                                                                                                                            |
+| Android release pipeline                                 | Passed; JVM tests, lint, release APK assembly, static checks, and archive checks succeeded.                                                        |
+| Synthetic clinic-day rehearsal                           | Passed; migration 24, billing, doctor compensation, document vault, six sync scopes, offline queue, and encrypted backup/restore checks succeeded. |
+| Formatting                                               | Passed.                                                                                                                                            |
+| Git whitespace validation                                | Passed.                                                                                                                                            |
 
 The local report intentionally retains **23 physical scenario gates as pending**, covering the complete workstation/device matrix. These include Windows installer/key/backup/restore behavior, Android offline policy and Keystore behavior, two-device LAN synchronization, `FLAG_SECURE`, process death, picker providers, document no-persistence, signed APK lifecycle, and device revocation/re-enrollment. The full execution order and evidence templates are in the workstation/device validation matrix.[2]
 

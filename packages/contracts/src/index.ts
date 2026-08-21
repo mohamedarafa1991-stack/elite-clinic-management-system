@@ -27,6 +27,8 @@ export const capabilitySchema = z.enum([
   "billing.read",
   "billing.write",
   "billing.refund",
+  "billing.compensation.manage",
+  "billing.earnings.read",
   "staff.manage",
   "device.manage",
   "backup.manage",
@@ -68,6 +70,8 @@ export const roleCapabilities = {
     "billing.read",
     "billing.write",
     "billing.refund",
+    "billing.compensation.manage",
+    "billing.earnings.read",
     "staff.manage",
     "device.manage",
     "backup.manage",
@@ -104,6 +108,7 @@ export const roleCapabilities = {
     "appointment.write",
     "billing.read",
     "billing.write",
+    "billing.earnings.read",
     "export.manage",
     "export.governance.request",
     "sync.read",
@@ -1841,9 +1846,72 @@ export const billingPackageSchema = billingPackageInputSchema
     version: z.number().int().positive(),
   });
 export type BillingPackage = z.infer<typeof billingPackageSchema>;
+export const billingCompensationTypeSchema = z.enum(["percentage", "fixed"]);
+export type BillingCompensationType = z.infer<
+  typeof billingCompensationTypeSchema
+>;
+
+export const billingDoctorCompensationRuleInputSchema = z
+  .object({
+    doctorId: opaqueIdSchema,
+    serviceId: opaqueIdSchema,
+    feeEgp: z.number().int().nonnegative(),
+    compensationType: billingCompensationTypeSchema,
+    shareBps: z.number().int().min(0).max(10_000).optional(),
+    shareAmountEgp: z.number().int().nonnegative().optional(),
+    effectiveFrom: isoDateTimeSchema,
+    effectiveTo: isoDateTimeSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.compensationType === "percentage" &&
+      value.shareBps === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["shareBps"],
+        message: "Percentage rules require shareBps",
+      });
+    }
+    if (
+      value.compensationType === "fixed" &&
+      value.shareAmountEgp === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["shareAmountEgp"],
+        message: "Fixed rules require shareAmountEgp",
+      });
+    }
+    if (value.effectiveTo && value.effectiveTo <= value.effectiveFrom) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["effectiveTo"],
+        message: "effectiveTo must be after effectiveFrom",
+      });
+    }
+  });
+export type BillingDoctorCompensationRuleInput = z.infer<
+  typeof billingDoctorCompensationRuleInputSchema
+>;
+
+export const billingDoctorCompensationRuleSchema =
+  billingDoctorCompensationRuleInputSchema.extend({
+    id: opaqueIdSchema,
+    doctorNameEn: z.string().trim().min(1).max(160),
+    serviceNameEn: z.string().trim().min(1).max(160),
+    createdAt: isoDateTimeSchema,
+    createdByUserId: opaqueIdSchema,
+    version: z.number().int().positive(),
+  });
+export type BillingDoctorCompensationRule = z.infer<
+  typeof billingDoctorCompensationRuleSchema
+>;
+
 const billingInvoiceLineBaseSchema = z.object({
   serviceId: opaqueIdSchema.optional(),
   packageId: opaqueIdSchema.optional(),
+  doctorId: opaqueIdSchema.optional(),
   quantity: z.number().int().positive().max(100),
   descriptionEn: z.string().trim().min(1).max(240).optional(),
 });
@@ -1873,6 +1941,11 @@ export const billingInvoiceLineSchema = billingInvoiceLineBaseSchema.extend({
   descriptionEn: z.string().trim().min(1).max(240),
   unitPriceEgp: z.number().int().nonnegative(),
   lineTotalEgp: z.number().int().nonnegative(),
+  doctorFeeEgp: z.number().int().nonnegative().optional(),
+  compensationType: billingCompensationTypeSchema.optional(),
+  compensationShareBps: z.number().int().min(0).max(10_000).optional(),
+  compensationShareAmountEgp: z.number().int().nonnegative().optional(),
+  doctorEarningsEgp: z.number().int().nonnegative().optional(),
 });
 export type BillingInvoiceLine = z.infer<typeof billingInvoiceLineSchema>;
 export const billingInvoiceSchema = z.object({
@@ -1986,6 +2059,27 @@ export const reportsAnalyticsSchema = z.object({
   patientTrends: z.array(reportsPatientTrendPointSchema),
 });
 export type ReportsAnalytics = z.infer<typeof reportsAnalyticsSchema>;
+
+export const doctorEarningsPointSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  collectedEgp: z.number().int().nonnegative(),
+  refundedEgp: z.number().int().nonnegative(),
+  earningsEgp: z.number().int(),
+  clinicRetainedEgp: z.number().int(),
+  invoiceCount: z.number().int().nonnegative(),
+});
+export type DoctorEarningsPoint = z.infer<typeof doctorEarningsPointSchema>;
+
+export const doctorEarningsAnalyticsSchema = z.object({
+  doctorId: opaqueIdSchema,
+  doctorNameEn: z.string().trim().min(1).max(160),
+  fromMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  toMonth: z.string().regex(/^\d{4}-\d{2}$/),
+  monthly: z.array(doctorEarningsPointSchema),
+});
+export type DoctorEarningsAnalytics = z.infer<
+  typeof doctorEarningsAnalyticsSchema
+>;
 
 export const scheduleInputSchema = z.object({
   doctorId: opaqueIdSchema,

@@ -2433,3 +2433,66 @@ textarea:focus-visible {
     gap: 5px;
   }
 }
+
+.doctor-earnings-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  background: linear-gradient(
+    135deg,
+    rgba(239, 247, 245, 0.95),
+    rgba(255, 252, 246, 0.98)
+  );
+}
+
+.compensation-rule-form {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid rgba(37, 99, 87, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.earnings-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.earnings-metric {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 78px;
+  padding: 0.85rem;
+  border: 1px solid rgba(37, 99, 87, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.earnings-metric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.earnings-metric strong {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.compensation-rule-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+@media (max-width: 900px) {
+  .earnings-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .earnings-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -30,7 +30,7 @@ The verifier is [`scripts/verify-desktop-package.mjs`](../scripts/verify-desktop
 
 Production startup uses the existing `ElectronSafeStorageKeyProvider`. The encrypted database and wrapped key are stored under the per-user Electron `userData` location. An upgrade must preserve that directory and must reopen the existing encrypted database with the same key. The application must never create a replacement key merely because a database exists but the key file cannot be unwrapped.
 
-A clean-install rehearsal must verify creation of the database, migration history through migration 23, the wrapped key envelope, and the first-run bootstrap path. An upgrade rehearsal must start from a synthetic database at the prior schema, install the new version over it, apply migration 23, and verify that existing synthetic patients, billing records, audit events, doctor documents, and signing metadata remain readable. An uninstall/reinstall rehearsal must verify that retained data is still present after reinstall and that an operator can explicitly select a separate data-destruction procedure when required.
+A clean-install rehearsal must verify creation of the database, migration history through migration 24, the wrapped key envelope, and the first-run bootstrap path. An upgrade rehearsal must start from a synthetic database at the prior schema, install the new version over it, apply migration 24, and verify that existing synthetic patients, billing records, audit events, doctor documents, and signing metadata remain readable. An uninstall/reinstall rehearsal must verify that retained data is still present after reinstall and that an operator can explicitly select a separate data-destruction procedure when required.
 
 ## Required Windows workstation gates
 

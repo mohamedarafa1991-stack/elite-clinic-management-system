@@ -352,6 +352,8 @@ function snapshot(database, ids) {
     "billing_payments",
     "billing_refunds",
     "billing_receipts",
+    "billing_doctor_compensation_rules",
+    "billing_doctor_earnings",
     "doctor_profiles",
     "doctor_documents",
     "sync_cursors",
@@ -471,6 +473,14 @@ async function main() {
       nameEn: "Synthetic Consultation",
       durationMinutes: 30,
       priceEgp: 500,
+    });
+    billing.createCompensationRule(admin, {
+      doctorId: FIXED_IDS.doctorPrimary,
+      serviceId: service.id,
+      feeEgp: 500,
+      compensationType: "percentage",
+      shareBps: 6000,
+      effectiveFrom: "2020-01-01T00:00:00.000Z",
     });
     clinical.createSchedule(admin, {
       doctorId: FIXED_IDS.doctorPrimary,
@@ -616,6 +626,12 @@ async function main() {
       amountEgp: 300,
       reason: "Synthetic pilot refund rehearsal",
     });
+    const doctorEarnings = billing.getDoctorEarnings(
+      doctor,
+      undefined,
+      new Date(),
+      1,
+    );
 
     const vault = new FileVault(vaultPath);
     const doctorProfiles = new DoctorProfileService(
@@ -694,9 +710,13 @@ async function main() {
     assertCondition(
       beforeBackup.counts.billing_invoices === 1 &&
         beforeBackup.counts.billing_payments === 2 &&
-        beforeBackup.counts.billing_refunds === 1,
+        beforeBackup.counts.billing_refunds === 1 &&
+        beforeBackup.counts.billing_doctor_compensation_rules === 1 &&
+        beforeBackup.counts.billing_doctor_earnings === 3 &&
+        doctorEarnings.monthly[0].earningsEgp > 0 &&
+        doctorEarnings.monthly[0].refundedEgp > 0,
       "billing-ledger",
-      "Invoice, partial/full payments, receipt creation, and refund evidence are present.",
+      "Invoice, partial/full payments, refund evidence, and collected-payment doctor earnings are present.",
       results,
     );
     assertCondition(
@@ -780,6 +800,11 @@ async function main() {
         patientIds: afterRestore.patientIds,
         invoiceNumbers: afterRestore.invoiceNumbers,
         documentIds,
+      },
+      billing: {
+        doctorId: doctorEarnings.doctorId,
+        doctorNameEn: doctorEarnings.doctorNameEn,
+        monthlyDoctorEarnings: doctorEarnings.monthly,
       },
       sync: {
         scopes: afterRestore.syncScopes,
