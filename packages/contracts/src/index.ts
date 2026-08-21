@@ -29,6 +29,7 @@ export const capabilitySchema = z.enum([
   "billing.refund",
   "billing.compensation.manage",
   "billing.earnings.read",
+  "billing.payout.report",
   "staff.manage",
   "device.manage",
   "backup.manage",
@@ -72,6 +73,7 @@ export const roleCapabilities = {
     "billing.refund",
     "billing.compensation.manage",
     "billing.earnings.read",
+    "billing.payout.report",
     "staff.manage",
     "device.manage",
     "backup.manage",
@@ -2079,6 +2081,70 @@ export const doctorEarningsAnalyticsSchema = z.object({
 });
 export type DoctorEarningsAnalytics = z.infer<
   typeof doctorEarningsAnalyticsSchema
+>;
+
+const reportMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+
+export const billingDoctorPayoutReportInputSchema = z.object({
+  reportMonth: reportMonthSchema,
+});
+export type BillingDoctorPayoutReportInput = z.infer<
+  typeof billingDoctorPayoutReportInputSchema
+>;
+
+export const billingDoctorPayoutReportRowSchema = z.object({
+  reportMonth: reportMonthSchema,
+  doctorId: opaqueIdSchema,
+  doctorNameEn: z.string().trim().min(1).max(160),
+  doctorNameAr: z.string().trim().max(160).optional(),
+  collectedEgp: z.number().int().nonnegative(),
+  refundedEgp: z.number().int().nonnegative(),
+  doctorEarningsEgp: z.number().int(),
+  clinicRetainedEgp: z.number().int(),
+  invoiceCount: z.number().int().nonnegative(),
+});
+export type BillingDoctorPayoutReportRow = z.infer<
+  typeof billingDoctorPayoutReportRowSchema
+>;
+
+export const billingDoctorPayoutReportSchema = z.object({
+  reportMonth: reportMonthSchema,
+  generatedAt: isoDateTimeSchema,
+  generatedBy: z.enum(["admin", "scheduled"]),
+  rows: z.array(billingDoctorPayoutReportRowSchema),
+  totals: z.object({
+    collectedEgp: z.number().int().nonnegative(),
+    refundedEgp: z.number().int().nonnegative(),
+    doctorEarningsEgp: z.number().int(),
+    clinicRetainedEgp: z.number().int(),
+    invoiceCount: z.number().int().nonnegative(),
+  }),
+});
+export type BillingDoctorPayoutReport = z.infer<
+  typeof billingDoctorPayoutReportSchema
+>;
+
+export const billingDoctorPayoutScheduleStatusSchema = z.object({
+  enabled: z.boolean(),
+  timeZone: z.literal("Africa/Cairo"),
+  scheduleTime: z.literal("07:00"),
+  outputDirectory: z.string().trim().min(1).max(500),
+  lastRunAt: isoDateTimeSchema.optional(),
+  lastReportMonth: reportMonthSchema.optional(),
+  lastOutputFileName: z.string().trim().min(1).max(240).optional(),
+  lastError: z.string().trim().min(1).max(500).optional(),
+});
+export type BillingDoctorPayoutScheduleStatus = z.infer<
+  typeof billingDoctorPayoutScheduleStatusSchema
+>;
+
+export const billingDoctorPayoutExportResultSchema = z.object({
+  report: billingDoctorPayoutReportSchema,
+  fileName: z.string().trim().min(1).max(240),
+  filePath: z.string().trim().min(1).max(1000),
+});
+export type BillingDoctorPayoutExportResult = z.infer<
+  typeof billingDoctorPayoutExportResultSchema
 >;
 
 export const scheduleInputSchema = z.object({

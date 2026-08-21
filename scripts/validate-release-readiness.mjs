@@ -155,6 +155,11 @@ runPnpm(
   "LOCAL-WINDOWS-SCRIPT-001",
   "Windows local-pilot runner safety controls and physical-scenario safeguards pass.",
 );
+runPnpm(
+  ["windows:payout-task:verify"],
+  "LOCAL-WINDOWS-PAYOUT-001",
+  "Monthly doctor payout task timezone, packaged-runner, recovery, and uninstall safeguards pass.",
+);
 if (existsSync(desktopArchive)) {
   runPnpm(
     ["desktop:package:verify"],

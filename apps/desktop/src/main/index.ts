@@ -18,6 +18,7 @@ import {
   hashExportPayload,
   verifyExportPackage,
   requireCapability,
+  type SessionContext,
   bootstrapInputSchema,
   departmentInputSchema,
   enrollmentInputSchema,
@@ -29,6 +30,7 @@ import {
   specialtyInputSchema,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
+import { roleCapabilities } from "@elite/contracts";
 import {
   app,
   BrowserWindow,
@@ -41,7 +43,7 @@ import {
 import { dirname, join } from "node:path";
 import { ElectronSafeStorageKeyProvider } from "./key-provider.js";
 import { fileURLToPath } from "node:url";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { LanSyncHttpServer } from "./lan-sync-server.js";
 import {
@@ -53,6 +55,7 @@ import {
   appointmentCreateInputSchema,
   appointmentStatusUpdateSchema,
   billingDoctorCompensationRuleInputSchema,
+  billingDoctorPayoutReportInputSchema,
   billingInvoiceCreateInputSchema,
   billingPackageInputSchema,
   billingPaymentInputSchema,
@@ -98,6 +101,7 @@ import {
   syncDeviceRegistrationInputSchema,
   syncOutboxAcknowledgmentSchema,
   syncOutboxInputSchema,
+  type BillingDoctorPayoutExportResult,
   type ExportPackage,
   type PatientExportInput,
 } from "@elite/contracts";
@@ -105,6 +109,13 @@ import { ElectronExportSigner } from "./export-signer.js";
 import { renderPatientExportPdf } from "./export-pdf.js";
 import { FileSystemDoctorDocumentVault } from "./doctor-document-vault.js";
 import { createIpcRegistrar } from "./ipc-registration.js";
+import {
+  defaultDoctorPayoutReportDirectory,
+  previousCairoReportMonth,
+  readPayoutScheduleStatus,
+  writeDoctorPayoutCsv,
+  writePayoutScheduleStatus,
+} from "./doctor-payout-report.js";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFile);
@@ -405,6 +416,90 @@ function parseIpcInput<T>(
 const patientDuplicateInputSchema = patientRegistrationInputSchema.or(
   patientUpdateInputSchema,
 );
+
+function payoutReportOutputDirectory(): string {
+  return defaultDoctorPayoutReportDirectory(app.getPath("documents"));
+}
+
+function scheduledPayoutContext(): SessionContext {
+  return {
+    sessionId: "windows-scheduled-doctor-payout-report",
+    token: "windows-scheduled-doctor-payout-report",
+    userId: "windows-scheduled-task",
+    username: "Windows Task Scheduler",
+    role: "admin",
+    deviceId: "windows-scheduled-task",
+    capabilities: roleCapabilities.admin,
+    expiresAt: "9999-12-31T23:59:59.999Z",
+  };
+}
+
+function runDoctorPayoutReport(
+  context: SessionContext,
+  input: { reportMonth: string },
+  generatedBy: "admin" | "scheduled",
+): BillingDoctorPayoutExportResult {
+  const report = requireBillingService().generateDoctorPayoutReport(
+    context,
+    input,
+    generatedBy,
+  );
+  const result = writeDoctorPayoutCsv(report, payoutReportOutputDirectory());
+  const currentStatus = readPayoutScheduleStatus(
+    app.getPath("userData"),
+    payoutReportOutputDirectory(),
+  );
+  const { lastError: _lastError, ...statusWithoutError } = currentStatus;
+  writePayoutScheduleStatus(app.getPath("userData"), {
+    ...statusWithoutError,
+    lastRunAt: report.generatedAt,
+    lastReportMonth: report.reportMonth,
+    lastOutputFileName: result.fileName,
+  });
+  return result;
+}
+
+async function runScheduledDoctorPayoutReport(): Promise<void> {
+  if (!app.isPackaged) {
+    throw new Error(
+      "ELITE_BILLING_PAYOUT_REPORT_PACKAGED_ONLY: scheduled payout reports require the packaged Windows Hub",
+    );
+  }
+  const outputDirectory = payoutReportOutputDirectory();
+  const reportMonth = previousCairoReportMonth();
+  const currentStatus = readPayoutScheduleStatus(
+    app.getPath("userData"),
+    outputDirectory,
+  );
+  if (
+    currentStatus.lastReportMonth === reportMonth &&
+    currentStatus.lastOutputFileName &&
+    existsSync(join(outputDirectory, currentStatus.lastOutputFileName))
+  ) {
+    console.log(
+      `DOCTOR_PAYOUT_REPORT_ALREADY_EXISTS: ${join(outputDirectory, currentStatus.lastOutputFileName)}`,
+    );
+    return;
+  }
+  try {
+    const result = runDoctorPayoutReport(
+      scheduledPayoutContext(),
+      { reportMonth },
+      "scheduled",
+    );
+    console.log(`DOCTOR_PAYOUT_REPORT_CREATED: ${result.filePath}`);
+  } catch (error) {
+    const { lastError: _lastError, ...statusWithoutError } = currentStatus;
+    writePayoutScheduleStatus(app.getPath("userData"), {
+      ...statusWithoutError,
+      lastError:
+        error instanceof Error
+          ? error.message
+          : "Scheduled payout report failed",
+    });
+    throw error;
+  }
+}
 
 function registerIpc(): void {
   registerIpcHandler(
@@ -1592,6 +1687,26 @@ function registerIpc(): void {
     requireBillingService().getDashboardSummary(serviceContext(token)),
   );
   registerIpcHandler(
+    "billing:payout-report-status",
+    (_event, token: string) => {
+      const context = serviceContext(token);
+      requireCapability(context, "billing.payout.report");
+      return readPayoutScheduleStatus(
+        app.getPath("userData"),
+        payoutReportOutputDirectory(),
+      );
+    },
+  );
+  registerIpcHandler(
+    "billing:payout-report-generate",
+    (_event, token: string, input: unknown) =>
+      runDoctorPayoutReport(
+        serviceContext(token),
+        parseIpcInput(billingDoctorPayoutReportInputSchema, input),
+        "admin",
+      ),
+  );
+  registerIpcHandler(
     "billing:compensation-rules",
     (_event, token: string, doctorId?: string) =>
       requireBillingService().listCompensationRules(
@@ -1843,6 +1958,17 @@ function serviceContext(token: string) {
 app.whenReady().then(async () => {
   registerContentSecurityPolicy();
   initializeServices();
+  if (process.argv.includes("--doctor-payout-report-scheduled")) {
+    try {
+      await runScheduledDoctorPayoutReport();
+    } catch (error) {
+      console.error(error);
+      process.exitCode = 1;
+    } finally {
+      app.quit();
+    }
+    return;
+  }
   await startLanSyncServer();
   registerIpc();
   mainWindow = createWindow();

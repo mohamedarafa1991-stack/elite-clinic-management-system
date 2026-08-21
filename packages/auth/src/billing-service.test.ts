@@ -167,12 +167,43 @@ describe("Step 29 billing service", () => {
         clinicRetainedEgp: 160,
         invoiceCount: 1,
       });
+      const reportMonth = new Date().toISOString().slice(0, 7);
+      const payoutReport = fixture.billing.generateDoctorPayoutReport(
+        fixture.context,
+        { reportMonth },
+      );
+      expect(payoutReport).toMatchObject({
+        reportMonth,
+        generatedBy: "admin",
+        rows: [
+          expect.objectContaining({
+            doctorId,
+            collectedEgp: 500,
+            refundedEgp: 100,
+            doctorEarningsEgp: 240,
+            clinicRetainedEgp: 160,
+            invoiceCount: 1,
+          }),
+        ],
+        totals: {
+          collectedEgp: 500,
+          refundedEgp: 100,
+          doctorEarningsEgp: 240,
+          clinicRetainedEgp: 160,
+          invoiceCount: 1,
+        },
+      });
       expect(() =>
         fixture.billing.getDoctorEarnings(doctor, fixture.context.userId),
       ).toThrow("ELITE_BILLING_EARNINGS_OWNER_REQUIRED");
       expect(() =>
         fixture.billing.getDoctorEarnings(receptionist, doctorId),
       ).toThrow("ELITE_AUTH_CAPABILITY_REQUIRED: billing.earnings.read");
+      expect(() =>
+        fixture.billing.generateDoctorPayoutReport(receptionist, {
+          reportMonth,
+        }),
+      ).toThrow("ELITE_AUTH_CAPABILITY_REQUIRED: billing.payout.report");
     } finally {
       fixture.database.close();
     }

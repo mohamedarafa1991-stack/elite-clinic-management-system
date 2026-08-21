@@ -2496,3 +2496,48 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.doctor-payout-report-card {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(217, 155, 88, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 249, 239, 0.96),
+    rgba(255, 255, 255, 0.9)
+  );
+}
+
+.doctor-payout-report-card .card-heading {
+  margin-bottom: 0;
+}
+
+.doctor-payout-report-card h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.doctor-payout-report-form {
+  align-items: end;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.doctor-payout-report-form .button.secondary {
+  margin-top: 0;
+}
+
+.doctor-payout-report-status {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.doctor-payout-report-status code {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

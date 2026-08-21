@@ -34,6 +34,9 @@
     "pilot:validate-record": "node scripts/validate-physical-device-record.mjs",
     "windows:pilot": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows-local-pilot.ps1",
     "windows:pilot:verify": "node scripts/verify-windows-local-pilot.mjs",
+    "windows:payout-task:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-doctor-payout-task.ps1",
+    "windows:payout-task:remove": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-doctor-payout-task.ps1 -Uninstall",
+    "windows:payout-task:verify": "node scripts/verify-doctor-payout-task.mjs",
     "release:readiness": "node scripts/validate-release-readiness.mjs",
     "db:test": "pnpm --filter @elite/database test",
     "contracts:typecheck": "pnpm --filter @elite/contracts typecheck"

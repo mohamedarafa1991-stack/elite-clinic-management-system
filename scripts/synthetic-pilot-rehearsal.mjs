@@ -632,6 +632,9 @@ async function main() {
       new Date(),
       1,
     );
+    const payoutReport = billing.generateDoctorPayoutReport(admin, {
+      reportMonth: new Date().toISOString().slice(0, 7),
+    });
 
     const vault = new FileVault(vaultPath);
     const doctorProfiles = new DoctorProfileService(
@@ -714,7 +717,9 @@ async function main() {
         beforeBackup.counts.billing_doctor_compensation_rules === 1 &&
         beforeBackup.counts.billing_doctor_earnings === 3 &&
         doctorEarnings.monthly[0].earningsEgp > 0 &&
-        doctorEarnings.monthly[0].refundedEgp > 0,
+        doctorEarnings.monthly[0].refundedEgp > 0 &&
+        payoutReport.totals.doctorEarningsEgp > 0 &&
+        payoutReport.totals.refundedEgp > 0,
       "billing-ledger",
       "Invoice, partial/full payments, refund evidence, and collected-payment doctor earnings are present.",
       results,
@@ -805,6 +810,8 @@ async function main() {
         doctorId: doctorEarnings.doctorId,
         doctorNameEn: doctorEarnings.doctorNameEn,
         monthlyDoctorEarnings: doctorEarnings.monthly,
+        payoutReportMonth: payoutReport.reportMonth,
+        payoutReportTotals: payoutReport.totals,
       },
       sync: {
         scopes: afterRestore.syncScopes,

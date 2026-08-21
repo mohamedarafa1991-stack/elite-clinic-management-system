@@ -151,7 +151,7 @@ describe("desktop IPC migration coverage", () => {
       new URL("./ipc-registration.ts", import.meta.url),
       "utf8",
     );
-    expect(source.match(/registerIpcHandler\(/g)).toHaveLength(141);
+    expect(source.match(/registerIpcHandler\(/g)).toHaveLength(143);
     expect(registrar.match(/ipcMain\.handle\(/g)).toHaveLength(1);
     expect(source).not.toMatch(/as never/);
   });

@@ -29,6 +29,8 @@ import type {
   BillingPayment,
   BillingPaymentInput,
   BillingRefundInput,
+  BillingDoctorPayoutExportResult,
+  BillingDoctorPayoutScheduleStatus,
   Department,
   DoctorDirectoryEntry,
   DoctorProfile,
@@ -6129,23 +6131,40 @@ function BillingWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
+  const [payoutReportMonth, setPayoutReportMonth] = useState(() => {
+    const now = new Date();
+    now.setMonth(now.getMonth() - 1);
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [payoutScheduleStatus, setPayoutScheduleStatus] =
+    useState<BillingDoctorPayoutScheduleStatus | null>(null);
+  const [lastPayoutExport, setLastPayoutExport] =
+    useState<BillingDoctorPayoutExportResult | null>(null);
   const canManageCatalog = session.capabilities.includes("module.manage");
+  const canManagePayoutReports = session.capabilities.includes(
+    "billing.payout.report",
+  );
   const canWriteBilling = session.capabilities.includes("billing.write");
   const canRefund = session.capabilities.includes("billing.refund");
 
   const refresh = async (): Promise<void> => {
     setError(null);
     try {
-      const [nextPackages, nextServices, nextInvoices] = await Promise.all([
-        window.elite.billing.listPackages(token),
-        window.elite.clinical.listServices(token),
-        window.elite.billing.listInvoices(token),
-      ]);
+      const [nextPackages, nextServices, nextInvoices, nextPayoutStatus] =
+        await Promise.all([
+          window.elite.billing.listPackages(token),
+          window.elite.clinical.listServices(token),
+          window.elite.billing.listInvoices(token),
+          canManagePayoutReports
+            ? window.elite.billing.getPayoutReportStatus(token)
+            : Promise.resolve(null),
+        ]);
       setPackages(nextPackages);
       setServices(
         nextServices.filter((service) => service.status === "active"),
       );
       setInvoices(nextInvoices);
+      setPayoutScheduleStatus(nextPayoutStatus);
       if (!selectedInvoiceId && nextInvoices[0]) {
         setSelectedInvoiceId(nextInvoices[0].id);
       }
@@ -6160,7 +6179,42 @@ function BillingWorkspace({
 
   useEffect(() => {
     void refresh();
-  }, [token]);
+  }, [token, canManagePayoutReports]);
+
+  const generatePayoutReport = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await window.elite.billing.generatePayoutReport(token, {
+        reportMonth: payoutReportMonth,
+      });
+      setLastPayoutExport(result);
+      setPayoutScheduleStatus((current) =>
+        current
+          ? {
+              ...current,
+              lastRunAt: result.report.generatedAt,
+              lastReportMonth: result.report.reportMonth,
+              lastOutputFileName: result.fileName,
+              lastError: undefined,
+            }
+          : current,
+      );
+      setNotice(`Doctor payout report ${result.fileName} exported.`);
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to export doctor payout report",
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
 
   const createPackage = async (
     event: FormEvent<HTMLFormElement>,
@@ -6303,6 +6357,71 @@ function BillingWorkspace({
       <ErrorMessage message={error} />
       {notice ? <p className="status ok">{notice}</p> : null}
       <DoctorEarningsPanel token={token} session={session} locale={locale} />
+      {canManagePayoutReports ? (
+        <section
+          className="doctor-payout-report-card"
+          aria-labelledby="doctor-payout-report-title"
+        >
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">
+                {locale === "ar-EG" ? "تقرير المستحقات" : "Payroll export"}
+              </p>
+              <h3 id="doctor-payout-report-title">
+                {locale === "ar-EG"
+                  ? "تقرير مستحقات الأطباء الشهري"
+                  : "Monthly doctor payout report"}
+              </h3>
+            </div>
+            <span className="status ok" dir="ltr">
+              1st · 07:00 Africa/Cairo
+            </span>
+          </div>
+          <p className="form-help">
+            {locale === "ar-EG"
+              ? "يُحسب التقرير من المدفوعات المحصلة والمرتجعات، ويُحفظ محلياً بصيغة CSV."
+              : "The report uses collected payments and refund adjustments, then saves a local CSV on the Windows Hub."}
+          </p>
+          <form
+            className="inline-form doctor-payout-report-form"
+            onSubmit={(event) => void generatePayoutReport(event)}
+          >
+            <label className="inline-label">
+              {locale === "ar-EG" ? "شهر التقرير" : "Report month"}
+              <input
+                required
+                type="month"
+                value={payoutReportMonth}
+                onChange={(event) => setPayoutReportMonth(event.target.value)}
+              />
+            </label>
+            <button
+              className="button secondary"
+              type="submit"
+              disabled={isBusy}
+            >
+              {locale === "ar-EG" ? "تصدير CSV" : "Export CSV"}
+            </button>
+          </form>
+          <div className="doctor-payout-report-status">
+            <span>
+              {locale === "ar-EG" ? "مجلد الحفظ" : "Output folder"}:
+              <code dir="ltr">{payoutScheduleStatus?.outputDirectory}</code>
+            </span>
+            {payoutScheduleStatus?.lastRunAt ? (
+              <span>
+                {locale === "ar-EG" ? "آخر تشغيل" : "Last run"}:{" "}
+                {payoutScheduleStatus.lastRunAt}
+              </span>
+            ) : null}
+            {lastPayoutExport ? (
+              <span className="status ok" dir="ltr">
+                {lastPayoutExport.filePath}
+              </span>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       {canManageCatalog ? (
         <form
           className="form-section"

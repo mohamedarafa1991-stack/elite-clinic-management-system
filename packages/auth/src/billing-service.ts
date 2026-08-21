@@ -4,6 +4,7 @@ import {
   billingDashboardSummarySchema,
   billingDoctorCompensationRuleInputSchema,
   billingDoctorCompensationRuleSchema,
+  billingDoctorPayoutReportSchema,
   billingInvoiceSchema,
   doctorEarningsAnalyticsSchema,
   billingPackageInputSchema,
@@ -16,6 +17,8 @@ import {
   type BillingDashboardSummary,
   type BillingDoctorCompensationRule,
   type BillingDoctorCompensationRuleInput,
+  type BillingDoctorPayoutReport,
+  type BillingDoctorPayoutReportInput,
   type BillingInvoice,
   type DoctorEarningsAnalytics,
   type BillingInvoiceCreateInput,
@@ -43,6 +46,27 @@ function monthStart(date: Date): Date {
 
 function nextMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+}
+
+function cairoMonthStart(reportMonth: string): Date {
+  const [yearText, monthText] = reportMonth.split("-");
+  const utcGuess = Date.UTC(Number(yearText), Number(monthText) - 1, 1);
+  const offsetLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(new Date(utcGuess))
+    .find((part) => part.type === "timeZoneName")?.value;
+  const match = offsetLabel?.match(/^GMT([+-])(\d{1,2})(?::(\d{2}))?$/);
+  if (!match) {
+    throw new Error(
+      "ELITE_BILLING_PAYOUT_REPORT_TIMEZONE_UNAVAILABLE: Cairo timezone offset could not be resolved",
+    );
+  }
+  const offsetMinutes =
+    (Number(match[2]) * 60 + Number(match[3] ?? 0)) *
+    (match[1] === "-" ? -1 : 1);
+  return new Date(utcGuess - offsetMinutes * 60_000);
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -353,6 +377,105 @@ export class BillingService {
       toMonth: months[months.length - 1]!.key,
       monthly,
     });
+  }
+
+  public generateDoctorPayoutReport(
+    context: SessionContext,
+    input: BillingDoctorPayoutReportInput,
+    generatedBy: "admin" | "scheduled" = "admin",
+  ): BillingDoctorPayoutReport {
+    requireCapability(context, "billing.payout.report");
+    if (context.role !== "admin") {
+      throw new Error(
+        "ELITE_BILLING_PAYOUT_REPORT_ADMIN_REQUIRED: only Admins may generate payout reports",
+      );
+    }
+    const start = cairoMonthStart(input.reportMonth);
+    const [yearText, monthText] = input.reportMonth.split("-");
+    const end = cairoMonthStart(
+      monthKey(new Date(Date.UTC(Number(yearText), Number(monthText), 1))),
+    );
+    const from = start.toISOString();
+    const to = end.toISOString();
+    const rows = this.database.raw
+      .prepare(
+        `SELECT
+           u.id AS doctor_id,
+           u.display_name_en AS doctor_name_en,
+           u.display_name_ar AS doctor_name_ar,
+           COALESCE(SUM(CASE WHEN e.event_type = 'payment' THEN e.allocated_amount_egp ELSE 0 END), 0) AS collected,
+           COALESCE(SUM(CASE WHEN e.event_type = 'refund' THEN e.allocated_amount_egp ELSE 0 END), 0) AS refunded,
+           COALESCE(SUM(CASE WHEN e.event_type = 'payment' THEN e.amount_egp ELSE -e.amount_egp END), 0) AS doctor_earnings,
+           COUNT(DISTINCT e.invoice_id) AS invoice_count
+         FROM users u
+         LEFT JOIN billing_doctor_earnings e
+           ON e.doctor_id = u.id AND e.event_at >= ? AND e.event_at < ?
+         WHERE u.role = 'doctor' AND u.is_active = 1
+         GROUP BY u.id, u.display_name_en, u.display_name_ar
+         ORDER BY u.display_name_en`,
+      )
+      .all(from, to) as Row[];
+    const reportRows = rows.map((row) => {
+      const collectedEgp = Number(row.collected);
+      const refundedEgp = Number(row.refunded);
+      const doctorEarningsEgp = Number(row.doctor_earnings);
+      return {
+        reportMonth: input.reportMonth,
+        doctorId: String(row.doctor_id),
+        doctorNameEn: String(row.doctor_name_en),
+        ...(optionalString(row.doctor_name_ar)
+          ? { doctorNameAr: String(row.doctor_name_ar) }
+          : {}),
+        collectedEgp,
+        refundedEgp,
+        doctorEarningsEgp,
+        clinicRetainedEgp: collectedEgp - refundedEgp - doctorEarningsEgp,
+        invoiceCount: Number(row.invoice_count),
+      };
+    });
+    const invoiceCount = Number(
+      (
+        this.database.raw
+          .prepare(
+            "SELECT COUNT(DISTINCT invoice_id) AS invoice_count FROM billing_doctor_earnings WHERE event_at >= ? AND event_at < ?",
+          )
+          .get(from, to) as Row
+      ).invoice_count,
+    );
+    const totals = reportRows.reduce(
+      (result, row) => ({
+        collectedEgp: result.collectedEgp + row.collectedEgp,
+        refundedEgp: result.refundedEgp + row.refundedEgp,
+        doctorEarningsEgp: result.doctorEarningsEgp + row.doctorEarningsEgp,
+        clinicRetainedEgp: result.clinicRetainedEgp + row.clinicRetainedEgp,
+        invoiceCount: result.invoiceCount,
+      }),
+      {
+        collectedEgp: 0,
+        refundedEgp: 0,
+        doctorEarningsEgp: 0,
+        clinicRetainedEgp: 0,
+        invoiceCount,
+      },
+    );
+    const report = billingDoctorPayoutReportSchema.parse({
+      reportMonth: input.reportMonth,
+      generatedAt: now(),
+      generatedBy,
+      rows: reportRows,
+      totals,
+    });
+    this.writeAuditWithoutContext(
+      "billing.doctor-payout-report.generated",
+      input.reportMonth,
+      {
+        generatedBy,
+        doctorCount: report.rows.length,
+        totals: report.totals,
+      },
+      generatedBy === "admin" ? context : undefined,
+    );
+    return report;
   }
 
   public createInvoice(
@@ -1299,14 +1422,23 @@ export class BillingService {
     entityId: string,
     metadata: Record<string, unknown>,
   ): void {
+    this.writeAuditWithoutContext(action, entityId, metadata, context);
+  }
+
+  private writeAuditWithoutContext(
+    action: string,
+    entityId: string,
+    metadata: Record<string, unknown>,
+    context?: SessionContext,
+  ): void {
     this.database.raw
       .prepare(
         "INSERT INTO audit_events (id, actor_user_id, device_id, action, entity_type, entity_id, result, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
       )
       .run(
         nanoid(18),
-        context.userId,
-        context.deviceId,
+        context?.userId ?? null,
+        context?.deviceId ?? null,
         action,
         "billing",
         entityId,
