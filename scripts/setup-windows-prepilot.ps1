@@ -51,7 +51,7 @@ function Invoke-CheckedCommand {
     Write-SetupMessage -Level "INFO" -Message ("Running: {0} {1}" -f $Name, ($Arguments -join " "))
     & $Name @Arguments 2>&1 | Tee-Object -FilePath $logPath -Append
     if ($LASTEXITCODE -ne 0) {
-        Stop-Setup "Command failed with exit code $LASTEXITCODE: $Name $($Arguments -join ' ')"
+        Stop-Setup "Command failed with exit code ${LASTEXITCODE}: $Name $($Arguments -join ' ')"
     }
     Write-SetupMessage -Level "PASS" -Message "Completed: $Name $($Arguments -join ' ')"
 }
