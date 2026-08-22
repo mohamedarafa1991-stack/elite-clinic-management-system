@@ -1719,6 +1719,7 @@ export function openDatabase(options: OpenDatabaseOptions): EliteDatabase {
   try {
     applyDatabaseKey(database, options);
     database.pragma("foreign_keys = ON");
+    database.pragma("busy_timeout = 10000");
 
     database.exec(`
     CREATE TABLE IF NOT EXISTS migration_history (

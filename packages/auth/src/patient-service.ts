@@ -715,7 +715,7 @@ export class PatientIdentityService {
     }
     const timestamp = this.now();
     const internalId = nanoid(18);
-    const patientId = this.database.raw.transaction(() => {
+    const registrationTransaction = this.database.raw.transaction(() => {
       const sequence = this.database.raw
         .prepare(
           "SELECT next_number FROM patient_identity_sequence WHERE id = 1",
@@ -809,7 +809,8 @@ export class PatientIdentityService {
         timestamp,
       );
       return displayId;
-    })();
+    });
+    const patientId = registrationTransaction.immediate();
     const patient = this.getPatient(context, patientId);
     return { patient, duplicateCandidates: candidates };
   }
