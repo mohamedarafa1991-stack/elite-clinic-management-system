@@ -3,18 +3,26 @@
 ## Next Development Phase: Pilot Readiness and Operational Validation
 
 **Prepared by:** Manus AI
-**Baseline:** `origin/main` at [`8855218`](https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/commit/8855218)
+**Baseline:** `origin/main` at [`8426ef2`](https://github.com/mohamedarafa1991-stack/elite-clinic-management-system/commit/8426ef2)
 **Date:** 19 August 2026
 
 ## Executive recommendation
 
-The next phase should be **Pilot Readiness and Operational Validation**, not another broad clinical feature. The project has completed the P0 desktop IPC hardening and the main P1 frontend extraction increment. The current repository passes **99 automated assertions**: 9 contract tests, 6 database tests, 47 authentication/domain tests, and 37 desktop tests. The desktop production build, typecheck, formatting, whitespace checks, and Linux/Xvfb Electron IPC smoke test are also passing. The latest frontend increment extracted the Today workspace and AppShell and added capability-filtered navigation tests.[1]
+The next phase should be **Pilot Readiness and Operational Validation**, not another broad clinical feature. The project has completed P0 desktop IPC hardening, the main P1 frontend extraction increment, concurrent patient-registration resilience, Admin staff provisioning, Receptionist navigation-boundary verification, doctor-onboarding test coverage, and visible receptionist appointment status actions. The current repository passes **133 automated assertions**: 9 contract tests, 6 database tests, 65 authentication/domain tests, and 53 desktop tests. The desktop production build, typecheck, and formatting checks are also passing. Physical Windows and Android gates remain outstanding.
 
 The remaining risk is now concentrated at the boundary between source code and real clinic operation: the renderer still contains two large workflow regions, the Windows project has no installer configuration, Android compilation and physical-device behavior remain workstation-gated, and the approved Egyptian drug catalog import has not yet been implemented. The recommended sequence is therefore:
 
 > **Close the remaining P1 renderer test boundary, implement the Hub-only staged drug catalog import, create a reproducible Windows installer, validate the Android build and LAN/device workflows, then run a synthetic end-to-end pilot rehearsal.**
 
 No real patient data should be introduced until every release gate in this plan passes.
+
+## Readiness update — 22 August 2026
+
+The previously missing Admin staff-management workflow is now implemented and pushed. An Admin can create Receptionist, Doctor, Nurse, and Admin accounts, assign role-derived permissions, deactivate non-admin staff, reset passwords, and retain a protected last active Admin. A synthetic Receptionist login was exercised through the real Electron UI; the role exposed Dashboard, Patients, Appointments, and Billing while hiding Clinical records, Doctors, Documents, Staff, Reports, and Admin settings.
+
+Doctor accounts created through Staff management can now enter the existing doctor-profile workflow. The doctor-profile test fixture uses the real provisioning API, and the existing profile service supports specialties, departments, fees, identity details, documents, and active-state governance. Calendar-day appointment cards now expose Check in, Mark no-show, and Cancel actions directly for front-desk users.
+
+These changes are **sandbox-verified**, not physical-pilot verified. Windows installation, encrypted packaged storage, Android enrollment and LAN sync, backup/restore on a replacement Hub, printer output, and first-time receptionist observation remain open gates.
 
 ## Current baseline
 
