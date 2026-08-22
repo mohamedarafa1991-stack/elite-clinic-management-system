@@ -208,7 +208,7 @@ export function TodayWorkspace({
             )
           : Promise.resolve([] as readonly Appointment[]),
         canReadPatients
-          ? window.elite.patients.search(token, { limit: 200 })
+          ? window.elite.patients.search(token, { limit: 100 })
           : Promise.resolve([] as readonly Patient[]),
         canReadAppointments
           ? window.elite.clinical.listDepartments(token)

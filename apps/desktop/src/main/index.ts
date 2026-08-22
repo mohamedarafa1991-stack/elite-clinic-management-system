@@ -286,7 +286,7 @@ function registerContentSecurityPolicy(): void {
       : "'self'";
     const policy = [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self'${isDevelopment ? " 'unsafe-inline'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       `connect-src ${connectSources}`,
@@ -784,7 +784,7 @@ function registerIpc(): void {
       const service = requirePatientService();
       return service.searchPatients(
         serviceContext(token),
-        parseIpcInput(patientSearchFiltersSchema, filters),
+        parseIpcInput(patientSearchFiltersSchema, filters ?? {}),
       );
     },
   );
