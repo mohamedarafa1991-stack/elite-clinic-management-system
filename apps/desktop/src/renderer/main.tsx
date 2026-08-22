@@ -84,6 +84,7 @@ import { TodayWorkspace } from "./today-workspace.js";
 import { ReportsWorkspace } from "./reports-workspace.js";
 import { DoctorEarningsPanel } from "./doctor-earnings-panel.js";
 import { DrugCatalogAdminPanel } from "./drug-catalog-admin-panel.js";
+import { StaffManagementWorkspace } from "./staff-management-workspace.js";
 import {
   buildRelatedPersonInputs,
   createNewRelatedPersonForm,
@@ -5411,6 +5412,69 @@ function ClinicalWorkflowWorkspace({
                         : "Unassigned"}
                     </small>
                   </div>
+                  {canWriteAppointments &&
+                  appointment.status === "scheduled" ? (
+                    <div className="appointment-card-actions">
+                      <button
+                        className="button small secondary"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          void updateStatus(
+                            appointment,
+                            "arrived",
+                            "Patient checked in at front desk",
+                          )
+                        }
+                      >
+                        {t("Check in", "تسجيل الوصول")}
+                      </button>
+                      {isReceptionist ? (
+                        <>
+                          <button
+                            className="button small secondary"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() =>
+                              void updateStatus(
+                                appointment,
+                                "no-show",
+                                "Patient did not arrive",
+                              )
+                            }
+                          >
+                            {t("Mark no-show", "تسجيل عدم الحضور")}
+                          </button>
+                          <button
+                            className="button small danger"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  t(
+                                    "Cancel this appointment?",
+                                    "هل تريد إلغاء هذا الموعد؟",
+                                  ),
+                                )
+                              ) {
+                                void updateStatus(
+                                  appointment,
+                                  "cancelled",
+                                  t(
+                                    "Cancelled by front desk",
+                                    "تم الإلغاء من الاستقبال",
+                                  ),
+                                );
+                              }
+                            }}
+                          >
+                            {t("Cancel", "إلغاء")}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </article>
               ))
             )}
@@ -8684,6 +8748,8 @@ function AuthenticatedView({
     (activeSection === "workspace-sync" &&
       session.role === "admin" &&
       session.capabilities.includes("device.manage")) ||
+    (activeSection === "workspace-staff" &&
+      session.capabilities.includes("staff.manage")) ||
     (["workspace-records", "workspace-settings"].includes(activeSection) &&
       canOpenClinicalWorkspace);
 
@@ -8762,6 +8828,11 @@ function AuthenticatedView({
         syncDevicesDetail: copy(locale, "syncDevicesDetail"),
         adminSettings: copy(locale, "adminSettings"),
         adminSettingsDetail: copy(locale, "adminSettingsDetail"),
+        staff: locale === "ar-EG" ? "الموظفون" : "Staff",
+        staffDetail:
+          locale === "ar-EG"
+            ? "الحسابات والأدوار والصلاحيات"
+            : "Accounts, roles, and access",
       }}
       onLocaleChange={onLocaleChange}
       theme={theme}
@@ -8903,6 +8974,17 @@ function AuthenticatedView({
             onOpenDoctors={() => openWorkspace("workspace-doctors")}
             onOpenBilling={() => openWorkspace("workspace-billing")}
           />
+        ) : null}
+        {session.role === "admin" &&
+        session.capabilities.includes("staff.manage") &&
+        isActiveWorkspace("workspace-staff") ? (
+          <WorkspaceSection id="workspace-staff">
+            <StaffManagementWorkspace
+              token={token}
+              currentUserId={session.userId}
+              locale={locale}
+            />
+          </WorkspaceSection>
         ) : null}
         {session.role === "admin" &&
         session.capabilities.includes("device.manage") &&

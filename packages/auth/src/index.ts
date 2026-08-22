@@ -61,6 +61,51 @@ export const loginInputSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginInputSchema>;
 
+export const staffAccountCreateInputSchema = z.object({
+  username: usernameSchema,
+  password: passwordSchema,
+  displayNameEn: z.string().trim().min(1).max(160),
+  displayNameAr: z.string().trim().max(160).optional(),
+  role: userRoleSchema,
+  isClinicalApprover: z.boolean(),
+});
+export type StaffAccountCreateInput = z.infer<
+  typeof staffAccountCreateInputSchema
+>;
+
+export const staffAccountUpdateInputSchema = z.object({
+  userId: z.string().trim().min(8).max(128),
+  displayNameEn: z.string().trim().min(1).max(160),
+  displayNameAr: z.string().trim().max(160).optional(),
+  role: userRoleSchema,
+  isClinicalApprover: z.boolean(),
+  isActive: z.boolean(),
+});
+export type StaffAccountUpdateInput = z.infer<
+  typeof staffAccountUpdateInputSchema
+>;
+
+export const staffPasswordResetInputSchema = z.object({
+  userId: z.string().trim().min(8).max(128),
+  password: passwordSchema,
+});
+export type StaffPasswordResetInput = z.infer<
+  typeof staffPasswordResetInputSchema
+>;
+
+export interface StaffAccountSummary {
+  id: string;
+  username: string;
+  displayNameEn: string;
+  displayNameAr?: string;
+  role: UserRole;
+  capabilities: readonly Capability[];
+  isClinicalApprover: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const enrollmentInputSchema = z.object({
   friendlyName: z.string().trim().min(1).max(120),
   platform: z.enum(["windows", "android"]),
@@ -189,6 +234,29 @@ function effectiveCapabilities(
       ...stored.filter((capability) => allowed.has(capability)),
     ]),
   ];
+}
+
+function staffSummaryFromRow(
+  row: Record<string, unknown>,
+): StaffAccountSummary {
+  const role = userRoleSchema.parse(row["role"]);
+  const capabilities = effectiveCapabilities(
+    role,
+    parseCapabilities(String(row["capabilities_json"])),
+  );
+  const displayNameAr = String(row["display_name_ar"] ?? "").trim();
+  return {
+    id: String(row["id"]),
+    username: String(row["username"]),
+    displayNameEn: String(row["display_name_en"]),
+    ...(displayNameAr ? { displayNameAr } : {}),
+    role,
+    capabilities,
+    isClinicalApprover: Number(row["is_clinical_approver"]) === 1,
+    isActive: Number(row["is_active"]) === 1,
+    createdAt: String(row["created_at"]),
+    updatedAt: String(row["updated_at"]),
+  };
 }
 
 function requireAdminContext(context: SessionContext): void {
@@ -386,6 +454,195 @@ export class AuthService {
     transaction();
 
     return { adminUserIds: userIds, hubDeviceId };
+  }
+
+  public listStaffAccounts(
+    context: SessionContext,
+  ): readonly StaffAccountSummary[] {
+    requireAdminContext(context);
+    requireCapability(context, "staff.manage");
+    const rows = this.database.raw
+      .prepare(
+        `SELECT id, username, display_name_en, display_name_ar, role,
+                capabilities_json, is_clinical_approver, is_active,
+                created_at, updated_at
+         FROM users
+         ORDER BY is_active DESC, role, display_name_en COLLATE NOCASE`,
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map(staffSummaryFromRow);
+  }
+
+  public async createStaffAccount(
+    context: SessionContext,
+    input: StaffAccountCreateInput,
+  ): Promise<StaffAccountSummary> {
+    requireAdminContext(context);
+    requireCapability(context, "staff.manage");
+    const parsed = staffAccountCreateInputSchema.parse(input);
+    const existing = this.database.raw
+      .prepare("SELECT id FROM users WHERE lower(username) = lower(?)")
+      .get(parsed.username) as { id?: string } | undefined;
+    if (existing?.id) {
+      throw new Error("ELITE_AUTH_USERNAME_EXISTS: username is already in use");
+    }
+    const userId = nanoid(18);
+    const timestamp = now();
+    const passwordHash = await hashPassword(parsed.password);
+    const isClinicalApprover =
+      parsed.role === "doctor" && parsed.isClinicalApprover;
+    const transaction = this.database.raw.transaction(() => {
+      this.database.raw
+        .prepare(
+          `INSERT INTO users
+             (id, username, display_name_en, display_name_ar, role, capabilities_json,
+              is_clinical_approver, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(
+          userId,
+          parsed.username,
+          parsed.displayNameEn,
+          parsed.displayNameAr ?? null,
+          parsed.role,
+          JSON.stringify(defaultCapabilities(parsed.role)),
+          isClinicalApprover ? 1 : 0,
+          timestamp,
+          timestamp,
+        );
+      this.database.raw
+        .prepare(
+          `INSERT INTO auth_credentials
+             (user_id, password_hash, password_algorithm, failed_attempts,
+              locked_until, password_changed_at, created_at, updated_at)
+           VALUES (?, ?, 'argon2id', 0, NULL, ?, ?, ?)`,
+        )
+        .run(userId, passwordHash, timestamp, timestamp, timestamp);
+      writeAudit(this.database, {
+        actorUserId: context.userId,
+        deviceId: context.deviceId,
+        action: "auth.staff.create",
+        entityType: "user",
+        entityId: userId,
+        result: "success",
+        metadata: { role: parsed.role },
+      });
+    });
+    transaction();
+    return this.listStaffAccounts(context).find(
+      (account) => account.id === userId,
+    )!;
+  }
+
+  public updateStaffAccount(
+    context: SessionContext,
+    input: StaffAccountUpdateInput,
+  ): StaffAccountSummary {
+    requireAdminContext(context);
+    requireCapability(context, "staff.manage");
+    const parsed = staffAccountUpdateInputSchema.parse(input);
+    const target = this.database.raw
+      .prepare("SELECT id, role, is_active FROM users WHERE id = ?")
+      .get(parsed.userId) as
+      { id: string; role: UserRole; is_active: number } | undefined;
+    if (!target) {
+      throw new Error(
+        "ELITE_AUTH_USER_NOT_FOUND: staff account does not exist",
+      );
+    }
+    if (target.id === context.userId && !parsed.isActive) {
+      throw new Error(
+        "ELITE_AUTH_SELF_DEACTIVATION_FORBIDDEN: keep your account active",
+      );
+    }
+    if (target.id === context.userId && parsed.role !== context.role) {
+      throw new Error(
+        "ELITE_AUTH_SELF_ROLE_CHANGE_FORBIDDEN: use another Admin account",
+      );
+    }
+    const removesActiveAdmin =
+      target.role === "admin" &&
+      target.is_active === 1 &&
+      (!parsed.isActive || parsed.role !== "admin");
+    if (removesActiveAdmin) {
+      const activeAdmins = this.database.raw
+        .prepare(
+          "SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_active = 1",
+        )
+        .get() as { count: number };
+      if (Number(activeAdmins.count) <= 1) {
+        throw new Error(
+          "ELITE_AUTH_LAST_ACTIVE_ADMIN: at least one active Admin is required",
+        );
+      }
+    }
+    const timestamp = now();
+    const isClinicalApprover =
+      parsed.role === "doctor" && parsed.isClinicalApprover;
+    this.database.raw
+      .prepare(
+        `UPDATE users
+         SET display_name_en = ?, display_name_ar = ?, role = ?,
+             capabilities_json = ?, is_clinical_approver = ?, is_active = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        parsed.displayNameEn,
+        parsed.displayNameAr ?? null,
+        parsed.role,
+        JSON.stringify(defaultCapabilities(parsed.role)),
+        isClinicalApprover ? 1 : 0,
+        parsed.isActive ? 1 : 0,
+        timestamp,
+        parsed.userId,
+      );
+    writeAudit(this.database, {
+      actorUserId: context.userId,
+      deviceId: context.deviceId,
+      action: "auth.staff.update",
+      entityType: "user",
+      entityId: parsed.userId,
+      result: "success",
+      metadata: { role: parsed.role, isActive: parsed.isActive },
+    });
+    return this.listStaffAccounts(context).find(
+      (account) => account.id === parsed.userId,
+    )!;
+  }
+
+  public async resetStaffPassword(
+    context: SessionContext,
+    input: StaffPasswordResetInput,
+  ): Promise<void> {
+    requireAdminContext(context);
+    requireCapability(context, "staff.manage");
+    const parsed = staffPasswordResetInputSchema.parse(input);
+    const target = this.database.raw
+      .prepare("SELECT id FROM users WHERE id = ?")
+      .get(parsed.userId) as { id?: string } | undefined;
+    if (!target?.id) {
+      throw new Error(
+        "ELITE_AUTH_USER_NOT_FOUND: staff account does not exist",
+      );
+    }
+    const passwordHash = await hashPassword(parsed.password);
+    const timestamp = now();
+    this.database.raw
+      .prepare(
+        `UPDATE auth_credentials
+         SET password_hash = ?, failed_attempts = 0, locked_until = NULL,
+             password_changed_at = ?, updated_at = ?
+         WHERE user_id = ?`,
+      )
+      .run(passwordHash, timestamp, timestamp, parsed.userId);
+    writeAudit(this.database, {
+      actorUserId: context.userId,
+      deviceId: context.deviceId,
+      action: "auth.staff.password-reset",
+      entityType: "user",
+      entityId: parsed.userId,
+      result: "success",
+    });
   }
 
   public async login(input: LoginInput): Promise<SessionContext> {

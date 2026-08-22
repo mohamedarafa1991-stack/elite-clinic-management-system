@@ -28,6 +28,9 @@ import {
   relatedPersonLinkInputSchema,
   serviceInputSchema,
   specialtyInputSchema,
+  staffAccountCreateInputSchema,
+  staffAccountUpdateInputSchema,
+  staffPasswordResetInputSchema,
 } from "@elite/auth";
 import { openDatabase, type EliteDatabase } from "@elite/database";
 import { roleCapabilities } from "@elite/contracts";
@@ -732,6 +735,44 @@ function registerIpc(): void {
   registerIpcHandler("auth:logout", (_event, token: string) => {
     requireAuthService().logout(token);
   });
+
+  registerIpcHandler("auth:staff-list", (_event, token: string) => {
+    const service = requireAuthService();
+    return service.listStaffAccounts(service.getSession(token));
+  });
+
+  registerIpcHandler(
+    "auth:staff-create",
+    async (_event, token: string, input: unknown) => {
+      const service = requireAuthService();
+      return service.createStaffAccount(
+        service.getSession(token),
+        parseIpcInput(staffAccountCreateInputSchema, input),
+      );
+    },
+  );
+
+  registerIpcHandler(
+    "auth:staff-update",
+    (_event, token: string, input: unknown) => {
+      const service = requireAuthService();
+      return service.updateStaffAccount(
+        service.getSession(token),
+        parseIpcInput(staffAccountUpdateInputSchema, input),
+      );
+    },
+  );
+
+  registerIpcHandler(
+    "auth:staff-password-reset",
+    async (_event, token: string, input: unknown) => {
+      const service = requireAuthService();
+      await service.resetStaffPassword(
+        service.getSession(token),
+        parseIpcInput(staffPasswordResetInputSchema, input),
+      );
+    },
+  );
 
   registerIpcHandler("auth:devices", (_event, token: string) => {
     const service = requireAuthService();

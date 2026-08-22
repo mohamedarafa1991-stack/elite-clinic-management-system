@@ -272,4 +272,133 @@ describe("Elite Step 2 authentication", () => {
       database.close();
     }
   });
+
+  it("creates staff accounts with role-derived capabilities and resets passwords", async () => {
+    const database = createDatabase();
+    try {
+      const service = new AuthService(database);
+      const result = await service.bootstrapInitialAdmins(bootstrapInput);
+      const admin = await service.login({
+        username: "admin.primary",
+        password: bootstrapInput.admins[0]!.password,
+        deviceId: result.hubDeviceId,
+      });
+      const receptionist = await service.createStaffAccount(admin, {
+        username: "reception.synthetic",
+        password: "Synthetic-Reception-2026!",
+        displayNameEn: "Synthetic Receptionist",
+        role: "receptionist",
+        isClinicalApprover: true,
+      });
+      const doctor = await service.createStaffAccount(admin, {
+        username: "doctor.synthetic",
+        password: "Synthetic-Doctor-2026!",
+        displayNameEn: "Synthetic Doctor",
+        role: "doctor",
+        isClinicalApprover: true,
+      });
+
+      expect(receptionist.role).toBe("receptionist");
+      expect(receptionist.isClinicalApprover).toBe(false);
+      expect(receptionist.capabilities).toContain("appointment.write");
+      expect(receptionist.capabilities).not.toContain("clinical.read");
+      expect(doctor.isClinicalApprover).toBe(true);
+      expect(doctor.capabilities).toContain("clinical.read");
+      expect(service.listStaffAccounts(admin)).toHaveLength(4);
+
+      await service.resetStaffPassword(admin, {
+        userId: receptionist.id,
+        password: "Synthetic-Reception-Reset-2026!",
+      });
+      await expect(
+        service.login({
+          username: "reception.synthetic",
+          password: "Synthetic-Reception-Reset-2026!",
+          deviceId: result.hubDeviceId,
+        }),
+      ).resolves.toMatchObject({ role: "receptionist" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("allows Admins to deactivate staff but protects the last active Admin", async () => {
+    const database = createDatabase();
+    try {
+      const service = new AuthService(database);
+      const result = await service.bootstrapInitialAdmins(bootstrapInput);
+      const admin = await service.login({
+        username: "admin.primary",
+        password: bootstrapInput.admins[0]!.password,
+        deviceId: result.hubDeviceId,
+      });
+      const thirdAdmin = await service.createStaffAccount(admin, {
+        username: "admin.third",
+        password: "Synthetic-Third-Admin-2026!",
+        displayNameEn: "Synthetic Third Admin",
+        role: "admin",
+        isClinicalApprover: false,
+      });
+      const thirdAdminSession = await service.login({
+        username: "admin.third",
+        password: "Synthetic-Third-Admin-2026!",
+        deviceId: result.hubDeviceId,
+      });
+      const staff = await service.createStaffAccount(admin, {
+        username: "nurse.synthetic",
+        password: "Synthetic-Nurse-2026!",
+        displayNameEn: "Synthetic Nurse",
+        role: "nurse",
+        isClinicalApprover: false,
+      });
+      expect(
+        service.updateStaffAccount(admin, {
+          userId: staff.id,
+          displayNameEn: staff.displayNameEn,
+          role: staff.role,
+          isClinicalApprover: false,
+          isActive: false,
+        }).isActive,
+      ).toBe(false);
+
+      expect(() =>
+        service.updateStaffAccount(admin, {
+          userId: admin.userId,
+          displayNameEn: "Synthetic Primary Admin",
+          role: "admin",
+          isClinicalApprover: false,
+          isActive: false,
+        }),
+      ).toThrow("ELITE_AUTH_SELF_DEACTIVATION_FORBIDDEN");
+
+      const backup = service
+        .listStaffAccounts(admin)
+        .find((account) => account.username === "admin.backup");
+      await service.updateStaffAccount(admin, {
+        userId: backup!.id,
+        displayNameEn: backup!.displayNameEn,
+        role: "admin",
+        isClinicalApprover: false,
+        isActive: false,
+      });
+      service.updateStaffAccount(thirdAdminSession, {
+        userId: admin.userId,
+        displayNameEn: "Synthetic Primary Admin",
+        role: "admin",
+        isClinicalApprover: false,
+        isActive: false,
+      });
+      expect(() =>
+        service.updateStaffAccount(admin, {
+          userId: thirdAdmin.id,
+          displayNameEn: thirdAdmin.displayNameEn,
+          role: "admin",
+          isClinicalApprover: false,
+          isActive: false,
+        }),
+      ).toThrow("ELITE_AUTH_LAST_ACTIVE_ADMIN");
+    } finally {
+      database.close();
+    }
+  });
 });

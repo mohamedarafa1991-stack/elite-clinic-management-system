@@ -49,6 +49,8 @@ export interface ShellLabels {
   syncDevicesDetail: string;
   adminSettings: string;
   adminSettingsDetail: string;
+  staff?: string;
+  staffDetail?: string;
   more?: string;
   moreDetail?: string;
 }
@@ -172,6 +174,14 @@ export function getVisibleShellNavigation(
       icon: "↔",
       group: "system",
       visible: has("device.manage"),
+    },
+    {
+      id: "workspace-staff",
+      label: labels.staff ?? "Staff",
+      detail: labels.staffDetail ?? "Accounts, roles, and access",
+      icon: "U",
+      group: "system",
+      visible: has("staff.manage"),
     },
     {
       id: "workspace-settings",

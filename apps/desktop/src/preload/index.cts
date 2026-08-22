@@ -109,6 +109,10 @@ import type {
   RelatedPersonInput,
   RelatedPersonLinkInput,
   RelatedPersonSummary,
+  StaffAccountCreateInput,
+  StaffAccountSummary,
+  StaffAccountUpdateInput,
+  StaffPasswordResetInput,
 } from "@elite/auth";
 
 export interface LanSyncStatus {
@@ -1254,6 +1258,37 @@ const eliteApi = {
       ipcRenderer.invoke("auth:session", token) as Promise<SessionSummary>,
     logout: (token: string): Promise<void> =>
       ipcRenderer.invoke("auth:logout", token) as Promise<void>,
+    listStaff: (token: string): Promise<readonly StaffAccountSummary[]> =>
+      ipcRenderer.invoke("auth:staff-list", token) as Promise<
+        readonly StaffAccountSummary[]
+      >,
+    createStaff: (
+      token: string,
+      input: StaffAccountCreateInput,
+    ): Promise<StaffAccountSummary> =>
+      ipcRenderer.invoke(
+        "auth:staff-create",
+        token,
+        input,
+      ) as Promise<StaffAccountSummary>,
+    updateStaff: (
+      token: string,
+      input: StaffAccountUpdateInput,
+    ): Promise<StaffAccountSummary> =>
+      ipcRenderer.invoke(
+        "auth:staff-update",
+        token,
+        input,
+      ) as Promise<StaffAccountSummary>,
+    resetStaffPassword: (
+      token: string,
+      input: StaffPasswordResetInput,
+    ): Promise<void> =>
+      ipcRenderer.invoke(
+        "auth:staff-password-reset",
+        token,
+        input,
+      ) as Promise<void>,
     listDevices: (token: string): Promise<readonly DeviceSummary[]> =>
       ipcRenderer.invoke("auth:devices", token) as Promise<
         readonly DeviceSummary[]

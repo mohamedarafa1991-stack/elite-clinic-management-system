@@ -3505,6 +3505,92 @@ textarea:focus-visible {
   }
 }
 
+/* Staff and access governance workspace */
+.staff-management-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.staff-management-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr);
+  gap: 1rem;
+  align-items: start;
+}
+.staff-create-panel,
+.staff-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.1rem;
+  border: 1px solid var(--ec-border);
+  border-radius: 18px;
+  background: var(--ec-surface-raised);
+}
+.staff-account-cards {
+  display: grid;
+  gap: 0.75rem;
+}
+.staff-account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid var(--ec-border);
+  border-radius: 14px;
+  background: var(--ec-surface-canvas);
+}
+.staff-account-card.is-inactive {
+  opacity: 0.72;
+}
+.staff-account-card-heading,
+.staff-account-actions,
+.staff-account-meta,
+.staff-reset-form {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.staff-account-card-heading {
+  justify-content: space-between;
+}
+.staff-account-card-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.staff-account-username {
+  color: var(--ec-ink-muted);
+  font-size: 0.82rem;
+}
+.staff-account-meta {
+  color: var(--ec-ink-muted);
+  font-size: 0.84rem;
+}
+.staff-account-meta label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.staff-account-meta select {
+  min-width: 8rem;
+}
+.staff-reset-form input {
+  flex: 1 1 12rem;
+}
+.appointment-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
+}
+@media (max-width: 900px) {
+  .staff-management-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* User-selectable visual themes */
 html[data-theme="dark"] {
   color-scheme: dark;
