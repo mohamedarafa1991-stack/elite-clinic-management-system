@@ -754,15 +754,25 @@ export class SynchronizationService {
             {
               doctorId: row.id,
               displayNameEn: row.displayNameEn,
-              ...(row.displayNameAr ? { displayNameAr: row.displayNameAr } : {}),
-              ...(row.professionalRegistrationNumber
-                ? { professionalRegistrationNumber: row.professionalRegistrationNumber }
+              ...(row.displayNameAr
+                ? { displayNameAr: row.displayNameAr }
                 : {}),
-              ...(row.licenseExpiry ? { licenseExpiry: row.licenseExpiry } : {}),
-              licenseVerificationStatus: row.licenseVerificationStatus ?? "unverified",
+              ...(row.professionalRegistrationNumber
+                ? {
+                    professionalRegistrationNumber:
+                      row.professionalRegistrationNumber,
+                  }
+                : {}),
+              ...(row.licenseExpiry
+                ? { licenseExpiry: row.licenseExpiry }
+                : {}),
+              licenseVerificationStatus:
+                row.licenseVerificationStatus ?? "unverified",
               specialtyIds: jsonStringArray(row.specialtyIdsJson),
               departmentIds: jsonStringArray(row.departmentIdsJson),
-              ...(row.qualifications ? { qualifications: row.qualifications } : {}),
+              ...(row.qualifications
+                ? { qualifications: row.qualifications }
+                : {}),
               ...(row.biography ? { biography: row.biography } : {}),
               languages: jsonStringArray(row.languagesJson),
               ...(row.phone ? { phone: row.phone } : {}),

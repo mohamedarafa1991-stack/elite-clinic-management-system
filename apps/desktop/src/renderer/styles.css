@@ -2580,9 +2580,16 @@ textarea:focus-visible {
   padding: 18px;
   border-color: var(--ec-border);
   border-radius: 16px;
-  background: linear-gradient(150deg, var(--ec-surface-raised), var(--ec-surface-subtle));
+  background: linear-gradient(
+    150deg,
+    var(--ec-surface-raised),
+    var(--ec-surface-subtle)
+  );
   box-shadow: 0 8px 20px rgba(20, 43, 58, 0.06);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .patient-workspace .patient-row:hover {
@@ -2633,10 +2640,17 @@ textarea:focus-visible {
   border-radius: 18px;
   color: var(--ec-ink-standard);
   text-align: start;
-  background: linear-gradient(150deg, var(--ec-surface-raised), var(--ec-surface-subtle));
+  background: linear-gradient(
+    150deg,
+    var(--ec-surface-raised),
+    var(--ec-surface-subtle)
+  );
   box-shadow: 0 8px 20px rgba(20, 43, 58, 0.06);
   cursor: pointer;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .doctor-profile-card:hover:not(:disabled),
@@ -2728,9 +2742,16 @@ textarea:focus-visible {
   padding: 18px;
   border: 1px solid var(--ec-border);
   border-radius: 18px;
-  background: linear-gradient(150deg, var(--ec-surface-raised), var(--ec-surface-subtle));
+  background: linear-gradient(
+    150deg,
+    var(--ec-surface-raised),
+    var(--ec-surface-subtle)
+  );
   box-shadow: 0 8px 20px rgba(20, 43, 58, 0.06);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .patient-profile-card:hover {
@@ -2987,14 +3008,19 @@ textarea:focus-visible {
   text-align: start;
   background: linear-gradient(150deg, #ffffff, var(--ec-surface-subtle));
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .today-task-card:hover,
 .today-task-card:focus-visible {
   border-color: var(--ec-brand);
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(54, 174, 170, 0.16), 0 10px 22px rgba(20, 43, 58, 0.09);
+  box-shadow:
+    0 0 0 3px rgba(54, 174, 170, 0.16),
+    0 10px 22px rgba(20, 43, 58, 0.09);
   transform: translateY(-2px);
 }
 

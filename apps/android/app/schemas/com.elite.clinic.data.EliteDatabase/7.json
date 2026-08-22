@@ -63,9 +63,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
+          "columnNames": ["id"]
         }
       },
       {
@@ -179,20 +177,13 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
+          "columnNames": ["id"]
         },
         "indices": [
           {
             "name": "index_local_outbox_deviceId_state_occurredAt_id",
             "unique": false,
-            "columnNames": [
-              "deviceId",
-              "state",
-              "occurredAt",
-              "id"
-            ],
+            "columnNames": ["deviceId", "state", "occurredAt", "id"],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_local_outbox_deviceId_state_occurredAt_id` ON `${TABLE_NAME}` (`deviceId`, `state`, `occurredAt`, `id`)"
           }
@@ -295,9 +286,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "deviceId"
-          ]
+          "columnNames": ["deviceId"]
         }
       },
       {
@@ -373,9 +362,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "deviceId"
-          ]
+          "columnNames": ["deviceId"]
         }
       },
       {
@@ -415,10 +402,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "deviceId",
-            "scope"
-          ]
+          "columnNames": ["deviceId", "scope"]
         }
       },
       {
@@ -487,12 +471,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "deviceId",
-            "scope",
-            "resourceType",
-            "resourceId"
-          ]
+          "columnNames": ["deviceId", "scope", "resourceType", "resourceId"]
         }
       },
       {
@@ -592,10 +571,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "deviceId",
-            "invoiceId"
-          ]
+          "columnNames": ["deviceId", "invoiceId"]
         }
       },
       {
@@ -653,9 +629,7 @@
         ],
         "primaryKey": {
           "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
+          "columnNames": ["id"]
         }
       }
     ],

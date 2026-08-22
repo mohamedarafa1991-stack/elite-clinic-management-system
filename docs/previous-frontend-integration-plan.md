@@ -8,23 +8,23 @@ The new experience will use a modern professional clinic interface with clear ta
 
 ## Approved navigation and information architecture
 
-| Area | Approved direction |
-|---|---|
-| Windows Dashboard | Default All/overview view with a Front Desk view and department filters |
-| Waiting room | Three explicit columns: Waiting, In consultation, Completed |
-| Windows navigation | Five-item primary navigation; secondary modules move under More |
-| Android navigation | Mirror the Windows primary sections |
-| Patients | Compact searchable table first; selected patient opens detail workspace |
-| Patient detail | Overview, Visits, Appointments, Billing, Contacts; clinical Visits is permission-gated |
-| Appointments | Guided wizard: patient → doctor/service → available time → confirmation |
-| Visit type | Managed dropdown plus an Other option |
-| Appointment status | Receptionist can check in, cancel, and mark no-show; clinical transitions remain role-controlled |
-| Billing | Linked patient + appointment workflow; patient and appointment entry points both remain available |
-| Receipt | Automatic receipt preview after payment, with Print/Save/Done actions |
-| Offline messaging | User-facing “Saved on this computer” and “Offline — work is safe”; technical diagnostics only for Admin |
-| Themes | Light, dark, and high-contrast accessibility themes |
-| Language | Remember each user’s language preference; mirror RTL/LTR layout correctly |
-| Clinical sub-tabs | Keep Visits; remove Investigations, Ultrasounds, and Previous pregnancies from the first integrated scope |
+| Area               | Approved direction                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| Windows Dashboard  | Default All/overview view with a Front Desk view and department filters                                   |
+| Waiting room       | Three explicit columns: Waiting, In consultation, Completed                                               |
+| Windows navigation | Five-item primary navigation; secondary modules move under More                                           |
+| Android navigation | Mirror the Windows primary sections                                                                       |
+| Patients           | Compact searchable table first; selected patient opens detail workspace                                   |
+| Patient detail     | Overview, Visits, Appointments, Billing, Contacts; clinical Visits is permission-gated                    |
+| Appointments       | Guided wizard: patient → doctor/service → available time → confirmation                                   |
+| Visit type         | Managed dropdown plus an Other option                                                                     |
+| Appointment status | Receptionist can check in, cancel, and mark no-show; clinical transitions remain role-controlled          |
+| Billing            | Linked patient + appointment workflow; patient and appointment entry points both remain available         |
+| Receipt            | Automatic receipt preview after payment, with Print/Save/Done actions                                     |
+| Offline messaging  | User-facing “Saved on this computer” and “Offline — work is safe”; technical diagnostics only for Admin   |
+| Themes             | Light, dark, and high-contrast accessibility themes                                                       |
+| Language           | Remember each user’s language preference; mirror RTL/LTR layout correctly                                 |
+| Clinical sub-tabs  | Keep Visits; remove Investigations, Ultrasounds, and Previous pregnancies from the first integrated scope |
 
 ## Module priorities
 

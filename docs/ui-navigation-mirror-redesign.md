@@ -6,16 +6,16 @@ The clinic should open into a real workspace with separate feature tabs rather t
 
 ## Shared top-level tabs
 
-| Tab | Windows behavior | Android behavior | Primary content |
-|---|---|---|---|
-| Dashboard | Sidebar tab with quick cards | Bottom navigation tab | Today’s queue, doctors available today, billing snapshot, sync health, quick actions |
-| Patients | Sidebar tab; card grid plus selected profile detail | Bottom navigation tab; card list plus detail screen | Patient identity, contact data, appointments, visit/history summaries, role-controlled clinical data |
-| Appointments | Sidebar tab; calendar workspace | Bottom navigation tab; day/agenda calendar | Calendar, check-in/arrival, appointment details, visit entry |
-| Doctors | Sidebar tab; doctor profile card grid plus detail editor | Bottom navigation tab; doctor cards plus read/edit detail | Doctor identity, specialties, departments, qualifications, fee, room, license, documents |
-| Billing | Sidebar or More tab | More tab | Invoices, collected payments, outstanding balances, earnings/payouts according to role |
-| Reports | Sidebar or More tab | More tab | Monthly revenue and patient trends |
-| Documents | Sidebar or More tab | More tab | Secure doctor document vault; Android views streamed files and does not retain them |
-| Sync & Settings | Sidebar or More tab | More tab | Enrollment, LAN health, recovery, clinic settings |
+| Tab             | Windows behavior                                         | Android behavior                                          | Primary content                                                                                      |
+| --------------- | -------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Dashboard       | Sidebar tab with quick cards                             | Bottom navigation tab                                     | Today’s queue, doctors available today, billing snapshot, sync health, quick actions                 |
+| Patients        | Sidebar tab; card grid plus selected profile detail      | Bottom navigation tab; card list plus detail screen       | Patient identity, contact data, appointments, visit/history summaries, role-controlled clinical data |
+| Appointments    | Sidebar tab; calendar workspace                          | Bottom navigation tab; day/agenda calendar                | Calendar, check-in/arrival, appointment details, visit entry                                         |
+| Doctors         | Sidebar tab; doctor profile card grid plus detail editor | Bottom navigation tab; doctor cards plus read/edit detail | Doctor identity, specialties, departments, qualifications, fee, room, license, documents             |
+| Billing         | Sidebar or More tab                                      | More tab                                                  | Invoices, collected payments, outstanding balances, earnings/payouts according to role               |
+| Reports         | Sidebar or More tab                                      | More tab                                                  | Monthly revenue and patient trends                                                                   |
+| Documents       | Sidebar or More tab                                      | More tab                                                  | Secure doctor document vault; Android views streamed files and does not retain them                  |
+| Sync & Settings | Sidebar or More tab                                      | More tab                                                  | Enrollment, LAN health, recovery, clinic settings                                                    |
 
 ## Interaction rules
 

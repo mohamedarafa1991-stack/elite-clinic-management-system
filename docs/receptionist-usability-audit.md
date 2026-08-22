@@ -1,4 +1,5 @@
 # Elite Clinic Management System
+
 ## Receptionist Usability Audit for a First-Time Computer User
 
 **Audience:** Receptionists and front-desk staff who may have little or no previous computer experience.
@@ -17,15 +18,15 @@ My overall assessment is **5/10 for a first-time receptionist today**. It is app
 
 The front desk should be organized around the following daily jobs rather than around the system’s internal modules.
 
-| Daily job | What the receptionist should see | Current underlying capability | Usability assessment |
-|---|---|---|---|
-| Start the day | “Today’s work” with the queue, arrivals, next patient, and one clear next action | Today dashboard and appointment metrics | Good foundation, but wording and actions need simplification |
-| Find a patient | Search by name, phone, or patient ID and open one clear profile | Patient search and profile selection | Available, but the appointment and billing forms still require manual ID entry |
-| Register a new patient | A short form with only necessary fields, followed by optional details | Quick/full patient registration | Safe foundation, but too much appears in one workspace |
-| Book a visit | Start from the selected patient, then choose doctor/service/date/time | Appointment creation | Current form exposes six fields and uses internal concepts directly |
-| Check in a patient | One large “Check in” action from Today or Appointments | `scheduled → arrived` status transition | Available, but mixed with “Start,” “Complete,” and clinical terminology |
-| Collect payment | Select an invoice or appointment, enter amount and method, issue receipt | Invoice/payment/receipt workflow | Functional, but the billing page contains too many unrelated finance controls |
-| Correct a mistake | Understand what happened and what can be undone | Duplicate review and audited status changes | Safety exists, but recovery messages and confirmations need improvement |
+| Daily job              | What the receptionist should see                                                 | Current underlying capability               | Usability assessment                                                           |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------ |
+| Start the day          | “Today’s work” with the queue, arrivals, next patient, and one clear next action | Today dashboard and appointment metrics     | Good foundation, but wording and actions need simplification                   |
+| Find a patient         | Search by name, phone, or patient ID and open one clear profile                  | Patient search and profile selection        | Available, but the appointment and billing forms still require manual ID entry |
+| Register a new patient | A short form with only necessary fields, followed by optional details            | Quick/full patient registration             | Safe foundation, but too much appears in one workspace                         |
+| Book a visit           | Start from the selected patient, then choose doctor/service/date/time            | Appointment creation                        | Current form exposes six fields and uses internal concepts directly            |
+| Check in a patient     | One large “Check in” action from Today or Appointments                           | `scheduled → arrived` status transition     | Available, but mixed with “Start,” “Complete,” and clinical terminology        |
+| Collect payment        | Select an invoice or appointment, enter amount and method, issue receipt         | Invoice/payment/receipt workflow            | Functional, but the billing page contains too many unrelated finance controls  |
+| Correct a mistake      | Understand what happened and what can be undone                                  | Duplicate review and audited status changes | Safety exists, but recovery messages and confirmations need improvement        |
 
 ## What is already working well
 
@@ -47,20 +48,20 @@ Current headings include “Patient identity workspace,” “Clinical workflow,
 
 **Required fix:** Replace internal terminology in receptionist-visible screens.
 
-| Current wording | Recommended receptionist wording |
-|---|---|
-| Patient identity workspace | Patients |
-| Reserve appointment | Book an appointment |
-| Clinical workflow | Appointments and check-in |
-| Step 5 | Remove entirely |
-| Step 29 · Finance | Payments and receipts |
-| Local-first | Saved on this computer |
-| Offline-ready | Available without internet |
-| Post payment | Take payment |
-| Record refund | Correct a payment |
-| Patient ID | Patient number |
-| Department | Clinic area |
-| Service | Visit type or treatment |
+| Current wording            | Recommended receptionist wording |
+| -------------------------- | -------------------------------- |
+| Patient identity workspace | Patients                         |
+| Reserve appointment        | Book an appointment              |
+| Clinical workflow          | Appointments and check-in        |
+| Step 5                     | Remove entirely                  |
+| Step 29 · Finance          | Payments and receipts            |
+| Local-first                | Saved on this computer           |
+| Offline-ready              | Available without internet       |
+| Post payment               | Take payment                     |
+| Record refund              | Correct a payment                |
+| Patient ID                 | Patient number                   |
+| Department                 | Clinic area                      |
+| Service                    | Visit type or treatment          |
 
 The technical terminology may remain available in an Admin diagnostics area, but it should not be part of the front-desk reading path.
 
@@ -129,15 +130,15 @@ The shell has Arabic labels, but many form labels, status values, appointment he
 
 A first-time receptionist is most likely to make mistakes at points where the system asks for information that the clinic already knows or can infer. Manual patient IDs, free-text visit types, raw internal names, and unfiltered status transitions are examples of avoidable cognitive load.
 
-| Area | Current load | Why it is difficult for a beginner | Target design |
-|---|---:|---|---|
-| Finding a patient | Medium | Search exists, but appointment and billing forms bypass it | One universal patient finder |
-| Registering a patient | High | Search, registration, duplicate review, and profile editing share one surface | Two-step choice: find or register |
-| Booking | Very high | Six fields, internal categories, free text, raw datetime | Guided wizard with next-available slots |
-| Check-in | Medium-high | Action appears in a mixed appointment list with other state changes | Dedicated Today queue with one primary action |
-| Payment | High | Invoice creation and payment recording are separate dense forms | Patient-first payment flow with open balance shown |
-| Recovery | High | Technical errors and several hidden states | Plain-language error plus next action |
-| Learning the system | High | “Step” headings and feature terms describe implementation, not tasks | Task language, examples, and first-use hints |
+| Area                  | Current load | Why it is difficult for a beginner                                            | Target design                                      |
+| --------------------- | -----------: | ----------------------------------------------------------------------------- | -------------------------------------------------- |
+| Finding a patient     |       Medium | Search exists, but appointment and billing forms bypass it                    | One universal patient finder                       |
+| Registering a patient |         High | Search, registration, duplicate review, and profile editing share one surface | Two-step choice: find or register                  |
+| Booking               |    Very high | Six fields, internal categories, free text, raw datetime                      | Guided wizard with next-available slots            |
+| Check-in              |  Medium-high | Action appears in a mixed appointment list with other state changes           | Dedicated Today queue with one primary action      |
+| Payment               |         High | Invoice creation and payment recording are separate dense forms               | Patient-first payment flow with open balance shown |
+| Recovery              |         High | Technical errors and several hidden states                                    | Plain-language error plus next action              |
+| Learning the system   |         High | “Step” headings and feature terms describe implementation, not tasks          | Task language, examples, and first-use hints       |
 
 ## Recommended receptionist home screen
 
@@ -173,23 +174,23 @@ The receptionist opens the patient or appointment, selects **Take payment**, see
 
 ## Priority implementation plan
 
-| Priority | Change | Expected benefit |
-|---|---|---|
-| P0 | Hide inaccessible Dashboard quick actions based on capabilities | Removes dead ends and prevents a first-use failure |
-| P0 | Create a receptionist-specific Dashboard with six task cards | Gives a non-technical user an obvious starting point |
-| P0 | Replace manual patient ID entry in booking and billing with patient search/select | Prevents wrong-patient bookings and invoices |
-| P0 | Display patient names beside every ID in queues, calendars, invoices, and confirmations | Makes recognition fast and safer |
-| P0 | Translate technical errors into plain language plus one recovery action | Helps the user recover without calling technical staff |
-| P0 | Remove or protect Start/Complete clinical status actions for receptionists | Prevents accidental clinical workflow changes |
-| P1 | Split patient registration from patient search and profile editing | Reduces the initial visual and decision load |
-| P1 | Replace free-text visit type with a managed list | Produces consistent appointments and less typing |
-| P1 | Replace raw datetime input with next-available time suggestions | Reduces date/time errors |
-| P1 | Simplify Billing into Create bill and Take payment | Matches the receptionist’s real mental model |
-| P1 | Complete Arabic translation for front-desk forms and statuses | Improves confidence and reduces interpretation errors |
-| P1 | Add confirmations for cancellation, no-show, refund, and archive | Makes risky actions understandable and reversible where possible |
-| P2 | Add first-use guided hints and a short “How to use Elite” screen | Reduces training time |
-| P2 | Add keyboard shortcuts and barcode/QR-ready patient lookup later | Speeds up mature operations without adding first-use complexity |
-| P2 | Add receptionist task history and a visible undo/reopen path where policy allows | Improves recovery and accountability |
+| Priority | Change                                                                                  | Expected benefit                                                 |
+| -------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| P0       | Hide inaccessible Dashboard quick actions based on capabilities                         | Removes dead ends and prevents a first-use failure               |
+| P0       | Create a receptionist-specific Dashboard with six task cards                            | Gives a non-technical user an obvious starting point             |
+| P0       | Replace manual patient ID entry in booking and billing with patient search/select       | Prevents wrong-patient bookings and invoices                     |
+| P0       | Display patient names beside every ID in queues, calendars, invoices, and confirmations | Makes recognition fast and safer                                 |
+| P0       | Translate technical errors into plain language plus one recovery action                 | Helps the user recover without calling technical staff           |
+| P0       | Remove or protect Start/Complete clinical status actions for receptionists              | Prevents accidental clinical workflow changes                    |
+| P1       | Split patient registration from patient search and profile editing                      | Reduces the initial visual and decision load                     |
+| P1       | Replace free-text visit type with a managed list                                        | Produces consistent appointments and less typing                 |
+| P1       | Replace raw datetime input with next-available time suggestions                         | Reduces date/time errors                                         |
+| P1       | Simplify Billing into Create bill and Take payment                                      | Matches the receptionist’s real mental model                     |
+| P1       | Complete Arabic translation for front-desk forms and statuses                           | Improves confidence and reduces interpretation errors            |
+| P1       | Add confirmations for cancellation, no-show, refund, and archive                        | Makes risky actions understandable and reversible where possible |
+| P2       | Add first-use guided hints and a short “How to use Elite” screen                        | Reduces training time                                            |
+| P2       | Add keyboard shortcuts and barcode/QR-ready patient lookup later                        | Speeds up mature operations without adding first-use complexity  |
+| P2       | Add receptionist task history and a visible undo/reopen path where policy allows        | Improves recovery and accountability                             |
 
 ## Android assessment for reception work
 

@@ -20,9 +20,7 @@ function assert(condition, message) {
 
 function quoteWindowsArgument(value) {
   const text = String(value);
-  return /[\s"]/.test(text)
-    ? `"${text.replaceAll('"', '\\"')}"`
-    : text;
+  return /[\s"]/.test(text) ? `"${text.replaceAll('"', '\\"')}"` : text;
 }
 
 function listArchive() {
@@ -30,7 +28,12 @@ function listArchive() {
   if (process.platform === "win32") {
     return execFileSync(
       process.env.ComSpec ?? "cmd.exe",
-      ["/d", "/s", "/c", ["pnpm.cmd", ...args].map(quoteWindowsArgument).join(" ")],
+      [
+        "/d",
+        "/s",
+        "/c",
+        ["pnpm.cmd", ...args].map(quoteWindowsArgument).join(" "),
+      ],
       { cwd: root, encoding: "utf8" },
     );
   }

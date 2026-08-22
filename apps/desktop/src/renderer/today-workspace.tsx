@@ -161,7 +161,9 @@ export function TodayWorkspace({
   const [patients, setPatients] = useState<readonly Patient[]>([]);
   const [departments, setDepartments] = useState<readonly Department[]>([]);
   const [doctors, setDoctors] = useState<readonly DoctorDirectoryEntry[]>([]);
-  const [dashboardView, setDashboardView] = useState<"front-desk" | "all">("front-desk");
+  const [dashboardView, setDashboardView] = useState<"front-desk" | "all">(
+    "front-desk",
+  );
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [schedules, setSchedules] = useState<readonly Schedule[]>([]);
   const [exceptions, setExceptions] = useState<readonly ScheduleException[]>(
@@ -253,7 +255,8 @@ export function TodayWorkspace({
   const { waitingCount, completedCount, nextAppointment } =
     getTodayAppointmentMetrics(visibleAppointments);
   const waitingAppointments = visibleAppointments.filter(
-    (appointment) => appointment.status === "scheduled" || appointment.status === "arrived",
+    (appointment) =>
+      appointment.status === "scheduled" || appointment.status === "arrived",
   );
   const inConsultationAppointments = visibleAppointments.filter(
     (appointment) => appointment.status === "in-consultation",
@@ -306,7 +309,11 @@ export function TodayWorkspace({
         </div>
       </div>
       <div className="today-view-controls" aria-label={labels.waitingRoom}>
-        <div className="today-view-switch" role="tablist" aria-label={labels.waitingRoom}>
+        <div
+          className="today-view-switch"
+          role="tablist"
+          aria-label={labels.waitingRoom}
+        >
           <button
             className={`today-view-tab${dashboardView === "front-desk" ? " is-active" : ""}`}
             type="button"
@@ -343,7 +350,10 @@ export function TodayWorkspace({
           </label>
         ) : null}
       </div>
-      <section className="today-task-launcher" aria-labelledby="today-task-launcher-title">
+      <section
+        className="today-task-launcher"
+        aria-labelledby="today-task-launcher-title"
+      >
         <div className="today-card-heading">
           <div>
             <p className="eyebrow">{labels.quickActions}</p>
@@ -352,29 +362,53 @@ export function TodayWorkspace({
         </div>
         <div className="today-task-grid">
           {session.capabilities.includes("patient.read") ? (
-            <button className="today-task-card" type="button" onClick={onFindPatient}>
-              <span className="today-task-icon" aria-hidden="true">P</span>
+            <button
+              className="today-task-card"
+              type="button"
+              onClick={onFindPatient}
+            >
+              <span className="today-task-icon" aria-hidden="true">
+                P
+              </span>
               <strong>{labels.quickFindPatient}</strong>
               <small>{labels.quickFindPatientDetail}</small>
             </button>
           ) : null}
           {session.capabilities.includes("appointment.read") ? (
-            <button className="today-task-card" type="button" onClick={onOpenAppointments}>
-              <span className="today-task-icon" aria-hidden="true">A</span>
+            <button
+              className="today-task-card"
+              type="button"
+              onClick={onOpenAppointments}
+            >
+              <span className="today-task-icon" aria-hidden="true">
+                A
+              </span>
               <strong>{labels.quickAppointments}</strong>
               <small>{labels.quickAppointmentsDetail}</small>
             </button>
           ) : null}
           {session.capabilities.includes("billing.read") ? (
-            <button className="today-task-card" type="button" onClick={onOpenBilling}>
-              <span className="today-task-icon" aria-hidden="true">EGP</span>
+            <button
+              className="today-task-card"
+              type="button"
+              onClick={onOpenBilling}
+            >
+              <span className="today-task-icon" aria-hidden="true">
+                EGP
+              </span>
               <strong>{labels.quickPayment}</strong>
               <small>{labels.quickPaymentDetail}</small>
             </button>
           ) : null}
           {session.capabilities.includes("doctor.profile.read") ? (
-            <button className="today-task-card" type="button" onClick={onOpenDoctors}>
-              <span className="today-task-icon" aria-hidden="true">Dr</span>
+            <button
+              className="today-task-card"
+              type="button"
+              onClick={onOpenDoctors}
+            >
+              <span className="today-task-icon" aria-hidden="true">
+                Dr
+              </span>
               <strong>{labels.openDoctors}</strong>
               <small>{labels.scheduledDoctors}</small>
             </button>
@@ -422,7 +456,9 @@ export function TodayWorkspace({
             <div>
               <p className="eyebrow">{labels.clinicQueue}</p>
               <h2 id="today-appointments-title">
-                {dashboardView === "front-desk" ? labels.waitingRoom : labels.todaysAppointments}
+                {dashboardView === "front-desk"
+                  ? labels.waitingRoom
+                  : labels.todaysAppointments}
               </h2>
             </div>
             <span className="status ok">{labels.localData}</span>
@@ -442,11 +478,26 @@ export function TodayWorkspace({
           ) : dashboardView === "front-desk" ? (
             <div className="today-queue-columns" aria-live="polite">
               {[
-                { key: "waiting", title: labels.waitingColumn, items: waitingAppointments },
-                { key: "consultation", title: labels.inConsultationColumn, items: inConsultationAppointments },
-                { key: "completed", title: labels.completedColumn, items: completedAppointments },
+                {
+                  key: "waiting",
+                  title: labels.waitingColumn,
+                  items: waitingAppointments,
+                },
+                {
+                  key: "consultation",
+                  title: labels.inConsultationColumn,
+                  items: inConsultationAppointments,
+                },
+                {
+                  key: "completed",
+                  title: labels.completedColumn,
+                  items: completedAppointments,
+                },
               ].map((column) => (
-                <div className={`today-queue-column queue-${column.key}`} key={column.key}>
+                <div
+                  className={`today-queue-column queue-${column.key}`}
+                  key={column.key}
+                >
                   <div className="today-queue-column-heading">
                     <strong>{column.title}</strong>
                     <span>{column.items.length}</span>
@@ -459,16 +510,26 @@ export function TodayWorkspace({
                         (item) => item.patientId === appointment.patientId,
                       );
                       return (
-                        <article className="today-queue-card-item" key={appointment.id}>
+                        <article
+                          className="today-queue-card-item"
+                          key={appointment.id}
+                        >
                           <time dateTime={appointment.scheduledStart}>
                             {formatTime(appointment.scheduledStart)}
                           </time>
-                          <strong>{patient?.nameEn ?? appointment.patientId}</strong>
+                          <strong>
+                            {patient?.nameEn ?? appointment.patientId}
+                          </strong>
                           <span>
-                            <BidiValue direction="ltr">{appointment.patientId}</BidiValue>
-                            {" · "}{appointment.visitType}
+                            <BidiValue direction="ltr">
+                              {appointment.patientId}
+                            </BidiValue>
+                            {" · "}
+                            {appointment.visitType}
                           </span>
-                          <small>{appointment.doctorId ?? labels.noDoctorsScheduled}</small>
+                          <small>
+                            {appointment.doctorId ?? labels.noDoctorsScheduled}
+                          </small>
                         </article>
                       );
                     })
@@ -483,15 +544,23 @@ export function TodayWorkspace({
                   (item) => item.patientId === appointment.patientId,
                 );
                 return (
-                  <article className="today-appointment-row" key={appointment.id}>
+                  <article
+                    className="today-appointment-row"
+                    key={appointment.id}
+                  >
                     <time dateTime={appointment.scheduledStart}>
                       {formatTime(appointment.scheduledStart)}
                     </time>
                     <div className="today-appointment-main">
-                      <strong>{patient?.nameEn ?? appointment.patientId}</strong>
+                      <strong>
+                        {patient?.nameEn ?? appointment.patientId}
+                      </strong>
                       <span>
-                        <BidiValue direction="ltr">{appointment.patientId}</BidiValue>
-                        {" · "}{appointment.visitType} · {appointment.durationMinutes}{" "}
+                        <BidiValue direction="ltr">
+                          {appointment.patientId}
+                        </BidiValue>
+                        {" · "}
+                        {appointment.visitType} · {appointment.durationMinutes}{" "}
                         {labels.minuteShort}
                       </span>
                     </div>
