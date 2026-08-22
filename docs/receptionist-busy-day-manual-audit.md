@@ -1,5 +1,7 @@
 # Elite Clinic — Busy-Day Receptionist Manual Audit
 
+**Author:** Manus AI
+
 ## Scope and method
 
 This audit exercised the real Electron desktop application as a first-time front-desk operator would use it during a busy day. All entered data was synthetic and created only in the development in-memory database. The audit used the visible application interface rather than direct service calls for the patient, appointment, waitlist, check-in, billing, receipt, refund, language, and theme scenarios.
@@ -150,3 +152,10 @@ The final run reported 9 contract tests, 6 database tests, 63 auth tests, and 53
 The product is **not yet ready for an unrestricted real-clinic rollout**. The source validation suite is green, but the following remain outstanding: Admin staff and doctor provisioning through the product UI, real Receptionist-role testing, doctor schedule and compensation setup, Windows packaged install and recovery verification, signed-artifact checks, LAN/TLS and Android physical-device synchronization scenarios, printer/PDF verification, backup/restore drills, governance procedures, and the 23 physical pilot gates. Continue using synthetic data until those gates are completed and signed off.
 
 The strongest immediate product priorities are to add Staff and Doctors administration, prevent unassigned appointment booking, restore explicit cancellation and no-show controls, and reduce the receptionist workspace to patient, appointment, payment, and queue actions.
+
+## References
+
+[1]: ../apps/desktop/src/main/index.ts "Desktop IPC boundary and development CSP"
+[2]: ../apps/desktop/src/renderer/today-workspace.tsx "Front-desk dashboard patient lookup"
+[3]: ../docs/receptionist-usability-audit.md "Earlier receptionist usability audit"
+[4]: ../docs/templates/physical-device-validation-checklist.md "Physical-device validation checklist"
