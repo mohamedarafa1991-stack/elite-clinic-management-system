@@ -92,14 +92,15 @@ describe("DoctorProfileService", () => {
         password: bootstrapInput.admins[0]!.password,
         deviceId: bootstrap.hubDeviceId,
       });
-      const doctorId = "synthetic-doctor-profile";
-      const nurseId = "synthetic-nurse-profile";
-      insertUser(database, {
-        id: doctorId,
+      const doctorAccount = await auth.createStaffAccount(admin, {
         username: "synthetic.doctor.profile",
-        displayName: "Synthetic Doctor Profile",
+        password: "Synthetic-Doctor-Profile-2026!",
+        displayNameEn: "Synthetic Doctor Profile",
         role: "doctor",
+        isClinicalApprover: true,
       });
+      const doctorId = doctorAccount.id;
+      const nurseId = "synthetic-nurse-profile";
       insertUser(database, {
         id: nurseId,
         username: "synthetic.nurse.profile",
