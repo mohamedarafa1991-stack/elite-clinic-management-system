@@ -125,14 +125,15 @@ requireText(
 const database = source(
   "apps/android/app/src/main/java/com/elite/clinic/data/EliteDatabase.kt",
 );
-if (database.includes("version = 6")) pass("Room database schema version is 6");
-else fail("Room database schema version must be 6");
+if (database.includes("version = 7")) pass("Room database schema version is 7");
+else fail("Room database schema version must be 7");
 for (const migration of [
   "MIGRATION_1_2",
   "MIGRATION_2_3",
   "MIGRATION_3_4",
   "MIGRATION_4_5",
   "MIGRATION_5_6",
+  "MIGRATION_6_7",
 ]) {
   if (database.includes(migration)) pass(`Room ${migration} is present`);
   else fail(`Room ${migration} is missing`);
@@ -158,6 +159,7 @@ for (const scope of [
   "clinical-notes",
   "export-governance",
   "billing-summary",
+  "doctor-summary",
 ]) {
   if (requestFactory.includes(`"${scope}"`))
     pass(`sync scope is present: ${scope}`);

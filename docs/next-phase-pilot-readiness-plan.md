@@ -64,7 +64,7 @@ Code signing should be treated as a release-hardening step. If a clinic-owned Wi
 
 ### 31D. Complete Android workstation and physical-device validation
 
-On an Android workstation, run the Gradle test and build matrix for API 29 and a current supported API. Verify Room migration 1→6, encrypted database startup, session establishment, six-scope synchronization including billing summaries, outbox retry classification, device enrollment, session expiry, and Hub TLS recovery.
+On an Android workstation, run the Gradle test and build matrix for API 29 and a current supported API. Verify Room migration 1→7, encrypted database startup, session establishment, seven-scope synchronization including billing and doctor summaries, outbox retry classification, device enrollment, session expiry, and Hub TLS recovery.
 
 Physical-device validation must cover at least one API 29-class device and one current device. The document workspace must verify LAN-only retrieval and upload, file-picker MIME/size rejection, no Android persistence of doctor documents, no share/download affordances, `FLAG_SECURE` while viewing, viewer cleanup on close, process death, session expiry, corrupted content, oversized content, Hub restart, and role-specific access. The Android release documentation already identifies these as workstation and device gates.[3]
 

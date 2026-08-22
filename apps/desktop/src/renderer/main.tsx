@@ -23,6 +23,9 @@ import type {
   PatientUpdateInput,
   Appointment,
   AppointmentCreateInput,
+  WaitlistEntry,
+  WaitlistEntryInput,
+  WaitlistStatusUpdate,
   BillingInvoice,
   BillingInvoiceCreateInput,
   BillingPackage,
@@ -366,6 +369,14 @@ function copy(locale: InterfaceLocale, key: InterfaceCopyKey): string {
   return INTERFACE_COPY[locale][key];
 }
 
+function frontDeskCopy(
+  locale: InterfaceLocale,
+  english: string,
+  arabic: string,
+): string {
+  return locale === "ar-EG" ? arabic : english;
+}
+
 function localeDirection(locale: InterfaceLocale): "ltr" | "rtl" {
   return locale === "ar-EG" ? "rtl" : "ltr";
 }
@@ -458,6 +469,25 @@ function BidiValue({
       {children}
     </span>
   );
+}
+
+function formatVisitTypeLabel(
+  value: string,
+  locale: InterfaceLocale = "en-EG",
+): string {
+  const arabicLabels: Record<string, string> = {
+    consultation: "استشارة",
+    "follow-up": "متابعة",
+    procedure: "إجراء",
+    other: "أخرى",
+  };
+  if (locale === "ar-EG" && arabicLabels[value]) {
+    return arabicLabels[value];
+  }
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatStatusLabel(
@@ -1197,6 +1227,8 @@ function PatientWorkspace({
   const patientCapabilities = getPatientWorkspaceCapabilities(
     session.capabilities,
   );
+  const t = (english: string, arabic: string): string =>
+    frontDeskCopy(locale, english, arabic);
   const duplicateReview = getDuplicateReviewState({
     candidates: duplicates,
     hasPendingInput: pendingInput !== null,
@@ -1694,14 +1726,18 @@ function PatientWorkspace({
     >
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Step 4</p>
-          <h2 id="patients-title">Patient identity workspace</h2>
+          <p className="eyebrow">{t("Front desk", "الاستقبال")}</p>
+          <h2 id="patients-title">{t("Patients", "المرضى")}</h2>
         </div>
-        <span className="status ok">Local-first</span>
+        <span className="status ok">
+          {t("Saved on this computer", "محفوظ على هذا الكمبيوتر")}
+        </span>
       </div>
       <p className="form-help">
-        Patient IDs are sequential and phones are not unique. Duplicate matches
-        are warnings, never silent merges.
+        {t(
+          "Patient numbers are generated automatically. We will warn you about possible duplicates before saving.",
+          "يتم إنشاء رقم المريض تلقائياً. سننبهك إلى أي تطابق محتمل قبل الحفظ.",
+        )}
       </p>
       <ErrorMessage message={error} />
       {selectedPatient ? (
@@ -1723,8 +1759,11 @@ function PatientWorkspace({
       ) : null}
       <div className="patient-toolbar">
         <input
-          aria-label="Search patients"
-          placeholder="Search patient ID, name, or phone"
+          aria-label={t("Search patients", "البحث عن المرضى")}
+          placeholder={t(
+            "Search by name, phone, or patient number",
+            "ابحث بالاسم أو الهاتف أو رقم المريض",
+          )}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -1737,7 +1776,7 @@ function PatientWorkspace({
           onClick={() => void refresh()}
           disabled={isBusy}
         >
-          Search
+          {t("Search", "بحث")}
         </button>
         {!selectedPatient && !showRegistrationForm ? (
           <button
@@ -1745,7 +1784,7 @@ function PatientWorkspace({
             type="button"
             onClick={() => setShowRegistrationForm(true)}
           >
-            Register new patient
+            {t("Register new patient", "تسجيل مريض جديد")}
           </button>
         ) : null}
       </div>
@@ -1760,8 +1799,8 @@ function PatientWorkspace({
           <div className="form-heading-row">
             <h3>
               {selectedPatient
-                ? `Edit ${selectedPatient.patientId}`
-                : "Patient registration"}
+                ? `${t("Edit", "تعديل")} ${selectedPatient.patientId}`
+                : t("Patient registration", "تسجيل المريض")}
             </h3>
             {selectedPatient ? (
               <button
@@ -1769,25 +1808,25 @@ function PatientWorkspace({
                 type="button"
                 onClick={clearSelectedPatient}
               >
-                New patient
+                {t("New patient", "مريض جديد")}
               </button>
             ) : null}
           </div>
           <div className="form-grid">
             <label>
-              Registration mode
+              {t("Registration mode", "نوع التسجيل")}
               <select
                 value={registrationMode}
                 onChange={(event) =>
                   setRegistrationMode(event.target.value as "quick" | "full")
                 }
               >
-                <option value="quick">Quick</option>
-                <option value="full">Full</option>
+                <option value="quick">{t("Quick", "سريع")}</option>
+                <option value="full">{t("Full", "كامل")}</option>
               </select>
             </label>
             <label>
-              Full English name
+              {t("Full name", "الاسم الكامل")}
               <input
                 required
                 value={nameEn}
@@ -1795,7 +1834,7 @@ function PatientWorkspace({
               />
             </label>
             <label>
-              Phone
+              {t("Phone", "الهاتف")}
               <input
                 required
                 value={phone}
@@ -1806,14 +1845,14 @@ function PatientWorkspace({
           {registrationMode === "full" ? (
             <div className="form-grid full-registration-fields">
               <label>
-                Arabic name
+                {t("Arabic name", "الاسم بالعربية")}
                 <input
                   value={nameAr}
                   onChange={(event) => setNameAr(event.target.value)}
                 />
               </label>
               <label>
-                Date of birth
+                {t("Date of birth", "تاريخ الميلاد")}
                 <input
                   type="date"
                   value={dob}
@@ -1821,20 +1860,22 @@ function PatientWorkspace({
                 />
               </label>
               <label>
-                Sex
+                {t("Sex", "النوع")}
                 <select
                   value={sex}
                   onChange={(event) => setSex(event.target.value as typeof sex)}
                 >
-                  <option value="">Not recorded</option>
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                  <option value="intersex">Intersex</option>
-                  <option value="unknown">Unknown</option>
+                  <option value="">{t("Not recorded", "غير مسجل")}</option>
+                  <option value="female">{t("Female", "أنثى")}</option>
+                  <option value="male">{t("Male", "ذكر")}</option>
+                  <option value="intersex">
+                    {t("Intersex", "ثنائي الجنس")}
+                  </option>
+                  <option value="unknown">{t("Unknown", "غير معروف")}</option>
                 </select>
               </label>
               <label>
-                National ID (optional)
+                {t("National ID (optional)", "الرقم القومي (اختياري)")}
                 <input
                   value={nationalId}
                   onChange={(event) => setNationalId(event.target.value)}
@@ -1843,17 +1884,20 @@ function PatientWorkspace({
             </div>
           ) : null}
           <button className="button primary" type="submit" disabled={isBusy}>
-            {selectedPatient ? "Check and save profile" : "Check and register"}
+            {selectedPatient
+              ? t("Check and save profile", "مراجعة وحفظ الملف")
+              : t("Check and register", "مراجعة وتسجيل")}
           </button>
         </form>
       ) : null}
       {duplicateReview.visible ? (
         <div className="duplicate-panel" role="alert">
-          <h3>Possible duplicate patients</h3>
+          <h3>{t("Possible duplicate patients", "مرضى متشابهون محتملون")}</h3>
           <p>
-            Review the matched signals. You may cancel or explicitly{" "}
-            {pendingEdit ? "save this profile" : "create another patient"} with
-            a reason.
+            {t(
+              `Review the matches before continuing. You may cancel or ${pendingEdit ? "save this profile" : "create another patient"} with a reason.`,
+              `راجع التطابقات قبل المتابعة. يمكنك الإلغاء أو ${pendingEdit ? "حفظ هذا الملف" : "إنشاء مريض آخر"} مع ذكر السبب.`,
+            )}
           </p>
           {duplicates.map((candidate) => (
             <div className="duplicate-row" key={candidate.patient.id}>
@@ -1861,7 +1905,7 @@ function PatientWorkspace({
                 {candidate.patient.patientId} — {candidate.patient.nameEn}
               </strong>
               <span>
-                Score {candidate.score} · {candidate.severity}
+                {t("Score", "الدرجة")} {candidate.score} · {candidate.severity}
               </span>
               <span>
                 {candidate.signals.map((signal) => signal.code).join(", ")}
@@ -1869,7 +1913,7 @@ function PatientWorkspace({
             </div>
           ))}
           <label>
-            Reason to create another patient
+            {t("Reason to create another patient", "سبب إنشاء مريض آخر")}
             <input
               value={decisionReason}
               onChange={(event) => setDecisionReason(event.target.value)}
@@ -1886,7 +1930,7 @@ function PatientWorkspace({
                 setDuplicates([]);
               }}
             >
-              Cancel
+              {t("Cancel", "إلغاء")}
             </button>
             <button
               className="button primary"
@@ -1902,15 +1946,20 @@ function PatientWorkspace({
               }}
             >
               {duplicateReview.mode === "update"
-                ? "Save profile after review"
-                : "Create another patient"}
+                ? t("Save profile after review", "حفظ الملف بعد المراجعة")
+                : t("Create another patient", "إنشاء مريض آخر")}
             </button>
           </div>
         </div>
       ) : null}
       <div className="patient-profile-table" aria-live="polite">
         {patients.length === 0 ? (
-          <p className="muted">No active patients match this search.</p>
+          <p className="muted">
+            {t(
+              "No active patients match this search.",
+              "لا يوجد مرضى نشطون يطابقون هذا البحث.",
+            )}
+          </p>
         ) : null}
         {patients.map((patient) => {
           const initials = patient.nameEn.trim().slice(0, 2).toUpperCase();
@@ -1937,11 +1986,13 @@ function PatientWorkspace({
               </div>
               <div className="patient-profile-card-facts">
                 <span>
-                  <small>Phone</small>
+                  <small>{t("Phone", "الهاتف")}</small>
+
                   <BidiValue direction="ltr">{patient.phone}</BidiValue>
                 </span>
                 <span>
-                  <small>Date of birth</small>
+                  <small>{t("Date of birth", "تاريخ الميلاد")}</small>
+
                   <span>
                     {patient.dob
                       ? formatLocalizedDate(patient.dob, locale, {
@@ -1955,7 +2006,8 @@ function PatientWorkspace({
                   </span>
                 </span>
                 <span>
-                  <small>Record completeness</small>
+                  <small>{t("Record completeness", "اكتمال الملف")}</small>
+
                   <span>
                     {formatStatusLabel(patient.completenessStatus, locale)}
                   </span>
@@ -1968,7 +2020,7 @@ function PatientWorkspace({
                   disabled={isBusy}
                   onClick={() => void selectPatient(patient)}
                 >
-                  Open profile
+                  {t("Open profile", "فتح الملف")}
                 </button>
                 {patientCapabilities.canArchivePatient &&
                 patient.status === "active" ? (
@@ -1978,7 +2030,7 @@ function PatientWorkspace({
                     disabled={isBusy}
                     onClick={() => void archive(patient)}
                   >
-                    Archive
+                    {t("Archive", "أرشفة")}
                   </button>
                 ) : null}
               </div>
@@ -1990,7 +2042,7 @@ function PatientWorkspace({
         <div className="profile-summary">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Patient profile</p>
+              <p className="eyebrow">{t("Patient profile", "ملف المريض")}</p>
               <h3>
                 {selectedPatient.patientId} · {selectedPatient.nameEn}
               </h3>
@@ -2001,7 +2053,7 @@ function PatientWorkspace({
                 type="button"
                 onClick={() => setShowRegistrationForm(true)}
               >
-                Edit profile
+                {t("Edit profile", "تعديل الملف")}
               </button>
               <span
                 className={`status ${selectedPatient.status === "active" ? "ok" : "warn"}`}
@@ -2012,15 +2064,15 @@ function PatientWorkspace({
           </div>
           <nav
             className="patient-detail-tabs"
-            aria-label="Patient profile sections"
+            aria-label={t("Patient profile sections", "أقسام ملف المريض")}
           >
             {(
               [
-                ["overview", "Overview"],
-                ["visits", "Visits"],
-                ["appointments", "Appointments"],
-                ["billing", "Billing"],
-                ["contacts", "Contacts"],
+                ["overview", t("Overview", "نظرة عامة")],
+                ["visits", t("Visits", "الزيارات")],
+                ["appointments", t("Appointments", "المواعيد")],
+                ["billing", t("Payments", "المدفوعات")],
+                ["contacts", t("Contacts", "جهات الاتصال")],
               ] as const
             ).map(([tab, label]) => {
               const isClinicalTab = tab === "visits";
@@ -2046,21 +2098,25 @@ function PatientWorkspace({
           {patientDetailTab === "overview" ? (
             <dl className="status-grid profile-grid">
               <div>
-                <dt>English name</dt>
+                <dt>{t("English name", "الاسم بالإنجليزية")}</dt>
                 <dd>{selectedPatient.nameEn}</dd>
               </div>
               <div>
-                <dt>Arabic name</dt>
-                <dd>{selectedPatient.nameAr ?? "Not recorded"}</dd>
-              </div>
-              <div>
-                <dt>Date of birth</dt>
-                <dd>{selectedPatient.dob ?? "Not recorded"}</dd>
-              </div>
-              <div>
-                <dt>National ID</dt>
+                <dt>{t("Arabic name", "الاسم بالعربية")}</dt>
                 <dd>
-                  {selectedPatient.nationalId ? "Recorded" : "Not recorded"}
+                  {selectedPatient.nameAr ?? t("Not recorded", "غير مسجل")}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Date of birth", "تاريخ الميلاد")}</dt>
+                <dd>{selectedPatient.dob ?? t("Not recorded", "غير مسجل")}</dd>
+              </div>
+              <div>
+                <dt>{t("National ID", "الرقم القومي")}</dt>
+                <dd>
+                  {selectedPatient.nationalId
+                    ? t("Recorded", "مسجل")
+                    : t("Not recorded", "غير مسجل")}
                 </dd>
               </div>
             </dl>
@@ -2074,10 +2130,14 @@ function PatientWorkspace({
               >
                 <div className="related-person-heading">
                   <div>
-                    <h4 id="visit-history-title">Visit history</h4>
+                    <h4 id="visit-history-title">
+                      {t("Visit history", "سجل الزيارات")}
+                    </h4>
                     <p className="form-help">
-                      Appointments and visit status are shown from the clinic
-                      record.
+                      {t(
+                        "Appointments and visit status are shown from the clinic record.",
+                        "تظهر المواعيد وحالة الزيارة من سجل العيادة.",
+                      )}
                     </p>
                   </div>
                   <span className="status info">
@@ -2085,7 +2145,12 @@ function PatientWorkspace({
                   </span>
                 </div>
                 {patientAppointments.length === 0 ? (
-                  <p className="muted">No visits recorded for this patient.</p>
+                  <p className="muted">
+                    {t(
+                      "No visits recorded for this patient.",
+                      "لا توجد زيارات مسجلة لهذا المريض.",
+                    )}
+                  </p>
                 ) : (
                   <div className="visit-history-list">
                     {patientAppointments.map((appointment) => (
@@ -2105,7 +2170,12 @@ function PatientWorkspace({
                           )}
                         </time>
                         <div>
-                          <strong>{appointment.visitType}</strong>
+                          <strong>
+                            {formatVisitTypeLabel(
+                              appointment.visitType,
+                              locale,
+                            )}
+                          </strong>
                           <span>
                             {formatStatusLabel(appointment.status, locale)}
                           </span>
@@ -2121,10 +2191,14 @@ function PatientWorkspace({
               >
                 <div className="related-person-heading">
                   <div>
-                    <h4 id="medical-history-title">Medical history</h4>
+                    <h4 id="medical-history-title">
+                      {t("Medical history", "التاريخ الطبي")}
+                    </h4>
                     <p className="form-help">
-                      Structured clinical history is versioned and never
-                      silently deleted.
+                      {t(
+                        "Structured clinical history is versioned and never silently deleted.",
+                        "يتم حفظ التاريخ الطبي المنظم بإصدارات ولا يُحذف بصمت.",
+                      )}
                     </p>
                   </div>
                   {patientCapabilities.canWriteClinical ? (
@@ -2134,7 +2208,7 @@ function PatientWorkspace({
                       disabled={isBusy}
                       onClick={openNewMedicalHistory}
                     >
-                      Add history entry
+                      {t("Add history entry", "إضافة سجل طبي")}
                     </button>
                   ) : null}
                 </div>
@@ -2774,7 +2848,9 @@ function formatCalendarHeading(
 
 function ClinicalWorkflowWorkspace({
   token,
+  locale,
   canManage,
+  canWriteAppointments,
   canReadClinical,
   canWriteClinical,
   canSignClinical,
@@ -2786,7 +2862,9 @@ function ClinicalWorkflowWorkspace({
   isReceptionist,
 }: {
   token: string;
+  locale: InterfaceLocale;
   canManage: boolean;
+  canWriteAppointments: boolean;
   canReadClinical: boolean;
   canWriteClinical: boolean;
   canSignClinical: boolean;
@@ -2805,6 +2883,13 @@ function ClinicalWorkflowWorkspace({
     [],
   );
   const [appointments, setAppointments] = useState<readonly Appointment[]>([]);
+  const [waitlistEntries, setWaitlistEntries] = useState<
+    readonly WaitlistEntry[]
+  >([]);
+  const [waitlistDate, setWaitlistDate] = useState("");
+  const [waitlistTime, setWaitlistTime] = useState("");
+  const [waitlistNotes, setWaitlistNotes] = useState("");
+  const [showWaitlistForm, setShowWaitlistForm] = useState(false);
   const [selectedAppointmentPatient, setSelectedAppointmentPatient] =
     useState<Patient | null>(null);
   const [icd10Codes, setIcd10Codes] = useState<readonly Icd10Code[]>([]);
@@ -2951,6 +3036,8 @@ function ClinicalWorkflowWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const t = (english: string, arabic: string): string =>
+    frontDeskCopy(locale, english, arabic);
 
   const refresh = async (): Promise<void> => {
     try {
@@ -2963,6 +3050,7 @@ function ClinicalWorkflowWorkspace({
         icd10Rows,
         doctorRows,
         appointmentRows,
+        waitlistRows,
       ] = await Promise.all([
         canReadClinical
           ? window.elite.clinical.listSpecialties(token)
@@ -2985,6 +3073,7 @@ function ClinicalWorkflowWorkspace({
           getCalendarRange(calendarView, selectedDate).to,
           calendarDoctorId || undefined,
         ),
+        window.elite.clinical.listWaitlist(token, "active"),
       ]);
       setSpecialties(specialtyRows);
       setDepartments(departmentRows);
@@ -2994,6 +3083,7 @@ function ClinicalWorkflowWorkspace({
       setIcd10Codes(icd10Rows);
       setDoctors(doctorRows);
       setAppointments(appointmentRows);
+      setWaitlistEntries(waitlistRows);
     } catch (reason: unknown) {
       setError(
         reason instanceof Error
@@ -3043,8 +3133,12 @@ function ClinicalWorkflowWorkspace({
     });
     if (hasVisibleConflict) {
       setError(
-        "This patient or doctor already has an appointment at that time. Choose another time or doctor.",
+        t(
+          "This patient or doctor already has an appointment at that time. Add the patient to the waitlist or choose another time.",
+          "لدى هذا المريض أو الطبيب موعد آخر في هذا الوقت. أضف المريض إلى قائمة الانتظار أو اختر وقتاً آخر.",
+        ),
       );
+      setShowWaitlistForm(true);
       return;
     }
     setIsBusy(true);
@@ -3073,6 +3167,107 @@ function ClinicalWorkflowWorkspace({
         receptionistFriendlyError(
           reason,
           "The appointment could not be saved. Check the details and try again.",
+        ),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const createWaitlist = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!selectedAppointmentPatient) {
+      setError(
+        t(
+          "Choose a patient before adding to the waitlist.",
+          "اختر مريضاً قبل إضافته إلى قائمة الانتظار.",
+        ),
+      );
+      return;
+    }
+    if (!departmentId) {
+      setError(
+        t(
+          "Choose a clinic area before adding to the waitlist.",
+          "اختر منطقة العيادة قبل إضافة المريض إلى قائمة الانتظار.",
+        ),
+      );
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const input: WaitlistEntryInput = {
+        patientId: selectedAppointmentPatient.patientId,
+        departmentId,
+        ...(appointmentDoctorId ? { doctorId: appointmentDoctorId } : {}),
+        ...(serviceId ? { serviceId } : {}),
+        ...(waitlistDate ? { preferredDate: waitlistDate } : {}),
+        ...(waitlistTime ? { preferredStartTime: waitlistTime } : {}),
+        ...(waitlistNotes.trim() ? { notes: waitlistNotes.trim() } : {}),
+      };
+      await window.elite.clinical.createWaitlistEntry(token, input);
+      setWaitlistDate("");
+      setWaitlistTime("");
+      setWaitlistNotes("");
+      setShowWaitlistForm(false);
+      setNotice(
+        t(
+          "Patient added to the waitlist.",
+          "تمت إضافة المريض إلى قائمة الانتظار.",
+        ),
+      );
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        receptionistFriendlyError(
+          reason,
+          t(
+            "The patient could not be added to the waitlist. Check the details and try again.",
+            "تعذرت إضافة المريض إلى قائمة الانتظار. راجع البيانات وحاول مرة أخرى.",
+          ),
+        ),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const updateWaitlist = async (
+    entry: WaitlistEntry,
+    status: WaitlistStatusUpdate["status"],
+  ): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await window.elite.clinical.updateWaitlistStatus(token, entry.id, {
+        status,
+        reason: t(
+          "Updated from front desk waitlist",
+          "تم التحديث من قائمة انتظار الاستقبال",
+        ),
+      });
+      setNotice(
+        status === "contacted"
+          ? t(
+              "Waitlist entry marked as contacted.",
+              "تم تسجيل التواصل مع المريض.",
+            )
+          : t("Waitlist entry cancelled.", "تم إلغاء إدخال قائمة الانتظار."),
+      );
+      await refresh();
+    } catch (reason: unknown) {
+      setError(
+        receptionistFriendlyError(
+          reason,
+          t(
+            "The waitlist entry could not be updated. Try again.",
+            "تعذر تحديث إدخال قائمة الانتظار. حاول مرة أخرى.",
+          ),
         ),
       );
     } finally {
@@ -4273,10 +4468,14 @@ function ClinicalWorkflowWorkspace({
       <span id="workspace-settings" className="workspace-anchor" />
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Front desk</p>
-          <h2 id="clinical-workflow-title">Appointments and check-in</h2>
+          <p className="eyebrow">{t("Front desk", "الاستقبال")}</p>
+          <h2 id="clinical-workflow-title">
+            {t("Appointments and check-in", "المواعيد وتسجيل الوصول")}
+          </h2>
         </div>
-        <span className="status ok">Saved on this computer</span>
+        <span className="status ok">
+          {t("Saved on this computer", "محفوظ على هذا الكمبيوتر")}
+        </span>
       </div>
       <ErrorMessage message={error} />
       {notice ? (
@@ -4290,30 +4489,38 @@ function ClinicalWorkflowWorkspace({
       >
         <div className="appointment-wizard-heading">
           <div>
-            <p className="eyebrow">Step {appointmentStep} of 4</p>
-            <h3>Book an appointment</h3>
+            <p className="eyebrow">
+              {t(
+                `Step ${appointmentStep} of 4`,
+                `الخطوة ${appointmentStep} من 4`,
+              )}
+            </p>
+            <h3>{t("Book an appointment", "حجز موعد")}</h3>
           </div>
           <ol
             className="appointment-wizard-steps"
-            aria-label="Appointment steps"
+            aria-label={t("Appointment steps", "خطوات حجز الموعد")}
           >
-            {["Patient", "Doctor and service", "Date and time", "Confirm"].map(
-              (step, index) => (
-                <li
-                  className={
-                    appointmentStep === index + 1
-                      ? "is-active"
-                      : appointmentStep > index + 1
-                        ? "is-complete"
-                        : ""
-                  }
-                  key={step}
-                >
-                  <span>{index + 1}</span>
-                  <small>{step}</small>
-                </li>
-              ),
-            )}
+            {[
+              t("Patient", "المريض"),
+              t("Doctor and service", "الطبيب والخدمة"),
+              t("Date and time", "التاريخ والوقت"),
+              t("Confirm", "تأكيد"),
+            ].map((step, index) => (
+              <li
+                className={
+                  appointmentStep === index + 1
+                    ? "is-active"
+                    : appointmentStep > index + 1
+                      ? "is-complete"
+                      : ""
+                }
+                key={step}
+              >
+                <span>{index + 1}</span>
+                <small>{step}</small>
+              </li>
+            ))}
           </ol>
         </div>
         {appointmentStep === 1 ? (
@@ -4329,20 +4536,28 @@ function ClinicalWorkflowWorkspace({
               setSelectedAppointmentPatient(null);
               setPatientId("");
             }}
-            label="Which patient is this appointment for?"
-            helper="Search by the patient’s name, phone, or patient number."
+            label={t(
+              "Which patient is this appointment for?",
+              "لأي مريض هذا الموعد؟",
+            )}
+            helper={t(
+              "Search by the patient’s name, phone, or patient number.",
+              "ابحث باسم المريض أو هاتفه أو رقم المريض.",
+            )}
           />
         ) : null}
         {appointmentStep === 2 ? (
           <div className="form-grid">
             <label>
-              Department
+              {t("Clinic area", "منطقة العيادة")}
               <select
                 required
                 value={departmentId}
                 onChange={(event) => setDepartmentId(event.target.value)}
               >
-                <option value="">Select department</option>
+                <option value="">
+                  {t("Select clinic area", "اختر منطقة العيادة")}
+                </option>
                 {departments
                   .filter((item) => item.status === "active")
                   .map((item) => (
@@ -4353,12 +4568,14 @@ function ClinicalWorkflowWorkspace({
               </select>
             </label>
             <label>
-              Doctor
+              {t("Doctor", "الطبيب")}
               <select
                 value={appointmentDoctorId}
                 onChange={(event) => setAppointmentDoctorId(event.target.value)}
               >
-                <option value="">Any available doctor</option>
+                <option value="">
+                  {t("Any available doctor", "أي طبيب متاح")}
+                </option>
                 {doctors.map((doctor) => (
                   <option key={doctor.id} value={doctor.id}>
                     {doctor.displayNameEn}
@@ -4368,12 +4585,14 @@ function ClinicalWorkflowWorkspace({
               </select>
             </label>
             <label>
-              Service
+              {t("Visit type or treatment", "نوع الزيارة أو العلاج")}
               <select
                 value={serviceId}
                 onChange={(event) => setServiceId(event.target.value)}
               >
-                <option value="">Default 15-minute slot</option>
+                <option value="">
+                  {t("Default 15-minute slot", "موعد افتراضي 15 دقيقة")}
+                </option>
                 {services
                   .filter((item) => item.status === "active")
                   .map((item) => (
@@ -4389,20 +4608,22 @@ function ClinicalWorkflowWorkspace({
         {appointmentStep === 3 ? (
           <div className="form-grid">
             <label>
-              Visit type
+              {t("Visit type", "نوع الزيارة")}
               <select
                 required
                 value={visitType}
                 onChange={(event) => setVisitType(event.target.value)}
               >
-                <option value="consultation">Consultation</option>
-                <option value="follow-up">Follow-up</option>
-                <option value="procedure">Procedure</option>
-                <option value="other">Other</option>
+                <option value="consultation">
+                  {t("Consultation", "استشارة")}
+                </option>
+                <option value="follow-up">{t("Follow-up", "متابعة")}</option>
+                <option value="procedure">{t("Procedure", "إجراء")}</option>
+                <option value="other">{t("Other", "أخرى")}</option>
               </select>
             </label>
             <label>
-              Start time
+              {t("Start time", "وقت البداية")}
               <input
                 required
                 type="datetime-local"
@@ -4414,32 +4635,41 @@ function ClinicalWorkflowWorkspace({
         ) : null}
         {appointmentStep === 4 ? (
           <div className="appointment-confirmation">
-            <h4>Check the appointment before saving</h4>
+            <h4>
+              {t(
+                "Check the appointment before saving",
+                "راجع الموعد قبل الحفظ",
+              )}
+            </h4>
             <dl className="status-grid">
               <div>
-                <dt>Patient</dt>
-                <dd>{selectedAppointmentPatient?.nameEn ?? "Not selected"}</dd>
+                <dt>{t("Patient", "المريض")}</dt>
+                <dd>
+                  {selectedAppointmentPatient?.nameEn ??
+                    t("Not selected", "لم يتم الاختيار")}
+                </dd>
               </div>
               <div>
-                <dt>Department</dt>
+                <dt>{t("Clinic area", "منطقة العيادة")}</dt>
                 <dd>
                   {departments.find((item) => item.id === departmentId)
-                    ?.nameEn ?? "Not selected"}
+                    ?.nameEn ?? t("Not selected", "لم يتم الاختيار")}
                 </dd>
               </div>
               <div>
-                <dt>Doctor</dt>
+                <dt>{t("Doctor", "الطبيب")}</dt>
                 <dd>
                   {doctors.find((item) => item.id === appointmentDoctorId)
-                    ?.displayNameEn ?? "Any available doctor"}
+                    ?.displayNameEn ??
+                    t("Any available doctor", "أي طبيب متاح")}
                 </dd>
               </div>
               <div>
-                <dt>When</dt>
+                <dt>{t("When", "الموعد")}</dt>
                 <dd>
                   {scheduledStart
                     ? new Date(scheduledStart).toLocaleString()
-                    : "Not selected"}
+                    : t("Not selected", "لم يتم الاختيار")}
                 </dd>
               </div>
             </dl>
@@ -4452,7 +4682,7 @@ function ClinicalWorkflowWorkspace({
               type="button"
               onClick={previousAppointmentStep}
             >
-              Back
+              {t("Back", "رجوع")}
             </button>
           ) : null}
           {appointmentStep < 4 ? (
@@ -4461,15 +4691,157 @@ function ClinicalWorkflowWorkspace({
               type="button"
               onClick={continueAppointmentWizard}
             >
-              Continue
+              {t("Continue", "متابعة")}
             </button>
           ) : (
             <button className="button primary" type="submit" disabled={isBusy}>
-              Book appointment
+              {t("Book appointment", "حجز الموعد")}
             </button>
           )}
         </div>
       </form>
+      {canWriteAppointments ? (
+        <section className="waitlist-panel" aria-labelledby="waitlist-title">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">
+                {t("No suitable slot?", "لا يوجد موعد مناسب؟")}
+              </p>
+              <h3 id="waitlist-title">{t("Waitlist", "قائمة الانتظار")}</h3>
+            </div>
+            <span className="status info">{waitlistEntries.length}</span>
+          </div>
+          <p className="form-help">
+            {t(
+              "Keep the patient’s request safely recorded and contact them when a suitable slot opens.",
+              "احتفظ بطلب المريض بأمان وتواصل معه عند توفر موعد مناسب.",
+            )}
+          </p>
+          {!showWaitlistForm ? (
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setShowWaitlistForm(true)}
+            >
+              {t("Add patient to waitlist", "إضافة المريض إلى قائمة الانتظار")}
+            </button>
+          ) : (
+            <form
+              className="form-section waitlist-form"
+              onSubmit={(event) => void createWaitlist(event)}
+            >
+              {!selectedAppointmentPatient ? (
+                <PatientLookup
+                  token={token}
+                  selectedPatient={selectedAppointmentPatient}
+                  onSelect={(patient) => {
+                    setSelectedAppointmentPatient(patient);
+                    setPatientId(patient.patientId);
+                  }}
+                  onClear={() => {
+                    setSelectedAppointmentPatient(null);
+                    setPatientId("");
+                  }}
+                  label={t(
+                    "Which patient should wait for a slot?",
+                    "أي مريض ينتظر موعداً؟",
+                  )}
+                  helper={t(
+                    "Search by name, phone, or patient number.",
+                    "ابحث بالاسم أو الهاتف أو رقم المريض.",
+                  )}
+                />
+              ) : null}
+              <div className="form-grid">
+                <label>
+                  {t("Preferred date (optional)", "التاريخ المفضل (اختياري)")}
+                  <input
+                    type="date"
+                    value={waitlistDate}
+                    onChange={(event) => setWaitlistDate(event.target.value)}
+                  />
+                </label>
+                <label>
+                  {t("Preferred time (optional)", "الوقت المفضل (اختياري)")}
+                  <input
+                    type="time"
+                    value={waitlistTime}
+                    onChange={(event) => setWaitlistTime(event.target.value)}
+                  />
+                </label>
+                <label>
+                  {t("Notes (optional)", "ملاحظات (اختياري)")}
+                  <input
+                    value={waitlistNotes}
+                    onChange={(event) => setWaitlistNotes(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="button-row">
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => setShowWaitlistForm(false)}
+                >
+                  {t("Cancel", "إلغاء")}
+                </button>
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={isBusy || !selectedAppointmentPatient}
+                >
+                  {t("Save to waitlist", "حفظ في قائمة الانتظار")}
+                </button>
+              </div>
+            </form>
+          )}
+          <div className="waitlist-list" aria-live="polite">
+            {waitlistEntries.length === 0 ? (
+              <p className="muted">
+                {t(
+                  "No active waitlist entries.",
+                  "لا توجد طلبات نشطة في قائمة الانتظار.",
+                )}
+              </p>
+            ) : (
+              waitlistEntries.map((entry) => (
+                <article className="waitlist-row" key={entry.id}>
+                  <div>
+                    <strong>
+                      <BidiValue direction="ltr">{entry.patientId}</BidiValue>
+                    </strong>
+                    <span>
+                      {entry.preferredDate ?? t("Any date", "أي تاريخ")}
+                      {entry.preferredStartTime
+                        ? ` · ${entry.preferredStartTime}`
+                        : ""}
+                    </span>
+                    {entry.notes ? <small>{entry.notes}</small> : null}
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="button small secondary"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void updateWaitlist(entry, "contacted")}
+                    >
+                      {t("Contacted", "تم التواصل")}
+                    </button>
+                    <button
+                      className="button small danger"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void updateWaitlist(entry, "cancelled")}
+                    >
+                      {t("Remove", "إزالة")}
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
       {canManage ? (
         <>
           <div className="clinical-config-grid">
@@ -5028,10 +5400,12 @@ function ClinicalWorkflowWorkspace({
                       )}
                     </strong>
                     <span>
-                      {appointment.patientId} · {appointment.visitType}
+                      {appointment.patientId} ·{" "}
+                      {formatVisitTypeLabel(appointment.visitType, locale)}
                     </span>
                     <small>
-                      {appointment.status} · {appointment.durationMinutes} min ·{" "}
+                      {formatStatusLabel(appointment.status, locale)} ·{" "}
+                      {appointment.durationMinutes} min ·{" "}
                       {appointment.doctorId
                         ? doctorLabel(appointment.doctorId)
                         : "Unassigned"}
@@ -5044,9 +5418,16 @@ function ClinicalWorkflowWorkspace({
         )}
       </section>
       <div className="appointment-list">
-        <h3>Appointments in selected calendar range</h3>
+        <h3>
+          {t(
+            "Appointments in selected calendar range",
+            "المواعيد في الفترة المحددة",
+          )}
+        </h3>
         {appointments.length === 0 ? (
-          <p className="muted">No appointments found.</p>
+          <p className="muted">
+            {t("No appointments found.", "لا توجد مواعيد.")}
+          </p>
         ) : (
           appointments.map((appointment) => (
             <article className="appointment-row" key={appointment.id}>
@@ -5054,10 +5435,11 @@ function ClinicalWorkflowWorkspace({
                 <strong>{appointment.patientId}</strong>
                 <span>
                   {new Date(appointment.scheduledStart).toLocaleString()} ·{" "}
-                  {appointment.visitType}
+                  {formatVisitTypeLabel(appointment.visitType, locale)}
                 </span>
                 <small>
-                  {appointment.status} · {appointment.durationMinutes} min
+                  {formatStatusLabel(appointment.status, locale)} ·{" "}
+                  {appointment.durationMinutes} min
                 </small>
               </div>
               {canReadClinical ? (
@@ -5067,7 +5449,7 @@ function ClinicalWorkflowWorkspace({
                   disabled={isBusy}
                   onClick={() => void openEncounter(appointment)}
                 >
-                  Open encounter
+                  {t("Open encounter", "فتح الزيارة")}
                 </button>
               ) : null}
               {appointment.status === "scheduled" ? (
@@ -5084,7 +5466,7 @@ function ClinicalWorkflowWorkspace({
                       )
                     }
                   >
-                    Check in
+                    {t("Check in", "تسجيل الوصول")}
                   </button>
                   {isReceptionist ? (
                     <>
@@ -5100,23 +5482,33 @@ function ClinicalWorkflowWorkspace({
                           )
                         }
                       >
-                        Mark no-show
+                        {t("Mark no-show", "تسجيل عدم الحضور")}
                       </button>
                       <button
                         className="button small danger"
                         type="button"
                         disabled={isBusy}
                         onClick={() => {
-                          if (window.confirm("Cancel this appointment?")) {
+                          if (
+                            window.confirm(
+                              t(
+                                "Cancel this appointment?",
+                                "هل تريد إلغاء هذا الموعد؟",
+                              ),
+                            )
+                          ) {
                             void updateStatus(
                               appointment,
                               "cancelled",
-                              "Cancelled by front desk",
+                              t(
+                                "Cancelled by front desk",
+                                "تم الإلغاء من الاستقبال",
+                              ),
                             );
                           }
                         }}
                       >
-                        Cancel
+                        {t("Cancel", "إلغاء")}
                       </button>
                     </>
                   ) : null}
@@ -5130,7 +5522,7 @@ function ClinicalWorkflowWorkspace({
                     void updateStatus(appointment, "in-consultation")
                   }
                 >
-                  Start consultation
+                  {t("Start consultation", "بدء الكشف")}
                 </button>
               ) : !isReceptionist &&
                 appointment.status === "in-consultation" ? (
@@ -5140,10 +5532,12 @@ function ClinicalWorkflowWorkspace({
                   disabled={isBusy}
                   onClick={() => void updateStatus(appointment, "completed")}
                 >
-                  Complete visit
+                  {t("Complete visit", "إنهاء الزيارة")}
                 </button>
               ) : appointment.status === "arrived" ? (
-                <span className="status info">Waiting for clinical team</span>
+                <span className="status info">
+                  {t("Waiting for clinical team", "في انتظار الفريق الطبي")}
+                </span>
               ) : null}
             </article>
           ))
@@ -5159,7 +5553,7 @@ function ClinicalWorkflowWorkspace({
               </h3>
               <p className="form-help">
                 {new Date(selectedAppointment.scheduledStart).toLocaleString()}{" "}
-                · {selectedAppointment.visitType}
+                · {formatVisitTypeLabel(selectedAppointment.visitType, locale)}
               </p>
             </div>
             <span
@@ -6830,6 +7224,8 @@ function BillingWorkspace({
   );
   const canWriteBilling = session.capabilities.includes("billing.write");
   const canRefund = session.capabilities.includes("billing.refund");
+  const t = (english: string, arabic: string): string =>
+    frontDeskCopy(locale, english, arabic);
 
   const selectBillingPatient = async (patient: Patient): Promise<void> => {
     setSelectedBillingPatient(patient);
@@ -7068,14 +7464,20 @@ function BillingWorkspace({
     <section className="card" aria-labelledby="billing-title">
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Front desk</p>
-          <h2 id="billing-title">Payments and receipts</h2>
+          <p className="eyebrow">{t("Front desk", "الاستقبال")}</p>
+          <h2 id="billing-title">
+            {t("Payments and receipts", "المدفوعات والإيصالات")}
+          </h2>
         </div>
-        <span className="status ok">Saved on this computer</span>
+        <span className="status ok">
+          {t("Saved on this computer", "محفوظ على هذا الكمبيوتر")}
+        </span>
       </div>
       <p className="form-help">
-        Choose the patient first, then create a bill or record a payment. Every
-        receipt is saved safely for the clinic.
+        {t(
+          "Choose the patient first, then create a bill or record a payment. Every receipt is saved safely for the clinic.",
+          "اختر المريض أولاً، ثم أنشئ فاتورة أو سجل دفعة. يتم حفظ كل إيصال بأمان للعيادة.",
+        )}
       </p>
       <ErrorMessage message={error} />
       {notice ? <p className="status ok">{notice}</p> : null}
@@ -7086,8 +7488,12 @@ function BillingWorkspace({
         >
           <div className="card-heading">
             <div>
-              <p className="eyebrow">Payment complete</p>
-              <h3 id="receipt-preview-title">Receipt preview</h3>
+              <p className="eyebrow">
+                {t("Payment complete", "اكتملت الدفعة")}
+              </p>
+              <h3 id="receipt-preview-title">
+                {t("Receipt preview", "معاينة الإيصال")}
+              </h3>
             </div>
             <span className="status ok">
               {receiptPreview.receipt.receiptNumber}
@@ -7095,22 +7501,22 @@ function BillingWorkspace({
           </div>
           <dl className="status-grid receipt-preview-grid">
             <div>
-              <dt>Patient</dt>
+              <dt>{t("Patient", "المريض")}</dt>
               <dd>
                 {selectedBillingPatient?.nameEn ??
                   receiptPreview.invoice.patientId}
               </dd>
             </div>
             <div>
-              <dt>Amount</dt>
+              <dt>{t("Amount", "المبلغ")}</dt>
               <dd>{formatEgp(receiptPreview.receipt.amountEgp)}</dd>
             </div>
             <div>
-              <dt>Invoice</dt>
+              <dt>{t("Invoice", "الفاتورة")}</dt>
               <dd>{receiptPreview.invoice.invoiceNumber}</dd>
             </div>
             <div>
-              <dt>Issued</dt>
+              <dt>{t("Issued", "تاريخ الإصدار")}</dt>
               <dd>
                 {new Date(receiptPreview.receipt.issuedAt).toLocaleString()}
               </dd>
@@ -7122,14 +7528,14 @@ function BillingWorkspace({
               type="button"
               onClick={() => window.print()}
             >
-              Print / save PDF
+              {t("Print / save PDF", "طباعة / حفظ PDF")}
             </button>
             <button
               className="button secondary"
               type="button"
               onClick={() => setReceiptPreview(null)}
             >
-              Close preview
+              {t("Close preview", "إغلاق المعاينة")}
             </button>
           </div>
         </section>
@@ -7293,7 +7699,7 @@ function BillingWorkspace({
           className="form-section"
           onSubmit={(event) => void createInvoice(event)}
         >
-          <h3>Create invoice</h3>
+          <h3>{t("Create bill", "إنشاء فاتورة")}</h3>
           <div className="form-grid">
             <PatientLookup
               token={token}
@@ -7304,23 +7710,31 @@ function BillingWorkspace({
                 setBillingAppointments([]);
                 setSelectedBillingAppointmentId("");
               }}
-              label="Which patient is this bill for?"
-              helper="Find the patient before choosing a service or payment."
+              label={t(
+                "Which patient is this bill for?",
+                "لأي مريض هذه الفاتورة؟",
+              )}
+              helper={t(
+                "Find the patient before choosing a service or payment.",
+                "ابحث عن المريض قبل اختيار الخدمة أو الدفع.",
+              )}
             />
             {billingAppointments.length > 0 ? (
               <label>
-                Link to appointment (optional)
+                {t("Link to appointment (optional)", "ربط بالموعد (اختياري)")}
                 <select
                   value={selectedBillingAppointmentId}
                   onChange={(event) =>
                     setSelectedBillingAppointmentId(event.target.value)
                   }
                 >
-                  <option value="">No appointment link</option>
+                  <option value="">
+                    {t("No appointment link", "بدون ربط بموعد")}
+                  </option>
                   {billingAppointments.map((appointment) => (
                     <option key={appointment.id} value={appointment.id}>
                       {new Date(appointment.scheduledStart).toLocaleString()} ·{" "}
-                      {appointment.visitType} ·{" "}
+                      {formatVisitTypeLabel(appointment.visitType, locale)} ·{" "}
                       {formatStatusLabel(appointment.status, locale)}
                     </option>
                   ))}
@@ -7328,7 +7742,7 @@ function BillingWorkspace({
               </label>
             ) : null}
             <label>
-              Service
+              {t("Service", "الخدمة")}
               <select
                 value={serviceId}
                 onChange={(event) => {
@@ -7336,7 +7750,7 @@ function BillingWorkspace({
                   setPackageId("");
                 }}
               >
-                <option value="">No service</option>
+                <option value="">{t("No service", "بدون خدمة")}</option>
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
                     {service.nameEn} · {formatEgp(service.priceEgp)}
@@ -7345,7 +7759,7 @@ function BillingWorkspace({
               </select>
             </label>
             <label>
-              Package
+              {t("Package", "الباقة")}
               <select
                 value={packageId}
                 onChange={(event) => {
@@ -7353,7 +7767,7 @@ function BillingWorkspace({
                   setServiceId("");
                 }}
               >
-                <option value="">No package</option>
+                <option value="">{t("No package", "بدون باقة")}</option>
                 {packages
                   .filter((pkg) => pkg.status === "active")
                   .map((pkg) => (
@@ -7364,7 +7778,7 @@ function BillingWorkspace({
               </select>
             </label>
             <label>
-              Quantity
+              {t("Quantity", "الكمية")}
               <input
                 required
                 min="1"
@@ -7374,7 +7788,7 @@ function BillingWorkspace({
               />
             </label>
             <label>
-              Discount (EGP)
+              {t("Discount (EGP)", "الخصم (جنيه مصري)")}
               <input
                 min="0"
                 type="number"
@@ -7383,7 +7797,7 @@ function BillingWorkspace({
               />
             </label>
             <label>
-              Discount reason
+              {t("Discount reason", "سبب الخصم")}
               <input
                 value={discountReason}
                 onChange={(event) => setDiscountReason(event.target.value)}
@@ -7395,12 +7809,12 @@ function BillingWorkspace({
             type="submit"
             disabled={isBusy || (!serviceId && !packageId)}
           >
-            Create invoice
+            {t("Create bill", "إنشاء فاتورة")}
           </button>
         </form>
       ) : null}
       <div className="form-section">
-        <h3>Invoices</h3>
+        <h3>{t("Invoices", "الفواتير")}</h3>
         <div className="patient-list">
           {invoices.map((invoice) => (
             <button
@@ -7425,7 +7839,9 @@ function BillingWorkspace({
             </button>
           ))}
           {invoices.length === 0 ? (
-            <p className="muted">No invoices recorded yet.</p>
+            <p className="muted">
+              {t("No invoices recorded yet.", "لا توجد فواتير مسجلة بعد.")}
+            </p>
           ) : null}
         </div>
       </div>
@@ -7434,10 +7850,15 @@ function BillingWorkspace({
           className="form-section"
           onSubmit={(event) => void postPayment(event)}
         >
-          <h3>Post payment and issue receipt</h3>
+          <h3>
+            {t(
+              "Take payment and issue receipt",
+              "استلام الدفعة وإصدار الإيصال",
+            )}
+          </h3>
           <div className="form-grid">
             <label>
-              Invoice
+              {t("Invoice", "الفاتورة")}
               <select
                 value={selectedInvoiceId}
                 onChange={(event) => setSelectedInvoiceId(event.target.value)}
@@ -7451,7 +7872,7 @@ function BillingWorkspace({
               </select>
             </label>
             <label>
-              Amount (EGP)
+              {t("Amount (EGP)", "المبلغ (جنيه مصري)")}
               <input
                 required
                 min="1"
@@ -7461,7 +7882,7 @@ function BillingWorkspace({
               />
             </label>
             <label>
-              Method
+              {t("Method", "طريقة الدفع")}
               <select
                 value={paymentMethod}
                 onChange={(event) =>
@@ -7470,14 +7891,16 @@ function BillingWorkspace({
                   )
                 }
               >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="bank-transfer">Bank transfer</option>
-                <option value="other">Other</option>
+                <option value="cash">{t("Cash", "نقدي")}</option>
+                <option value="card">{t("Card", "بطاقة")}</option>
+                <option value="bank-transfer">
+                  {t("Bank transfer", "تحويل بنكي")}
+                </option>
+                <option value="other">{t("Other", "أخرى")}</option>
               </select>
             </label>
             <label>
-              Reference
+              {t("Reference", "المرجع")}
               <input
                 value={paymentReference}
                 onChange={(event) => setPaymentReference(event.target.value)}
@@ -7485,7 +7908,7 @@ function BillingWorkspace({
             </label>
           </div>
           <button className="button primary" type="submit" disabled={isBusy}>
-            Post payment
+            {t("Take payment", "استلام الدفعة")}
           </button>
         </form>
       ) : null}
@@ -7494,10 +7917,10 @@ function BillingWorkspace({
           className="form-section"
           onSubmit={(event) => void postRefund(event)}
         >
-          <h3>Refund payment</h3>
+          <h3>{t("Correct a payment", "تصحيح دفعة")}</h3>
           <div className="form-grid">
             <label>
-              Payment ID
+              {t("Payment ID", "معرّف الدفعة")}
               <input
                 required
                 value={refundPaymentId}
@@ -7505,7 +7928,7 @@ function BillingWorkspace({
               />
             </label>
             <label>
-              Refund amount (EGP)
+              {t("Refund amount (EGP)", "مبلغ الاسترداد (جنيه مصري)")}
               <input
                 required
                 min="1"
@@ -7525,7 +7948,7 @@ function BillingWorkspace({
             </label>
           </div>
           <button className="button danger" type="submit" disabled={isBusy}>
-            Record refund
+            {t("Record correction", "تسجيل التصحيح")}
           </button>
         </form>
       ) : null}
@@ -8569,7 +8992,11 @@ function AuthenticatedView({
           <WorkspaceSection id={activeSection}>
             <ClinicalWorkflowWorkspace
               token={token}
+              locale={locale}
               canManage={session.capabilities.includes("module.manage")}
+              canWriteAppointments={session.capabilities.includes(
+                "appointment.write",
+              )}
               canReadClinical={session.capabilities.includes("clinical.read")}
               canWriteClinical={session.capabilities.includes("clinical.write")}
               canSignClinical={session.capabilities.includes("clinical.sign")}

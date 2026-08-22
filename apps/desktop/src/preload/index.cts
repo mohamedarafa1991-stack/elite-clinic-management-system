@@ -51,6 +51,10 @@ import type {
   Icd10Code,
   Icd10CodeInput,
   AppointmentStatusUpdate,
+  WaitlistEntry,
+  WaitlistEntryInput,
+  WaitlistStatus,
+  WaitlistStatusUpdate,
   BillingInvoice,
   BillingInvoiceCreateInput,
   BillingPackage,
@@ -634,6 +638,27 @@ const eliteApi = {
         id,
         input,
       ) as Promise<Appointment>,
+    listWaitlist: (token: string, status?: WaitlistStatus) =>
+      ipcRenderer.invoke("clinical:waitlist", token, status) as Promise<
+        readonly WaitlistEntry[]
+      >,
+    createWaitlistEntry: (token: string, input: WaitlistEntryInput) =>
+      ipcRenderer.invoke(
+        "clinical:waitlist-create",
+        token,
+        input,
+      ) as Promise<WaitlistEntry>,
+    updateWaitlistStatus: (
+      token: string,
+      id: string,
+      input: WaitlistStatusUpdate,
+    ) =>
+      ipcRenderer.invoke(
+        "clinical:waitlist-status",
+        token,
+        id,
+        input,
+      ) as Promise<WaitlistEntry>,
   },
   doctor: {
     listProfiles: (token: string) =>

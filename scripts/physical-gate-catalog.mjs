@@ -83,7 +83,7 @@ export const PHYSICAL_GATES = [
     id: "AND-SYNC-001",
     status: "pending",
     detail:
-      "Requires six-scope LAN synchronization with a Windows Hub and device.",
+      "Requires seven-scope LAN synchronization, including billing-summary and doctor-summary, with a Windows Hub and device.",
   },
   {
     id: "AND-SYNC-002",

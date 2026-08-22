@@ -2263,6 +2263,49 @@ export type AppointmentStatusUpdate = z.infer<
   typeof appointmentStatusUpdateSchema
 >;
 
+export const waitlistStatusSchema = z.enum([
+  "active",
+  "contacted",
+  "booked",
+  "cancelled",
+  "expired",
+]);
+export type WaitlistStatus = z.infer<typeof waitlistStatusSchema>;
+
+export const waitlistEntryInputSchema = z.object({
+  patientId: patientIdSchema,
+  departmentId: opaqueIdSchema,
+  doctorId: opaqueIdSchema.optional(),
+  serviceId: opaqueIdSchema.optional(),
+  preferredDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  preferredStartTime: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+export type WaitlistEntryInput = z.infer<typeof waitlistEntryInputSchema>;
+
+export const waitlistEntrySchema = waitlistEntryInputSchema.extend({
+  id: opaqueIdSchema,
+  status: waitlistStatusSchema,
+  createdAt: isoDateTimeSchema,
+  createdByUserId: opaqueIdSchema,
+  updatedAt: isoDateTimeSchema,
+  updatedByUserId: opaqueIdSchema,
+  version: z.number().int().positive(),
+});
+export type WaitlistEntry = z.infer<typeof waitlistEntrySchema>;
+
+export const waitlistStatusUpdateSchema = z.object({
+  status: z.enum(["contacted", "booked", "cancelled", "expired"]),
+  reason: z.string().trim().min(3).max(500),
+});
+export type WaitlistStatusUpdate = z.infer<typeof waitlistStatusUpdateSchema>;
+
 export const syncOperationSchema = z.enum([
   "create",
   "update",

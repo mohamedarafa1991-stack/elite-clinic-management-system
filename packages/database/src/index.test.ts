@@ -27,11 +27,12 @@ describe("Elite database foundation", () => {
 
       expect(migrationVersions()).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24,
+        21, 22, 23, 24, 25, 26,
       ]);
       expect(tables).toContain("patients");
       expect(tables).toContain("related_persons");
       expect(tables).toContain("appointments");
+      expect(tables).toContain("waitlist_entries");
       expect(tables).toContain("outbox_events");
       expect(tables).toContain("audit_events");
       expect(tables).toContain("patient_identity_sequence");
@@ -58,6 +59,7 @@ describe("Elite database foundation", () => {
         )
         .get() as { sql: string };
       expect(syncCursorSchema.sql).toContain("billing-summary");
+      expect(syncCursorSchema.sql).toContain("doctor-summary");
       expect(tables).toContain("doctor_schedules");
       expect(tables).toContain("schedule_exceptions");
       expect(tables).toContain("appointment_history");

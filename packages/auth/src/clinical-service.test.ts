@@ -391,3 +391,66 @@ it("separates front-desk scheduling metadata from clinical records", async () =>
     fixture.database.close();
   }
 });
+
+describe("Appointment waitlist", () => {
+  it("creates, lists, transitions, and audits a waitlist entry", async () => {
+    const fixture = await createFixture();
+    try {
+      const specialty = fixture.clinical.createSpecialty(fixture.context, {
+        code: "WAIT",
+        nameEn: "Waitlist specialty",
+      });
+      const department = fixture.clinical.createDepartment(fixture.context, {
+        specialtyId: specialty.id,
+        code: "WAIT-OPD",
+        nameEn: "Waitlist outpatient",
+      });
+      const patient = fixture.patients.registerPatient(fixture.context, {
+        registrationMode: "quick",
+        nameEn: "Synthetic Waitlist Patient",
+        phone: "+201000000099",
+      });
+      const entry = fixture.clinical.createWaitlistEntry(fixture.context, {
+        patientId: patient.patient.patientId,
+        departmentId: department.id,
+        preferredDate: "2030-02-01",
+        preferredStartTime: "10:30",
+        notes: "Synthetic morning preference",
+      });
+      expect(entry.status).toBe("active");
+      expect(fixture.clinical.listWaitlist(fixture.context, "active")).toEqual([
+        entry,
+      ]);
+
+      const contacted = fixture.clinical.updateWaitlistStatus(
+        fixture.context,
+        entry.id,
+        { status: "contacted", reason: "Synthetic patient contacted" },
+      );
+      expect(contacted.status).toBe("contacted");
+      const cancelled = fixture.clinical.updateWaitlistStatus(
+        fixture.context,
+        entry.id,
+        { status: "cancelled", reason: "Synthetic waitlist cleanup" },
+      );
+      expect(cancelled.status).toBe("cancelled");
+      expect(
+        fixture.clinical.listWaitlist(fixture.context, "active"),
+      ).toHaveLength(0);
+      expect(() =>
+        fixture.clinical.updateWaitlistStatus(fixture.context, entry.id, {
+          status: "contacted",
+          reason: "Invalid terminal transition",
+        }),
+      ).toThrow("ELITE_WAITLIST_INVALID_STATUS_TRANSITION");
+      const audit = fixture.database.raw
+        .prepare(
+          "SELECT COUNT(*) AS count FROM audit_events WHERE action LIKE 'waitlist.%'",
+        )
+        .get() as { count: number };
+      expect(Number(audit.count)).toBe(3);
+    } finally {
+      fixture.database.close();
+    }
+  });
+});

@@ -182,7 +182,7 @@ runPnpm(
 runPnpm(
   ["pilot:rehearsal"],
   "LOCAL-PILOT-001",
-  "The synthetic clinic-day, encrypted backup/restore, document-vault, billing, and six-scope sync rehearsal passes.",
+  "The synthetic clinic-day, encrypted backup/restore, document-vault, billing, and seven-scope sync rehearsal passes, including doctor-summary.",
   { timeout: 30 * 60 * 1000 },
 );
 runPnpm(

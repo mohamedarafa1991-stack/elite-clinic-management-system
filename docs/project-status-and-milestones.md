@@ -114,7 +114,7 @@ The result must record device models, API levels, application versions, certific
 
 ### Milestone 3 — Billing workstation and cross-platform acceptance
 
-On Android hardware, verify the billing-summary scope specifically: six-scope session negotiation, policy authorization, minimized payload contents, EGP validation, inconsistent-total rejection, cursor replay, redaction/deletion removal, offline retention, and recovery after process death. The desktop billing workflow should also be exercised with synthetic patients, invoices, discounts, partial payments, refunds, receipt voiding, and reconciliation.
+On Android hardware, verify the billing-summary scope specifically within seven-scope session negotiation, including doctor-summary: policy authorization, minimized payload contents, EGP validation, inconsistent-total rejection, cursor replay, redaction/deletion removal, offline retention, and recovery after process death. The desktop billing workflow should also be exercised with synthetic patients, invoices, discounts, partial payments, refunds, receipt voiding, and reconciliation.
 
 This milestone should explicitly confirm that Android billing is intentionally read-only until the clinic approves a mobile billing workflow. If mobile billing writes are required, they need a separate signed outbox design and conflict policy rather than being added casually to the current summary scope.
 

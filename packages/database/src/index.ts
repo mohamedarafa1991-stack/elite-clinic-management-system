@@ -1528,6 +1528,148 @@ const MIGRATIONS: readonly { version: number; name: string; sql: string }[] = [
         WHERE refund_id IS NOT NULL;
     `,
   },
+  {
+    version: 25,
+    name: "appointment-waitlist",
+    sql: `
+      CREATE TABLE IF NOT EXISTS waitlist_entries (
+        id TEXT PRIMARY KEY NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        department_id TEXT NOT NULL REFERENCES departments(id),
+        doctor_id TEXT REFERENCES users(id),
+        service_id TEXT REFERENCES services(id),
+        preferred_date TEXT,
+        preferred_start_time TEXT,
+        notes TEXT,
+        status TEXT NOT NULL CHECK (status IN ('active', 'contacted', 'booked', 'cancelled', 'expired')),
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL REFERENCES users(id),
+        updated_at TEXT NOT NULL,
+        updated_by_user_id TEXT NOT NULL REFERENCES users(id),
+        version INTEGER NOT NULL DEFAULT 1,
+        CHECK (preferred_date IS NULL OR preferred_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+        CHECK (preferred_start_time IS NULL OR preferred_start_time GLOB '[0-2][0-9]:[0-5][0-9]')
+      );
+      CREATE INDEX IF NOT EXISTS idx_waitlist_entries_active
+        ON waitlist_entries(status, preferred_date, created_at);
+      CREATE INDEX IF NOT EXISTS idx_waitlist_entries_patient
+        ON waitlist_entries(patient_id, status, created_at);
+    `,
+  },
+  {
+    version: 26,
+    name: "doctor-summary-synchronization-scope",
+    sql: `
+      DROP INDEX IF EXISTS idx_sync_resource_versions_resource;
+      DROP INDEX IF EXISTS idx_sync_audit_events_device;
+      DROP INDEX IF EXISTS idx_sync_outbox_state;
+      DROP INDEX IF EXISTS idx_clinical_sync_conflicts_open;
+
+      ALTER TABLE sync_cursors RENAME TO sync_cursors_v25;
+      ALTER TABLE sync_resource_versions RENAME TO sync_resource_versions_v25;
+      ALTER TABLE sync_audit_events RENAME TO sync_audit_events_v25;
+      ALTER TABLE sync_outbox RENAME TO sync_outbox_v25;
+      ALTER TABLE clinical_sync_conflicts RENAME TO clinical_sync_conflicts_v25;
+
+      CREATE TABLE sync_cursors (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance', 'billing-summary', 'doctor-summary')),
+        cursor TEXT NOT NULL,
+        server_sequence INTEGER NOT NULL CHECK (server_sequence >= 0),
+        accepted_at TEXT NOT NULL,
+        UNIQUE (sync_device_id, scope)
+      );
+      INSERT INTO sync_cursors (id, sync_device_id, scope, cursor, server_sequence, accepted_at)
+        SELECT id, sync_device_id, scope, cursor, server_sequence, accepted_at FROM sync_cursors_v25;
+
+      CREATE TABLE sync_resource_versions (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance', 'billing-summary', 'doctor-summary')),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        last_updated_at TEXT NOT NULL,
+        redacted INTEGER NOT NULL DEFAULT 0 CHECK (redacted IN (0, 1)),
+        UNIQUE (sync_device_id, scope, resource_type, resource_id)
+      );
+      INSERT INTO sync_resource_versions (id, sync_device_id, scope, resource_type, resource_id, version, payload_hash, last_updated_at, redacted)
+        SELECT id, sync_device_id, scope, resource_type, resource_id, version, payload_hash, last_updated_at, redacted FROM sync_resource_versions_v25;
+      CREATE INDEX idx_sync_resource_versions_resource
+        ON sync_resource_versions(resource_type, resource_id, version DESC);
+
+      CREATE TABLE sync_audit_events (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        sync_session_id TEXT,
+        user_id TEXT REFERENCES users(id),
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance', 'billing-summary', 'doctor-summary')),
+        result TEXT NOT NULL CHECK (result IN ('success', 'partial', 'rejected', 'conflict', 'error')),
+        change_count INTEGER NOT NULL CHECK (change_count >= 0),
+        conflict_count INTEGER NOT NULL CHECK (conflict_count >= 0),
+        redaction_count INTEGER NOT NULL CHECK (redaction_count >= 0),
+        reason_code TEXT,
+        occurred_at TEXT NOT NULL,
+        audit_event_id TEXT NOT NULL UNIQUE REFERENCES audit_events(id)
+      );
+      INSERT INTO sync_audit_events (id, sync_device_id, sync_session_id, user_id, scope, result, change_count, conflict_count, redaction_count, reason_code, occurred_at, audit_event_id)
+        SELECT id, sync_device_id, sync_session_id, user_id, scope, result, change_count, conflict_count, redaction_count, reason_code, occurred_at, audit_event_id FROM sync_audit_events_v25;
+      CREATE INDEX idx_sync_audit_events_device
+        ON sync_audit_events(sync_device_id, occurred_at DESC);
+
+      CREATE TABLE sync_outbox (
+        id TEXT PRIMARY KEY NOT NULL,
+        operation_id TEXT NOT NULL UNIQUE,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        user_id TEXT NOT NULL REFERENCES users(id),
+        organization_id TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN ('appointments', 'patient-summary', 'encounter-summary', 'clinical-notes', 'export-governance', 'billing-summary', 'doctor-summary')),
+        operation TEXT NOT NULL CHECK (operation IN ('appointment-acknowledge', 'appointment-arrival', 'queue-note')),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        base_version INTEGER NOT NULL CHECK (base_version > 0),
+        payload_json TEXT NOT NULL,
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        reason TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sending', 'accepted', 'already-applied', 'conflict', 'rejected', 'requires-amendment')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        last_error_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO sync_outbox (id, operation_id, sync_device_id, user_id, organization_id, scope, operation, resource_type, resource_id, base_version, payload_json, payload_hash, reason, state, attempt_count, last_error_code, created_at, updated_at)
+        SELECT id, operation_id, sync_device_id, user_id, organization_id, scope, operation, resource_type, resource_id, base_version, payload_json, payload_hash, reason, state, attempt_count, last_error_code, created_at, updated_at FROM sync_outbox_v25;
+      CREATE INDEX idx_sync_outbox_state
+        ON sync_outbox(sync_device_id, state, created_at ASC);
+
+      CREATE TABLE clinical_sync_conflicts (
+        id TEXT PRIMARY KEY NOT NULL,
+        sync_device_id TEXT NOT NULL REFERENCES sync_devices(id),
+        operation_id TEXT REFERENCES sync_outbox(operation_id),
+        resource_type TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        client_base_version INTEGER NOT NULL CHECK (client_base_version > 0),
+        server_version INTEGER NOT NULL CHECK (server_version > 0),
+        conflict_type TEXT NOT NULL CHECK (conflict_type IN ('version-mismatch', 'requires-amendment', 'redacted', 'policy-denied')),
+        resolution TEXT NOT NULL CHECK (resolution IN ('refresh', 'amend', 'rejected', 'none')),
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_by_user_id TEXT REFERENCES users(id)
+      );
+      INSERT INTO clinical_sync_conflicts (id, sync_device_id, operation_id, resource_type, resource_id, client_base_version, server_version, conflict_type, resolution, created_at, resolved_at, resolved_by_user_id)
+        SELECT id, sync_device_id, operation_id, resource_type, resource_id, client_base_version, server_version, conflict_type, resolution, created_at, resolved_at, resolved_by_user_id FROM clinical_sync_conflicts_v25;
+      CREATE INDEX idx_clinical_sync_conflicts_open
+        ON clinical_sync_conflicts(sync_device_id, resolved_at, created_at DESC);
+
+      DROP TABLE sync_cursors_v25;
+      DROP TABLE sync_resource_versions_v25;
+      DROP TABLE sync_audit_events_v25;
+      DROP TABLE clinical_sync_conflicts_v25;
+      DROP TABLE sync_outbox_v25;
+    `,
+  },
 ];
 
 function now(): string {

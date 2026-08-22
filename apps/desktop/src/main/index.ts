@@ -60,6 +60,9 @@ import type { LanSyncStatus } from "../preload/index.cjs";
 import {
   appointmentCreateInputSchema,
   appointmentStatusUpdateSchema,
+  waitlistEntryInputSchema,
+  waitlistStatusSchema,
+  waitlistStatusUpdateSchema,
   billingDoctorCompensationRuleInputSchema,
   billingDoctorPayoutReportInputSchema,
   billingInvoiceCreateInputSchema,
@@ -1998,6 +2001,33 @@ function registerIpc(): void {
         serviceContext(token),
         id,
         parseIpcInput(appointmentStatusUpdateSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "clinical:waitlist",
+    (_event, token: string, status?: string) =>
+      requireClinicalService().listWaitlist(
+        serviceContext(token),
+        status === undefined
+          ? undefined
+          : parseIpcInput(waitlistStatusSchema, status),
+      ),
+  );
+  registerIpcHandler(
+    "clinical:waitlist-create",
+    (_event, token: string, input: unknown) =>
+      requireClinicalService().createWaitlistEntry(
+        serviceContext(token),
+        parseIpcInput(waitlistEntryInputSchema, input),
+      ),
+  );
+  registerIpcHandler(
+    "clinical:waitlist-status",
+    (_event, token: string, id: string, input: unknown) =>
+      requireClinicalService().updateWaitlistStatus(
+        serviceContext(token),
+        id,
+        parseIpcInput(waitlistStatusUpdateSchema, input),
       ),
   );
 }

@@ -30,16 +30,16 @@ Electron sender validation must fail closed across lifecycle boundaries. A rende
 
 The final `pnpm release:readiness` run passed all eight local gates:
 
-| Gate                                                     | Result                                                                                                                     |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| TypeScript contract, database, domain, and desktop tests | Passed.                                                                                                                    |
-| TypeScript workspace typecheck                           | Passed.                                                                                                                    |
-| Desktop production build                                 | Passed.                                                                                                                    |
-| Existing desktop archive verification                    | Passed.                                                                                                                    |
-| Android release pipeline                                 | Passed, including JVM tests, lint, APK assembly, static policy checks, and archive checks.                                 |
-| Synthetic clinic-day rehearsal                           | Passed, including encrypted backup/restore, billing, doctor-document vault, offline queue, and six synchronization scopes. |
-| Formatting                                               | Passed.                                                                                                                    |
-| Git whitespace validation                                | Passed.                                                                                                                    |
+| Gate                                                     | Result                                                                                                                                                |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript contract, database, domain, and desktop tests | Passed.                                                                                                                                               |
+| TypeScript workspace typecheck                           | Passed.                                                                                                                                               |
+| Desktop production build                                 | Passed.                                                                                                                                               |
+| Existing desktop archive verification                    | Passed.                                                                                                                                               |
+| Android release pipeline                                 | Passed, including JVM tests, lint, APK assembly, static policy checks, and archive checks.                                                            |
+| Synthetic clinic-day rehearsal                           | Passed, including encrypted backup/restore, billing, doctor-document vault, offline queue, and seven synchronization scopes including doctor-summary. |
+| Formatting                                               | Passed.                                                                                                                                               |
+| Git whitespace validation                                | Passed.                                                                                                                                               |
 
 The local report records **23 physical scenario gates as pending**. Those gates still require Windows workstations and Android hardware, including installer upgrade/reinstall behavior, Android offline policy and OS-backed key recovery, SQLCipher startup and migration behavior, LAN/TLS synchronization, `FLAG_SECURE`, process death, document no-persistence, signed APK upgrade/rollback, and device revocation/re-enrollment.[1]
 

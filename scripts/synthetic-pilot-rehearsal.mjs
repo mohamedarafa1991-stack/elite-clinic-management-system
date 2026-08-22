@@ -34,6 +34,7 @@ const ANDROID_SCOPES = [
   "clinical-notes",
   "export-governance",
   "billing-summary",
+  "doctor-summary",
 ];
 const FIXED_IDS = {
   adminPrimary: "pilot-admin-primary",
@@ -232,6 +233,15 @@ function insertSyncEvidence(
     ["clinical-notes", "encounter", "pilot-encounter", { diagnosis: "J06.9" }],
     ["export-governance", "export", "pilot-export", { status: "verified" }],
     ["billing-summary", "invoice", invoiceId, { status: "partially-paid" }],
+    [
+      "doctor-summary",
+      "doctor",
+      FIXED_IDS.doctorPrimary,
+      {
+        doctorId: FIXED_IDS.doctorPrimary,
+        nameEn: "Synthetic Dr. Salma Nabil",
+      },
+    ],
   ];
   for (const [
     index,
@@ -735,7 +745,7 @@ async function main() {
       beforeBackup.syncScopes.join(",") ===
         ANDROID_SCOPES.slice().sort().join(","),
       "sync-scope-matrix",
-      "All six synchronization scopes, including billing-summary, have cursor evidence.",
+      "All seven synchronization scopes, including billing-summary and doctor-summary, have cursor evidence.",
       results,
     );
     assertCondition(

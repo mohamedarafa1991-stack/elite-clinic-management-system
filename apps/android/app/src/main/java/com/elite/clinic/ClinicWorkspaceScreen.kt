@@ -554,22 +554,45 @@ private fun MoreScreen(
         }
         item {
             MirrorSectionCard(
+                title = uiText(arabic, "Android mirror boundary", "نطاق تطبيق أندرويد"),
+                detail = uiText(
+                    arabic,
+                    "Patient, appointment, doctor, and permitted clinical summaries are available offline after secure sync. Billing changes, clinical authoring, and administration remain on the Windows Hub.",
+                    "تتوفر ملخصات المرضى والمواعيد والأطباء والبيانات السريرية المسموح بها دون اتصال بعد المزامنة الآمنة. تظل تعديلات الفوترة والكتابة السريرية والإدارة على جهاز Windows Hub.",
+                ),
+                status = uiText(arabic, "Read-only mirror", "مرآة للعرض فقط"),
+            )
+        }
+        item {
+            MirrorSectionCard(
                 title = "Billing / الفوترة",
-                detail = "${billingSummaries.size} invoice summaries are stored locally on this device. Billing write workflows remain on the Windows Hub until their Android mirror is enabled.",
-                status = "Local summary",
+                detail = uiText(
+                    arabic,
+                    "${billingSummaries.size} invoice summaries are stored locally on this device. Billing changes remain on the Windows Hub.",
+                    "تم حفظ ملخصات ${billingSummaries.size} فاتورة محلياً على هذا الجهاز. تظل تعديلات الفوترة على Windows Hub.",
+                ),
+                status = uiText(arabic, "Local summary", "ملخص محلي"),
             )
         }
         item {
             MirrorSectionCard(
                 title = "Reports / التقارير",
-                detail = "Monthly revenue and patient trends are available from the Windows reporting workspace.",
-                status = "Hub workspace",
+                detail = uiText(
+                    arabic,
+                    "Monthly revenue and patient trends are available from the Windows reporting workspace.",
+                    "تتوفر اتجاهات الإيرادات الشهرية والمرضى من مساحة التقارير على Windows.",
+                ),
+                status = uiText(arabic, "Hub workspace", "مساحة Windows"),
             )
         }
         item {
             QuickActionCard(
                 "Secure documents / الوثائق الآمنة",
-                "Open the secure doctor-document viewer and upload flow. Files are streamed and cleared from memory after use.",
+                uiText(
+                    arabic,
+                    "Open the secure doctor-document viewer and upload flow. Files are streamed and cleared from memory after use.",
+                    "افتح عارض وثائق الأطباء الآمن وخيار الرفع. يتم بث الملفات ومسحها من الذاكرة بعد الاستخدام.",
+                ),
             ) { showDocumentVault = true }
         }
     }

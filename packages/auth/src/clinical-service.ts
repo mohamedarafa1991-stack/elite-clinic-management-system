@@ -16,6 +16,9 @@ import {
   scheduleSchema,
   serviceSchema,
   specialtySchema,
+  waitlistEntryInputSchema,
+  waitlistEntrySchema,
+  waitlistStatusUpdateSchema,
   type Department,
   type DoctorDirectoryEntry,
   type Schedule,
@@ -24,6 +27,10 @@ import {
   type ScheduleInput,
   type Service,
   type Specialty,
+  type WaitlistEntry,
+  type WaitlistEntryInput,
+  type WaitlistStatus,
+  type WaitlistStatusUpdate,
 } from "@elite/contracts";
 import type { EliteDatabase } from "@elite/database";
 import { requireCapability, type SessionContext } from "./index.js";
@@ -109,6 +116,29 @@ function mapAppointment(row: Record<string, any>): Appointment {
     visitType: String(row["visit_type"]),
     isWalkIn: Number(row["is_walk_in"]) === 1,
     ...(row["notes"] ? { notes: String(row["notes"]) } : {}),
+    createdAt: String(row["created_at"]),
+    createdByUserId: String(row["created_by_user_id"]),
+    updatedAt: String(row["updated_at"]),
+    updatedByUserId: String(row["updated_by_user_id"]),
+    version: Number(row["version"]),
+  });
+}
+
+function mapWaitlistEntry(row: Record<string, any>): WaitlistEntry {
+  return waitlistEntrySchema.parse({
+    id: String(row["id"]),
+    patientId: String(row["patient_display_id"] ?? row["patient_id"]),
+    departmentId: String(row["department_id"]),
+    ...(row["doctor_id"] ? { doctorId: String(row["doctor_id"]) } : {}),
+    ...(row["service_id"] ? { serviceId: String(row["service_id"]) } : {}),
+    ...(row["preferred_date"]
+      ? { preferredDate: String(row["preferred_date"]) }
+      : {}),
+    ...(row["preferred_start_time"]
+      ? { preferredStartTime: String(row["preferred_start_time"]) }
+      : {}),
+    ...(row["notes"] ? { notes: String(row["notes"]) } : {}),
+    status: row["status"],
     createdAt: String(row["created_at"]),
     createdByUserId: String(row["created_by_user_id"]),
     updatedAt: String(row["updated_at"]),
@@ -602,6 +632,161 @@ export class ClinicalWorkflowService {
     return rows.map(mapAppointment);
   }
 
+  public createWaitlistEntry(
+    context: SessionContext,
+    input: WaitlistEntryInput,
+  ): WaitlistEntry {
+    requireCapability(context, "appointment.write");
+    const parsed = waitlistEntryInputSchema.parse(input);
+    const patient = this.database.raw
+      .prepare("SELECT id, status FROM patients WHERE patient_id = ?")
+      .get(parsed.patientId) as { id: string; status: string } | undefined;
+    if (!patient || patient.status !== "active") {
+      throw new Error(
+        "ELITE_PATIENT_NOT_ACTIVE: patient is missing or archived",
+      );
+    }
+    if (
+      !this.database.raw
+        .prepare(
+          "SELECT id FROM departments WHERE id = ? AND status = 'active'",
+        )
+        .get(parsed.departmentId)
+    ) {
+      throw new Error(
+        "ELITE_DEPARTMENT_NOT_ACTIVE: department is missing or archived",
+      );
+    }
+    if (
+      parsed.doctorId &&
+      !this.database.raw
+        .prepare(
+          "SELECT id FROM users WHERE id = ? AND role = 'doctor' AND is_active = 1",
+        )
+        .get(parsed.doctorId)
+    ) {
+      throw new Error(
+        "ELITE_DOCTOR_NOT_ACTIVE: doctor is missing, inactive, or not a doctor",
+      );
+    }
+    if (parsed.serviceId) {
+      const service = this.database.raw
+        .prepare(
+          "SELECT id FROM services WHERE id = ? AND department_id = ? AND status = 'active'",
+        )
+        .get(parsed.serviceId, parsed.departmentId);
+      if (!service) {
+        throw new Error(
+          "ELITE_SERVICE_NOT_ACTIVE: service is missing, archived, or belongs to another clinic area",
+        );
+      }
+    }
+    const timestamp = now();
+    const id = nanoid(18);
+    this.database.raw
+      .prepare(
+        `INSERT INTO waitlist_entries (id, patient_id, department_id, doctor_id, service_id, preferred_date, preferred_start_time, notes, status, created_at, created_by_user_id, updated_at, updated_by_user_id, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, 1)`,
+      )
+      .run(
+        id,
+        patient.id,
+        parsed.departmentId,
+        parsed.doctorId ?? null,
+        parsed.serviceId ?? null,
+        parsed.preferredDate ?? null,
+        parsed.preferredStartTime ?? null,
+        parsed.notes ?? null,
+        timestamp,
+        context.userId,
+        timestamp,
+        context.userId,
+      );
+    this.writeClinicalAudit(context, "waitlist.create", id, {
+      patientId: parsed.patientId,
+      departmentId: parsed.departmentId,
+      doctorId: parsed.doctorId ?? null,
+      serviceId: parsed.serviceId ?? null,
+    });
+    return this.getWaitlistEntry(context, id);
+  }
+
+  public listWaitlist(
+    context: SessionContext,
+    status?: WaitlistStatus,
+  ): readonly WaitlistEntry[] {
+    requireCapability(context, "appointment.read");
+    const parsedStatus =
+      status === undefined
+        ? undefined
+        : waitlistEntrySchema.shape.status.parse(status);
+    const rows = this.database.raw
+      .prepare(
+        `SELECT w.*, p.patient_id AS patient_display_id
+         FROM waitlist_entries w
+         JOIN patients p ON p.id = w.patient_id
+         WHERE (? IS NULL OR w.status = ?)
+         ORDER BY CASE w.status WHEN 'active' THEN 0 WHEN 'contacted' THEN 1 ELSE 2 END,
+                  w.preferred_date IS NULL, w.preferred_date, w.created_at`,
+      )
+      .all(parsedStatus ?? null, parsedStatus ?? null) as Array<
+      Record<string, any>
+    >;
+    return rows.map(mapWaitlistEntry);
+  }
+
+  public updateWaitlistStatus(
+    context: SessionContext,
+    id: string,
+    input: WaitlistStatusUpdate,
+  ): WaitlistEntry {
+    requireCapability(context, "appointment.write");
+    const parsed = waitlistStatusUpdateSchema.parse(input);
+    const current = this.database.raw
+      .prepare("SELECT * FROM waitlist_entries WHERE id = ?")
+      .get(id) as Record<string, any> | undefined;
+    if (!current) {
+      throw new Error(
+        "ELITE_WAITLIST_NOT_FOUND: waitlist entry does not exist",
+      );
+    }
+    const previous = String(current["status"]);
+    const allowed: Record<string, readonly string[]> = {
+      active: ["contacted", "booked", "cancelled", "expired"],
+      contacted: ["active", "booked", "cancelled", "expired"],
+      booked: [],
+      cancelled: [],
+      expired: [],
+    };
+    if (!allowed[previous]?.includes(parsed.status)) {
+      throw new Error(
+        "ELITE_WAITLIST_INVALID_STATUS_TRANSITION: transition is not permitted",
+      );
+    }
+    const timestamp = now();
+    const result = this.database.raw
+      .prepare(
+        "UPDATE waitlist_entries SET status = ?, updated_at = ?, updated_by_user_id = ?, version = version + 1 WHERE id = ? AND version = ?",
+      )
+      .run(
+        parsed.status,
+        timestamp,
+        context.userId,
+        id,
+        Number(current["version"]),
+      );
+    if (result.changes !== 1) {
+      throw new Error(
+        "ELITE_WAITLIST_CONFLICT: waitlist entry changed; reload and try again",
+      );
+    }
+    this.writeClinicalAudit(context, "waitlist.status-change", id, {
+      previousStatus: previous,
+      newStatus: parsed.status,
+      reason: parsed.reason,
+    });
+    return this.getWaitlistEntry(context, id);
+  }
+
   public updateAppointmentStatus(
     context: SessionContext,
     appointmentId: string,
@@ -670,6 +855,23 @@ export class ClinicalWorkflowService {
       .prepare("SELECT * FROM services WHERE id = ?")
       .get(id) as Record<string, any>;
     return mapService(row);
+  }
+  private getWaitlistEntry(context: SessionContext, id: string): WaitlistEntry {
+    requireCapability(context, "appointment.read");
+    const row = this.database.raw
+      .prepare(
+        `SELECT w.*, p.patient_id AS patient_display_id
+         FROM waitlist_entries w
+         JOIN patients p ON p.id = w.patient_id
+         WHERE w.id = ?`,
+      )
+      .get(id) as Record<string, any> | undefined;
+    if (!row) {
+      throw new Error(
+        "ELITE_WAITLIST_NOT_FOUND: waitlist entry does not exist",
+      );
+    }
+    return mapWaitlistEntry(row);
   }
   private getAppointment(context: SessionContext, id: string): Appointment {
     requireCapability(context, "appointment.read");

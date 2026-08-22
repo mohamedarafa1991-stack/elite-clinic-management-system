@@ -144,14 +144,14 @@ If the restored Hub cannot open the encrypted database, reports a migration chec
 
 The following checks are intentionally not marked as passed by the local script. They require the intended Windows Hub, Android devices, and controlled synthetic LAN described in the project readiness plan.[3]
 
-| Gate              | Evidence required                                                                                                                                                     |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows packaging | Clean install and upgrade of the NSIS artifact on Windows 10 and Windows 11, with native encrypted SQLite startup and retained data policy verified.                  |
-| Database recovery | Production OS-backed key initialization, encrypted backup, replacement-Hub restore, migration replay, and rollback with two-Admin authorization.                      |
-| Android storage   | SQLCipher Room opening and migrations 1→6 on at least one API-29-class device and one current supported device.                                                       |
-| LAN sync          | Enrollment, six-scope sync, offline queue, durable claims, conflict/retry classification, Hub outage, restart, TLS recovery, and device revocation/re-enrollment.     |
-| Doctor documents  | Upload and view-only retrieval over LAN, `FLAG_SECURE`, no Android persistence, viewer cleanup, process death, oversized/corrupted content, and role-specific denial. |
-| Release lifecycle | Signed APK installation, upgrade, rollback, checksum/signature verification, and loss/revocation procedure.                                                           |
+| Gate              | Evidence required                                                                                                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows packaging | Clean install and upgrade of the NSIS artifact on Windows 10 and Windows 11, with native encrypted SQLite startup and retained data policy verified.                                                             |
+| Database recovery | Production OS-backed key initialization, encrypted backup, replacement-Hub restore, migration replay, and rollback with two-Admin authorization.                                                                 |
+| Android storage   | SQLCipher Room opening and migrations 1→7 on at least one API-29-class device and one current supported device.                                                                                                  |
+| LAN sync          | Enrollment, seven-scope sync including billing-summary and doctor-summary, offline queue, durable claims, conflict/retry classification, Hub outage, restart, TLS recovery, and device revocation/re-enrollment. |
+| Doctor documents  | Upload and view-only retrieval over LAN, `FLAG_SECURE`, no Android persistence, viewer cleanup, process death, oversized/corrupted content, and role-specific denial.                                            |
+| Release lifecycle | Signed APK installation, upgrade, rollback, checksum/signature verification, and loss/revocation procedure.                                                                                                      |
 
 ## Close-out and data destruction
 
